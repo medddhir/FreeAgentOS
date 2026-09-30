@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+DATA = Path("/root/agent-stack/data")
+
+STOPWORDS = {
+    "a", "an", "and", "the", "for", "to", "of", "with",
+    "using", "use", "build", "create", "make", "own"
+}
+
+ALIASES = {
+    "crypto": ["cryptocurrency", "blockchain"],
+    "cryptocurrency": ["crypto", "blockchain"],
+    "db": ["database"],
+    "database": ["db", "sql", "redis"],
+    "web": ["website", "server", "frontend"],
+    "ai": ["artificial intelligence", "llm", "model"],
+    "llm": ["ai", "language model"],
+    "bot": ["automation", "agent"],
+    "agent": ["bot", "automation"],
+}
+
+
+def load(name):
+    with open(DATA / name, encoding="utf-8") as f:
+        return json.load(f)["items"]
+
+
+def tokenize(text):
+    return re.findall(r"[a-z0-9+#.-]+", str(text).lower())
+
+
+def query_terms(query):
+    original = [
+        w for w in tokenize(query)
+        if w not in STOPWORDS and len(w) > 1
+    ]
+
+    expanded = set(original)
+
+    for word in original:
+        expanded.update(ALIASES.get(word, []))
+
+    return original, expanded
+
+
+def relevance(query, title="", category="", description="", extra=""):
+    original, expanded = query_terms(query)
+
+    title_l = title.lower()
+    category_l = category.lower()
+    desc_l = description.lower()
+    extra_l = extra.lower()
+
+    score = 0
+    strong_matches = 0
+
+    full_query = query.lower().strip()
+
+    if full_query and full_query in title_l:
+        score += 100
+
+    if full_query and full_query in category_l:
+        score += 90
+
+    for term in expanded:
+        if term in title_l:
+            score += 24
+            strong_matches += 1
+
+        if term in category_l:
+            score += 20
+            strong_matches += 1
+
+        if term in desc_l:
+            score += 8
+
+        if term in extra_l:
+            score += 3
+
+    # Reward entries matching multiple concepts from the user's query.
+    matched_original = 0
+
+    combined = " ".join([
+        title_l,
+        category_l,
+        desc_l,
+        extra_l
+    ])
+
+    for term in original:
+        if term in combined:
+            matched_original += 1
+
+    score += matched_original * matched_original * 8
+
+    # Require at least one meaningful match in title/category,
+    # unless several query concepts matched elsewhere.
+    valid = strong_matches > 0 or matched_original >= 2
+
+    return score, valid
+
+
+def search_apis(query, args):
+    items = load("public_apis.json")
+    results = []
+
+    for item in items:
+        if args.no_auth:
+            auth = item.get("auth", "").strip().lower()
+
+            if auth not in {"no", "none", ""}:
+                continue
+
+        if args.https and item.get("https") is not True:
+            continue
+
+        if args.category:
+            if args.category.lower() not in item.get(
+                "category", ""
+            ).lower():
+                continue
+
+        s, valid = relevance(
+            query,
+            title=item.get("name", ""),
+            category=item.get("category", ""),
+            description=item.get("description", ""),
+            extra=item.get("auth", "")
+        )
+
+        if valid and s > 0:
+            results.append((s, item))
+
+    results.sort(
+        key=lambda x: (
+            -x[0],
+            x[1].get("name", "").lower()
+        )
+    )
+
+    return [x[1] for x in results[:args.limit]]
+
+
+def search_buildx(query, args):
+    items = load("buildx.json")
+    results = []
+
+    for item in items:
+        if args.category:
+            if args.category.lower() not in item.get(
+                "category", ""
+            ).lower():
+                continue
+
+        if args.language:
+            if args.language.lower() not in item.get(
+                "language", ""
+            ).lower():
+                continue
+
+        s, valid = relevance(
+            query,
+            title=item.get("title", ""),
+            category=item.get("category", ""),
+            description="",
+            extra=item.get("language", "")
+        )
+
+        if valid and s > 0:
+            results.append((s, item))
+
+    results.sort(
+        key=lambda x: (
+            -x[0],
+            x[1].get("title", "").lower()
+        )
+    )
+
+    return [x[1] for x in results[:args.limit]]
+
+
+def print_apis(items):
+    print("=== PUBLIC APIs ===")
+
+    if not items:
+        print("No relevant APIs found.")
+        return
+
+    for i, item in enumerate(items, 1):
+        print(f"\n{i}. {item['name']}")
+        print(f"   Category: {item['category']}")
+        print(f"   Description: {item['description']}")
+        print(f"   Auth: {item['auth'] or 'Unknown'}")
+        print(f"   HTTPS: {item['https']}")
+        print(f"   CORS: {item['cors']}")
+        print(f"   URL: {item['url']}")
+
+
+def print_buildx(items):
+    print("=== BUILD-YOUR-OWN-X ===")
+
+    if not items:
+        print("No relevant tutorials found.")
+        return
+
+    for i, item in enumerate(items, 1):
+        print(f"\n{i}. {item['title']}")
+        print(f"   Category: {item['category']}")
+        print(f"   Language: {item['language']}")
+
+        if item.get("media"):
+            print(f"   Media: {item['media']}")
+
+        print(f"   URL: {item['url']}")
+
+
+parser = argparse.ArgumentParser(
+    description="Search local developer intelligence sources."
+)
+
+parser.add_argument(
+    "mode",
+    choices=["api", "build", "both"]
+)
+
+parser.add_argument("query")
+parser.add_argument("--limit", type=int, default=5)
+parser.add_argument("--category")
+parser.add_argument("--language")
+parser.add_argument("--no-auth", action="store_true")
+parser.add_argument("--https", action="store_true")
+parser.add_argument("--json", action="store_true")
+
+args = parser.parse_args()
+args.limit = max(1, min(args.limit, 20))
+
+api_results = []
+build_results = []
+
+if args.mode in {"api", "both"}:
+    api_results = search_apis(args.query, args)
+
+if args.mode in {"build", "both"}:
+    build_results = search_buildx(args.query, args)
+
+if args.json:
+    output = {}
+
+    if args.mode in {"api", "both"}:
+        output["apis"] = api_results
+
+    if args.mode in {"build", "both"}:
+        output["build"] = build_results
+
+    print(json.dumps(
+        output,
+        indent=2,
+        ensure_ascii=False
+    ))
+
+else:
+    if args.mode in {"api", "both"}:
+        print_apis(api_results)
+
+    if args.mode == "both":
+        print()
+
+    if args.mode in {"build", "both"}:
+        print_buildx(build_results)

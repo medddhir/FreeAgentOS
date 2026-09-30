@@ -1,0 +1,13 @@
+# Python runtime and caches
+__pycache__/
+*.pyc
+.pytest_cache/
+/.venv-orchestrator/
+/.venv/
+/venv/
+
+# Local credentials, logs, and operating-system metadata
+.env
+.env.*
+*.log
+.DS_Store

@@ -1,0 +1,259 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import re
+import selectors
+import signal
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone, timedelta
+
+
+def run_exa(query, fetch_limit, objective):
+    cmd = [
+        "mcporter",
+        "call",
+        "exa.web_search_exa",
+        f"query={query}",
+        f"numResults={fetch_limit}",
+        f"objective={objective}",
+    ]
+
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               start_new_session=True)
+    selector = selectors.DefaultSelector()
+    streams = {process.stdout: bytearray(), process.stderr: bytearray()}
+    for stream in streams:
+        os.set_blocking(stream.fileno(), False)
+        selector.register(stream, selectors.EVENT_READ)
+    deadline = time.monotonic() + 35
+    failure = None
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failure = "EXA_TIMEOUT"
+                break
+            for key, _ in selector.select(min(remaining, 0.25)):
+                chunk = os.read(key.fileobj.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    continue
+                if sum(len(part) for part in streams.values()) + len(chunk) > 2 * 1024 * 1024:
+                    failure = "EXA_OUTPUT_LIMIT"
+                    break
+                streams[key.fileobj].extend(chunk)
+            if failure:
+                break
+        if failure is None:
+            try:
+                process.wait(timeout=max(0.01, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                failure = "EXA_TIMEOUT"
+    finally:
+        selector.close()
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        if process.poll() is None:
+            try:
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=2)
+        process.stdout.close()
+        process.stderr.close()
+    if failure:
+        print("ERROR: " + failure, file=sys.stderr)
+        sys.exit(124 if failure == "EXA_TIMEOUT" else 1)
+    if process.returncode != 0:
+        print("ERROR: Exa search failed.", file=sys.stderr)
+        sys.exit(process.returncode)
+    return streams[process.stdout].decode("utf-8", "replace")
+
+
+def parse_results(text):
+    results = []
+    current = None
+
+    for raw in text.splitlines():
+        line = raw.strip()
+
+        if line.startswith("Title:"):
+            if current:
+                results.append(current)
+
+            current = {
+                "title": line.split(":", 1)[1].strip(),
+                "url": "",
+                "published": "",
+                "author": "",
+                "highlight": "",
+            }
+
+        elif current and line.startswith("URL:"):
+            current["url"] = line.split(":", 1)[1].strip()
+
+        elif current and line.startswith("Published:"):
+            current["published"] = line.split(":", 1)[1].strip()
+
+        elif current and line.startswith("Author:"):
+            current["author"] = line.split(":", 1)[1].strip()
+
+        elif current and line and not current["highlight"]:
+            if not (
+                line.startswith("Highlights:")
+                or line.startswith("#")
+                or line == "---"
+                or line == "..."
+            ):
+                cleaned = re.sub(r"\s+", " ", line)
+
+                if len(cleaned) >= 25:
+                    current["highlight"] = cleaned[:500]
+
+    if current:
+        results.append(current)
+
+    return results
+
+
+def parse_date(value):
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def filter_recent(results, cutoff):
+    if cutoff is None:
+        return results
+
+    kept = []
+
+    for item in results:
+        published = parse_date(item["published"])
+
+        # Strict recency mode:
+        # no publication date = not accepted as verified recent.
+        if published and published >= cutoff:
+            kept.append(item)
+
+    return kept
+
+
+parser = argparse.ArgumentParser(
+    description="Compact live web intelligence through Exa."
+)
+
+parser.add_argument("query")
+parser.add_argument("--limit", type=int, default=3)
+parser.add_argument(
+    "--days",
+    type=int,
+    default=None,
+    help="Require results published within the last N days.",
+)
+parser.add_argument("--json", action="store_true")
+
+args = parser.parse_args()
+
+args.limit = max(1, min(args.limit, 5))
+
+now = datetime.now(timezone.utc)
+cutoff = None
+
+search_query = args.query
+
+objective = (
+    "Return the most relevant trustworthy pages for the query. "
+    "Prefer primary sources and pages with clear factual evidence."
+)
+
+fetch_limit = args.limit
+
+if args.days is not None:
+    args.days = max(1, min(args.days, 365))
+    cutoff = now - timedelta(days=args.days)
+
+    cutoff_date = cutoff.date().isoformat()
+    today_date = now.date().isoformat()
+
+    search_query = (
+        f"{args.query}. Find current developments published between "
+        f"{cutoff_date} and {today_date}. Prefer news, announcements, "
+        f"release notes, official blogs, and dated primary sources."
+    )
+
+    objective = (
+        f"Rank documents published on or after {cutoff_date} first. "
+        f"Exclude pages older than {cutoff_date} where possible. "
+        "Prefer exact publication dates, primary sources, official "
+        "announcements, release notes, and credible recent reporting. "
+        "The goal is verified recency, not evergreen relevance."
+    )
+
+    # Small over-fetch for local date verification.
+    fetch_limit = min(max(args.limit * 3, 8), 12)
+
+
+raw = run_exa(
+    search_query,
+    fetch_limit,
+    objective,
+)
+
+results = parse_results(raw)
+results = filter_recent(results, cutoff)
+results = results[:args.limit]
+
+payload = {
+    "query": args.query,
+    "days": args.days,
+    "count": len(results),
+    "results": results,
+}
+
+if args.json:
+    print(
+        json.dumps(
+            payload,
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+else:
+    print("=== EXA LIVE INTELLIGENCE ===")
+
+    if args.days:
+        print(
+            f"Verified recency: last {args.days} days "
+            f"(cutoff {cutoff.date().isoformat()})"
+        )
+
+    if not results:
+        print("No verified recent results found.")
+        sys.exit(2)
+
+    for i, item in enumerate(results, 1):
+        print()
+        print(f"{i}. {item['title']}")
+        print(f"   URL: {item['url']}")
+
+        if item["published"]:
+            print(f"   Published: {item['published']}")
+
+        if item["author"]:
+            print(f"   Author: {item['author']}")
+
+        if item["highlight"]:
+            print(f"   Preview: {item['highlight']}")

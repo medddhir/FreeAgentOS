@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Deprecated standalone model shortcut; never launches an uncontained worker."""
+
+import sys
+
+
+MESSAGE = ("freeagent-code is retired. It does not provide the FreeAgentOS verification contract. "
+           "Use freeagent-run --repo PATH --task TEXT instead.")
+print(MESSAGE, file=sys.stdout if "--help" in sys.argv[1:] else sys.stderr)
+sys.exit(0 if "--help" in sys.argv[1:] else 3)

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+POLICY="/root/agent-stack/skills/coding-intelligence.md"
+CLAUDE="/root/.claude/CLAUDE.md"
+CODEX="/root/.codex/AGENTS.md"
+
+test -f "$POLICY"
+
+cat > "$CLAUDE" <<'EOT'
+@RTK.md
+
+@/root/agent-stack/skills/coding-intelligence.md
+EOT
+
+{
+    echo "# Global Coding Agent Instructions"
+    echo
+    cat "$POLICY"
+} > "$CODEX"
+
+chmod 644 "$CLAUDE"
+chmod 600 "$CODEX"
+
+echo "Agent policy synchronized."

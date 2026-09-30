@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import re
+from pathlib import Path
+
+PATH = Path("/root/agent-stack/data/prompt_patterns.json")
+
+STOP = {
+    "a", "an", "the", "and", "or", "to", "of", "for",
+    "with", "in", "on", "how", "when", "my", "from"
+}
+
+
+def tokens(text):
+    return {
+        x for x in re.findall(r"[a-z0-9-]+", text.lower())
+        if len(x) > 1 and x not in STOP
+    }
+
+
+def score(query, pattern):
+    q = tokens(query)
+
+    title = pattern["title"].lower()
+    keywords = " ".join(pattern["keywords"]).lower()
+    summary = pattern["summary"].lower()
+    use_when = pattern["use_when"].lower()
+
+    total = 0
+
+    for term in q:
+        if term in title:
+            total += 12
+        if term in keywords:
+            total += 10
+        if term in summary:
+            total += 5
+        if term in use_when:
+            total += 3
+
+    return total
+
+
+parser = argparse.ArgumentParser(
+    description="Search sanitized coding-agent prompt patterns."
+)
+
+parser.add_argument("query")
+parser.add_argument("--limit", type=int, default=4)
+parser.add_argument("--json", action="store_true")
+
+args = parser.parse_args()
+args.limit = max(1, min(args.limit, 10))
+
+data = json.loads(PATH.read_text(encoding="utf-8"))
+
+ranked = sorted(
+    (
+        (score(args.query, item), item)
+        for item in data["patterns"]
+    ),
+    key=lambda x: (-x[0], x[1]["title"])
+)
+
+results = [
+    item for points, item in ranked
+    if points > 0
+][:args.limit]
+
+if args.json:
+    print(json.dumps(
+        {
+            "query": args.query,
+            "results": results
+        },
+        indent=2,
+        ensure_ascii=False
+    ))
+else:
+    print("=== SANITIZED AGENT PATTERNS ===")
+
+    if not results:
+        print("No relevant patterns found.")
+
+    for i, item in enumerate(results, 1):
+        print()
+        print(f"{i}. {item['title']}")
+        print(f"   ID: {item['id']}")
+        print(f"   Pattern: {item['summary']}")
+        print(f"   Use when: {item['use_when']}")
+        print(
+            "   Sources: "
+            + ", ".join(item["sources"])
+        )

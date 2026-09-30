@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+
+import json
+import os
+import selectors
+import shutil
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+
+ROOT = Path.cwd()
+SCRIPT = Path(__file__).resolve()
+CONTROLLER_ROOT = SCRIPT.parents[1]
+CONTROLLER_VENV = CONTROLLER_ROOT / ".venv-orchestrator"
+CONTROLLER_PYTHON = CONTROLLER_VENV / "bin" / "python3"
+# The controller's expanding deterministic self-suite needs a longer lease.
+# Target repositories keep the original runner lease and the independent
+# 130-second namespace sandbox ceiling.
+TIMEOUT = 240 if ROOT.resolve() == Path(__file__).resolve().parents[1] else 180
+MAX_CAPTURE = 64 * 1024
+
+
+def bootstrap_controller_runtime():
+    """Use the production controller runtime only for its installed entrypoint.
+
+    The same runner is copied into isolated target sandboxes, where no
+    controller venv exists and the sandbox-selected interpreter is required.
+    """
+    if SCRIPT != CONTROLLER_ROOT / "bin" / "freeagent-test" or not (
+        CONTROLLER_ROOT / "orchestrator" / "cli.py"
+    ).is_file():
+        return
+    if not CONTROLLER_PYTHON.is_file():
+        raise RuntimeError("ORCHESTRATOR_RUNTIME_UNAVAILABLE")
+    if Path(sys.executable).absolute() == CONTROLLER_PYTHON.absolute():
+        if Path(sys.prefix).absolute() != CONTROLLER_VENV.absolute():
+            raise RuntimeError("ORCHESTRATOR_RUNTIME_INVALID")
+        # The marker belongs only to this exec handoff. Test subprocesses may
+        # themselves launch the runner and must start a fresh handoff.
+        os.environ.pop("FREEAGENT_TEST_BOOTSTRAP_ATTEMPTED", None)
+        return
+    if os.environ.get("FREEAGENT_TEST_BOOTSTRAP_ATTEMPTED") == "1":
+        raise RuntimeError("ORCHESTRATOR_RUNTIME_REEXEC_LOOP")
+    os.environ["FREEAGENT_TEST_BOOTSTRAP_ATTEMPTED"] = "1"
+    os.execv(str(CONTROLLER_PYTHON), [str(CONTROLLER_PYTHON), str(SCRIPT), *sys.argv[1:]])
+
+
+def run(cmd, name):
+    print(f"=== FREEAGENT TEST: {name} ===")
+    print("COMMAND=" + " ".join(cmd))
+
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+
+    process = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    os.set_blocking(process.stdout.fileno(), False)
+    tail = bytearray()
+    total = 0
+    deadline = time.monotonic() + TIMEOUT
+    timeout_triggered = False
+    with selectors.DefaultSelector() as selector:
+        selector.register(process.stdout, selectors.EVENT_READ)
+        eof = False
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 and process.poll() is None:
+                timeout_triggered = True
+                break
+            if eof:
+                if process.poll() is not None:
+                    break
+                time.sleep(min(0.1, max(remaining, 0)))
+                continue
+            events = selector.select(min(max(remaining, 0), 0.1))
+            if events:
+                try:
+                    chunk = os.read(process.stdout.fileno(), 65536)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(process.stdout)
+                    eof = True
+                    continue
+                total += len(chunk)
+                tail.extend(chunk)
+                if len(tail) > MAX_CAPTURE:
+                    del tail[:-MAX_CAPTURE]
+            elif process.poll() is not None:
+                break
+    if timeout_triggered or process.poll() is None:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=2)
+    else:
+        process.wait(timeout=2)
+    process.stdout.close()
+    output = tail.decode(errors="replace")
+    if total > MAX_CAPTURE:
+        print("OUTPUT_TRUNCATED=true")
+    print(output.rstrip())
+    print()
+    if timeout_triggered:
+        print("RESULT=TIMEOUT")
+        code = 124
+    elif process.returncode == 0 and total <= MAX_CAPTURE:
+        print("RESULT=PASS")
+        code = 0
+    else:
+        print("RESULT=FAIL")
+        code = process.returncode or 1
+    print(f"EXIT_CODE={code}")
+    return code
+
+
+def detect():
+    # Python: pytest project
+    pytest_markers = [
+        ROOT / "pytest.ini",
+        ROOT / "conftest.py",
+    ]
+
+    pyproject = ROOT / "pyproject.toml"
+
+    if (
+        any(p.exists() for p in pytest_markers)
+        or (
+            pyproject.exists()
+            and "pytest" in pyproject.read_text(
+                errors="ignore"
+            ).lower()
+        )
+    ):
+        return [sys.executable, "-m", "pytest", "-q"], "pytest"
+
+    # Python: unittest
+    python_tests = (
+        list(ROOT.glob("test_*.py"))
+        + list(ROOT.glob("*_test.py"))
+    )
+
+    if python_tests:
+        return [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-v",
+        ], "python-unittest"
+
+    # Node / JS
+    package = ROOT / "package.json"
+
+    if package.exists():
+        try:
+            data = json.loads(
+                package.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except Exception:
+            data = {}
+
+        scripts = data.get("scripts", {})
+
+        if "test" in scripts and shutil.which("npm"):
+            return [
+                "npm",
+                "test",
+                "--",
+                "--runInBand",
+            ], "npm-test"
+
+    return None, None
+
+
+def main():
+    cmd, name = detect()
+
+    if not cmd:
+        print("=== FREEAGENT TEST ===")
+        print("RESULT=NO_TEST_RUNNER")
+        print(
+            "DETAIL=No supported existing test "
+            "configuration was detected."
+        )
+        print("EXIT_CODE=3")
+        return 3
+
+    return run(cmd, name)
+
+
+if __name__ == "__main__":
+    try:
+        bootstrap_controller_runtime()
+    except (RuntimeError, OSError) as exc:
+        print("RESULT=FAIL\nDETAIL=" + (
+            str(exc) if isinstance(exc, RuntimeError) else "ORCHESTRATOR_RUNTIME_EXEC_FAILED"
+        ) + "\nEXIT_CODE=4", file=sys.stderr)
+        sys.exit(4)
+    sys.exit(main())
