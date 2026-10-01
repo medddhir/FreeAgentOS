@@ -158,6 +158,81 @@ class WorkerActivityTests(unittest.TestCase):
     def test_long_session_timing_is_controller_owned(self):
         p=ActivityCapture();p.now_ms=179000;p.add(record(final()))
         self.assertEqual(p.finish()['final_result_ms'],179000)
+        # Keep all cases executable within the trusted runner's verbose-output cap.
+        self.diagnostics()
+        self.pipe_lifecycle()
+
+    def diagnostics(self):
+        from roles.activity import EVENT_TYPES
+        from roles.lease import ActivityLease, NS
+        events = [use(path=SECRET), reply(), {'type':'system','subtype':SECRET},
+                  {'type':'assistant','message':{'content':[{'type':'thinking','thinking':SECRET}]}},
+                  {'type':'rate_limit_event','payload':SECRET}, final()]
+        p,e=self.parse(events)
+        self.assertEqual(e['last_valid_stream_event_ms'],500)
+        self.assertEqual(e['last_non_tool_event_ms'],500)
+        self.assertEqual(e['last_non_tool_event_type'],'result')
+        self.assertEqual(e['event_type_counts']['assistant'],2)
+        self.assertEqual(e['result_category'],'SUCCESS')
+        self.assertTrue(e['result_event_observed'])
+        self.assertEqual(set(e['event_type_counts']),set(EVENT_TYPES))
+        p,e=self.parse([{'type':SECRET,'content':SECRET}])
+        self.assertEqual(e['event_type_counts']['UNKNOWN'],1)
+        self.assertIsNone(e['last_valid_stream_event_ms'])
+        self.assertEqual(e['activity_status'],'INVALID')
+        p,e=self.parse([{'type':'result','subtype':SECRET,'is_error':False}])
+        self.assertTrue(e['result_event_observed'])
+        self.assertFalse(e['final_result_seen'])
+        self.assertEqual(e['result_category'],'OTHER')
+        self.assertEqual(e['activity_status'],'INVALID')
+        # Late valid structural/reasoning activity is observable, never trusted work.
+        p=ActivityCapture();p.now_ms=170000;p.add(record(events[3]))
+        lease=ActivityLease(180,'coder','model',True,240,0)
+        self.assertFalse(lease.extend(180*NS,capture=p))
+        self.assertIsNone(lease.last_ns)
+        from types import SimpleNamespace
+        from roles.worker import _completion_observation
+        stats={'stdout_eof_before_cleanup':False,'stderr_eof_before_cleanup':False,
+               'last_stdout_ms':170000,'last_stderr_ms':None}
+        broker=SimpleNamespace(telemetry=SimpleNamespace(last_success_ns=74970*1000000))
+        observed=_completion_observation(SimpleNamespace(poll=lambda:None),p,stats,0,180*NS,broker)
+        self.assertEqual(observed['broker_success_idle_ms'],105030)
+        self.assertEqual(observed['valid_stream_idle_ms'],10000)
+        self.assertEqual(observed['state'],'ALIVE_NO_RESULT')
+        forged={'activity':{'event_type_counts':{SECRET:1,'system':1,'user':True},
+                            'result_category':SECRET,'last_non_tool_event_type':SECRET},
+                'completion':{'state':SECRET,'stdout_idle_ms':SECRET,'raw':SECRET,
+                              'stdout_eof_before_cleanup':True,'provider_completion_observed':SECRET}}
+        projected=cli._evidence(forged)
+        self.assertEqual(projected['activity']['event_type_counts'],{'system':1})
+        self.assertEqual(projected['completion'],{'stdout_eof_before_cleanup':True})
+        self.assertNotIn(SECRET,json.dumps(projected))
+
+    def pipe_lifecycle(self):
+        # Real contained synthetic children distinguish EOF, result, exit and liveness.
+        for mode in ('closed','result','text'):
+            with self.subTest(mode=mode):
+                code='import os,sys,time\n'
+                if mode=='result': code+='sys.stdout.buffer.write('+repr(record(final()))+');sys.stdout.flush()\n'
+                if mode=='text':
+                    event={'type':'assistant','message':{'content':[{'type':'text','text':SECRET}]}}
+                    code+='sys.stdout.buffer.write('+repr(record(event))+');sys.stdout.flush()\n'
+                if mode=='closed': code+='os.close(1);os.close(2)\n'
+                code+='time.sleep(10)\n'
+                r=run_worker([sys.executable,'-c',code],cwd=ROOT,timeout=1,role='coder',stream_activity=True)
+                self.assertEqual(r.returncode,124)
+                d=r.evidence['completion']
+                self.assertTrue(d['process_alive_at_observation_end'])
+                self.assertEqual(d['stdout_eof_before_cleanup'],mode=='closed')
+                self.assertEqual(d['state'],{'closed':'ALIVE_AFTER_STDOUT_EOF',
+                                             'result':'ALIVE_WITH_RESULT','text':'ALIVE_NO_RESULT'}[mode])
+                self.assertEqual(d['provider_completion_observed'],'UNAVAILABLE')
+                if mode!='closed': self.assertGreaterEqual(d['stdout_idle_ms'],500)
+                self.assertNotIn(SECRET,json.dumps(r.__dict__))
+                self.assertEqual(r.evidence['remaining_processes'],0)
+        r=self.execute([final()])
+        self.assertEqual(r.evidence['completion']['state'],'PROCESS_EXITED')
+        self.assertFalse(r.evidence['completion']['process_alive_at_observation_end'])
 
     def execute(self, events, *, role='coder', hang=False):
         code='import sys,time\n'
@@ -181,6 +256,7 @@ class WorkerActivityTests(unittest.TestCase):
         r=self.execute([use(),reply()],hang=True)
         self.assertEqual(r.returncode,124);self.assertEqual(r.evidence['activity']['read_events'],1)
         self.assertEqual(r.evidence['remaining_processes'],0)
+        self.assertEqual(r.evidence['completion']['state'],'ALIVE_NO_RESULT')
 
     def test_idle_timeout(self):
         r=self.execute([],hang=True)

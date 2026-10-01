@@ -115,9 +115,11 @@ def _evidence(value):
     from roles.broker_telemetry import safe_broker
     if "broker" in value:
         result["broker"] = safe_broker(value["broker"])
-    from roles.activity import safe_activity
+    from roles.activity import safe_activity, safe_completion
     if "activity" in value:
         result["activity"] = safe_activity(value["activity"])
+    if "completion" in value:
+        result["completion"] = safe_completion(value["completion"])
     from roles.lease import safe_lease
     if "lease" in value:
         result["lease"] = safe_lease(value["lease"])

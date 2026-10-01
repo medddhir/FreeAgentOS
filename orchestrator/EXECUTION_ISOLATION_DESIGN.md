@@ -880,3 +880,132 @@ is needed to measure actual client/provider enum compliance, denial friction and
 completion. If capabilities are coherent and denials low but the unchanged
 240-second hard cap is still reached, move to model/provider routing and worker
 efficiency rather than further permission tuning.
+
+## Stage 2.1 — Worker Completion & Model/Provider Diagnostics
+
+Stage 1 permission tuning is closed. The persistent Stage 1.13 live evidence
+shows 11 authenticated broker requests and successes, zero denials/errors,
+including two successful Edits. The parser observed 43 events, no parser errors,
+no final result, 40,725 stdout bytes (below the bound), and no stderr bytes.
+The last broker success was 74,970 ms; process runtime including cleanup was
+180,607 ms (a 105,637 ms gap). The reported role runtime of approximately
+180,764 ms includes additional overhead. No grace was appropriate: progress was
+outside the unchanged thirty-second recency window. No resource hits occurred.
+Old evidence cannot reveal last non-tool activity, upstream termination or EOF.
+
+### Local runtime trace and limits of attribution
+
+Coder/Fixer seal file policy, prepare the capability contract, and launch
+claude-free in print stream-json/verbose mode without session persistence.
+worker.py enters the existing namespace/cgroup boundary, replaces the MCP
+configuration with the supervisor-owned broker relay, starts the client, and
+drains stdout and stderr independently. The lease trusts supervisor broker
+success first. ActivityCapture consumes bounded NDJSON; it discards message text,
+thinking, tool arguments/results and raw records. The controller waits for process
+exit, not merely an envelope. Scope cleanup follows; timeout takes precedence.
+An otherwise-zero exit without a valid successful result becomes exit 65.
+Coder/Fixer then block on nonzero exit before controller testing/promotion.
+
+The result contract is a Claude Code client envelope, not an exact sentence the
+model must produce. Any string result is accepted in a successful envelope with
+no pending tool invocation. Text alone cannot complete the worker. A valid result
+while the process remains alive still times out; synthetic workers prove this.
+The existing parser supports assistant/user, system, result, tool_progress,
+tool_use_summary and rate_limit_event. Unknown types, malformed/truncated records
+and events after final result still fail closed. None of those failures was
+reported in Stage 1.13. Partial-token/SSE events are not requested by the current
+command; NDJSON observation does not reveal upstream token timing.
+
+Read-only integration inspection found the installed Claude Code 2.1.284 native
+binary and the claude-free shell launcher. The launcher forwards argv with exec,
+loads its credential internally (not inspected), sets ANTHROPIC_BASE_URL to the
+loopback gateway, and does not choose a model. No client was executed for audit.
+The running gateway image is ghcr.io/tashfeenahmed/freellmapi:latest. Only compiled
+integration source was read: routes/anthropic.js, services/anthropic-map.js,
+providers/base.js and timeout/routing-related excerpts. No environment, database,
+credential file, request log or raw response was read. Current installed source
+does not prove which image/settings/model served the historical run.
+
+The gateway translates OpenAI-style tool calls into Anthropic tool_use blocks;
+tool_calls maps to tool_use, length to max_tokens, and stop/default to end_turn.
+Its Anthropic stream emits message_delta, message_stop and closes the response
+after the upstream generator finishes. Errors after stream commitment emit an
+error event and end the response. The shared SSE reader returns on [DONE], or
+accepts EOF after finish_reason; abrupt EOF without either is an error. However,
+finish_reason alone is remembered without immediately ending the read loop.
+An upstream which sends a terminal reason but leaves its connection open could
+therefore delay completion. Byte keepalives can also satisfy the read watchdog
+without useful model output. Configurable stall timeouts default to ninety
+seconds, can be disabled, and first-byte budgets depend on provider chat timeout.
+These are plausible failure mechanisms, not a diagnosis of the historical call.
+Gateway fallback/retries already exist independently of FreeAgentOS; this stage
+adds none and changes neither gateway nor model selection.
+
+Dynamic MCP schema updates are not a credible explanation of this particular
+post-Edit gap: sealed new_files was empty, no Write occurred, listChanged was
+false, and the update/notification branch only runs after successful Write in
+sessions with approved new paths. Existing deterministic protocol tests cover
+that separate creation lifecycle. Discovery and mutation authorization are intact.
+
+### Additive safe observation
+
+activity records fixed event_type_counts (including UNKNOWN, never the unknown
+name), last_valid_stream_event_ms, last_non_tool_event_ms/type,
+result_event_observed and result_category (UNOBSERVED/SUCCESS/ERROR/OTHER).
+Observed result and accepted final_result_seen remain distinct: invalid result
+envelopes cannot become successful completion. Diagnostic timestamps/counters use
+the existing monotonic clock and bounds. Recognition/acceptance rules are unchanged.
+
+worker evidence adds a projected completion object captured BEFORE cleanup:
+stdout_eof_before_cleanup, stderr_eof_before_cleanup,
+process_alive_at_observation_end; stdout_idle_ms, stderr_idle_ms,
+valid_stream_idle_ms and broker_success_idle_ms; and fixed state PROCESS_EXITED,
+ALIVE_WITH_RESULT, ALIVE_AFTER_STDOUT_EOF or ALIVE_NO_RESULT. Idle durations are
+observations, not new timeout thresholds; null means no corresponding observation.
+provider_completion_observed is explicitly UNAVAILABLE because upstream SSE is
+outside this parser. Killing the scope cannot fabricate pre-cleanup EOF. CLI
+projection permits only these bounded fields. No raw model data is persisted.
+No new event category grants progress or grace; lease.py remains unchanged.
+
+### Minimal future controller-owned model profiles
+
+All model roles currently use claude-free without --model. Inspector is local
+and deterministic; Researcher uses bounded research commands rather than a model
+worker. Planner/Reviewer use JSON schema output, Coder/Fixer streaming/tool mode.
+Claude client defaults/environment and gateway family mapping/catalog routing
+choose the actual provider/model. Default gateway family mappings are auto;
+configured runtime values and actual historical served model were not inspected.
+Unknown/disabled concrete pins can resolve to auto in the installed gateway, so
+a future strict router must verify resolved model identity, not assume a requested
+identifier guarantees it. Loopback health alone proves no request completion.
+
+Stage 2.2 should introduce a small immutable controller registry of execution
+model profiles, separate from worker.py's resource policy_profile. Each profile
+contains an allowlisted adapter identifier, model identifier, role suitability,
+context-capacity class, free/cost/local classification and controller-validated
+compatibility booleans: supports_tools, supports_streaming,
+supports_dynamic_tool_schema, supports_long_agent_session,
+supports_structured_result. Unknown profiles/extra security fields fail closed.
+Compatibility must come from controlled tests/operator-reviewed registry entries,
+never model assertions. A fixed command builder inserts only adapter/model
+selection and preserves the same sealed capabilities, tool flags, sandbox,
+limits, verification and trust policy. Credentials remain outside profile/state.
+Do not overload resource policy_profile or let profiles supply arbitrary argv,
+executables, environment, tool grants, limits, retries or leases.
+
+FreeAgentOS Auto can then select a fast structured Planner, strongest compatible
+tool-capable Coder/Fixer, and an independent Reviewer with validated served-model
+identity. Inspector stays local; Researcher's current approved tool transport stays
+independent of model authorization. Preserve the legacy default first; do not
+switch production models or add fallback calls in this milestone. No profile
+implementation or routing change is made now; the architecture is ready for a
+small separately tested Stage 2.2 implementation.
+
+Recommend exactly one separately approved live diagnostic under the unchanged
+model, sealed policy and 180+60/240-second lease. Measure these projected fields,
+successful broker timing, result/EOF and liveness through natural exit or timeout.
+If available, correlate only fixed gateway request-phase/terminal categories and
+durations through a separately privacy-reviewed collector; never collect payloads
+or logs. Existing worker fields alone cannot distinguish client waiting from
+provider silence, hidden reasoning, gateway retries or a missing SSE terminator.
+Do not infer automatic completion from inactivity or successful edits.

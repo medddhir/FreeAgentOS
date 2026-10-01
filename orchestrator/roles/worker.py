@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from roles.activity import ActivityCapture, MAX_TIME_MS
+from roles.activity import ActivityCapture, MAX_TIME_MS, safe_completion
 from roles.lease import ActivityLease, hard_cap_seconds
 from roles.sandbox import (BoundedCapture, MS_BIND, MS_PRIVATE, MS_RDONLY, MS_REC, MS_REMOUNT,
                            _drain_ready, _event_values, _mount, _read_bounded,
@@ -88,7 +88,9 @@ def _gateway_health():
 def _read_worker_streams(proc, seconds, capture, spawned_ns, *, lease=None, broker=None):
     """Drain both pipes with one bounded capture and independent byte counters."""
     stats = {"worker_stdout_bytes_seen": 0, "worker_stderr_bytes_seen": 0,
-             "worker_first_stdout_byte_ms": None, "worker_first_stderr_byte_ms": None}
+             "worker_first_stdout_byte_ms": None, "worker_first_stderr_byte_ms": None,
+             "stdout_eof_before_cleanup": False, "stderr_eof_before_cleanup": False,
+             "last_stdout_ms": None, "last_stderr_ms": None}
     lease = lease or ActivityLease(seconds, "worker", "model", False, seconds, spawned_ns)
     with selectors.DefaultSelector() as selector:
         for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
@@ -107,12 +109,14 @@ def _read_worker_streams(proc, seconds, capture, spawned_ns, *, lease=None, brok
                 except BlockingIOError:
                     continue
                 if not chunk:
+                    stats[f"{key.data}_eof_before_cleanup"] = True
                     selector.unregister(key.fileobj)
                     continue
                 name = key.data
                 count_key = f"worker_{name}_bytes_seen"
                 first_key = f"worker_first_{name}_byte_ms"
                 stats[count_key] += len(chunk)
+                stats[f"last_{name}_ms"] = min(MAX_TIME_MS, _elapsed_ms(spawned_ns))
                 if stats[first_key] is None:
                     stats[first_key] = _elapsed_ms(spawned_ns)
                 # Stderr is diagnostic transport, never model/research stdout.
@@ -124,6 +128,26 @@ def _read_worker_streams(proc, seconds, capture, spawned_ns, *, lease=None, brok
             if proc.poll() is not None and not events:
                 return False, stats
     return proc.poll() is None, stats
+
+
+def _completion_observation(proc, capture, stats, spawned_ns, ended_ns, broker):
+    """Snapshot BEFORE termination/draining; diagnostic clocks never affect lease."""
+    elapsed = min(MAX_TIME_MS, max(0, (ended_ns - spawned_ns) // 1_000_000))
+    gap = lambda last: None if last is None else min(MAX_TIME_MS, max(0, elapsed - last))
+    alive = proc.poll() is None
+    data = getattr(capture, "data", {})
+    last = broker.telemetry.last_success_ns if broker is not None else None
+    state = ("PROCESS_EXITED" if not alive else "ALIVE_WITH_RESULT" if data.get("final_result_seen")
+             else "ALIVE_AFTER_STDOUT_EOF" if stats["stdout_eof_before_cleanup"] else "ALIVE_NO_RESULT")
+    return safe_completion({
+        "state": state, "process_alive_at_observation_end": alive,
+        "stdout_eof_before_cleanup": stats["stdout_eof_before_cleanup"],
+        "stderr_eof_before_cleanup": stats["stderr_eof_before_cleanup"],
+        "stdout_idle_ms": gap(stats["last_stdout_ms"]),
+        "stderr_idle_ms": gap(stats["last_stderr_ms"]),
+        "valid_stream_idle_ms": gap(data.get("last_valid_stream_event_ms")),
+        "broker_success_idle_ms": gap(None if last is None else (last - spawned_ns) // 1_000_000),
+        "provider_completion_observed": "UNAVAILABLE"})
 
 
 def _drain_worker_ready(proc, capture, stats, spawned_ns):
@@ -257,6 +281,10 @@ def _run_inner(area, request):
         timed_out, streams = _read_worker_streams(process, timeout, capture, spawned_ns,
                                                 lease=lease, broker=broker)
         ended_ns = time.monotonic_ns()
+        completion = _completion_observation(process, capture, streams, spawned_ns, ended_ns, broker)
+        # Keep raw transport clocks internal; public diagnostics are bounded/projection-safe.
+        for key in ("last_stdout_ms", "last_stderr_ms", "stdout_eof_before_cleanup", "stderr_eof_before_cleanup"):
+            streams.pop(key)
         cleanup_started_ns = time.monotonic_ns()
         cleanup = _stop_scope(scope, process, policy["termination_grace_seconds"])
         runtime_ms = _elapsed_ms(spawned_ns)
@@ -273,7 +301,7 @@ def _run_inner(area, request):
         code = 124 if timed_out else (1 if truncated or any(hits.values()) else process.returncode)
         if activity is not None and not timed_out and code == 0 and activity["activity_status"] != "COMPLETE":
             code = 65
-        evidence = {**cleanup, "lease": lease.evidence(ended_ns, success=code == 0),
+        evidence = {**cleanup, "completion": completion, "lease": lease.evidence(ended_ns, success=code == 0),
                     **({"broker": broker_evidence} if broker_evidence is not None else {}),
                     **({"activity": activity} if activity is not None else {}),
                     "role": request["role"], "timeout_triggered": timed_out,
