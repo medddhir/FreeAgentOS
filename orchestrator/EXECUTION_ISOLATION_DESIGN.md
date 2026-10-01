@@ -695,3 +695,118 @@ or model-supplied counters are added. Broker session authenticity, progress timi
 policy decisions, context selection, decomposition, resource limits, lease behavior
 and model-call ceilings are unchanged. Deterministic tests exercise real broker
 operations and synthetic role calls; no provider calls are used.
+
+### Stage 1.12 — capability contract audit and clarification
+
+The Stage 1.11 live result supplied for this audit has 13 Read.READ_DENIED and
+three Write.READ_DENIED, no INVALID_REQUEST, and no broker internal errors.
+These categorical counters do not retain request paths, arguments, or model
+text. They cannot establish which paths were requested, whether requests were
+repeated, or whether a path alias was used. No live call was made during this
+audit; reduced live friction remains an empirical question.
+
+The audited path is `build_policy` -> sealed `file_tool_flags` ->
+`capability_contract` -> Coder/Fixer `-p` -> worker `prepare_session` ->
+controller-owned `BrokerSession` -> `FileTools` -> exact membership and safe
+fd-relative reads/writes -> `BrokerTelemetry`. The session replaces only the
+MCP transport configuration, preserving the final prompt and validated policy.
+Intermediate Fixer narrowing precedes contract generation. Prompt, failure,
+research and model text never feed authorization. Graph routing preserves the
+unit guards, controller Tester, and global two-Fixer-attempt limit.
+
+| Failure class | Audit finding |
+| --- | --- |
+| 1. Final paths missing from prompt | Not reproduced: both roles derive the contract from the exact final sealed policy. |
+| 2. Placement/ambiguity | Confirmed: the Stage 1.11 contract followed task, plan, facts and file context. It did not explicitly describe the context/tool-surface difference. |
+| 3. Display/request representation | Manifest paths already match broker membership strings. The missing instruction was to copy them exactly as workspace-relative strings; absolute and leading `./` aliases are intentionally denied. |
+| 4. Context mistaken for writable targets | Context blocks and related-file hints do not identify tool permissions. Explicit read-only/existing-write/new-path lists now distinguish them. |
+| 5. Existing/new behavior | Existing authorized files support both Edit and Write. New approved paths require creation before Read/Edit; a creation-approved path may already exist from prior work. |
+| 6. Later context suggests inaccessible paths | Reproduced: injected file candidates and broker read selection differ. README/public tests/manifests consume broker slots ahead of related sources. With eight slots, an injected source can be outside the tool list. Facts, diff headers and failure locations can also mention unlisted paths. |
+| 7. Glob/Grep follow-up | Result path fields are already filtered by current authorized reads. Grep line text can mention unlisted files; those references are data, not capabilities. No further filtering or access grant is needed. |
+| 8. Canonicalization rejection | No broker/manifest mismatch found. Exact membership precedes opening; aliases remain denied without normalization. |
+| 9. Coder/Fixer divergence | Both use the same contract helper; Fixer narrowing is reflected. Both had the late placement issue. |
+| 10. Regression coverage | Existing tests already checked final sealed lists and real operations, not just presence. Missing cases were relay preservation, alias behavior, context excluded by the read cap, and embedded discovery references. |
+| 11. Irrelevant context | Up to eight injected files plus broader bounded hints can encourage browsing. Necessity of individual live context files cannot be established from counters. Selection and context budgets remain unchanged. |
+| 12. Whole-file Write documentation | Replacement of an authorized existing file is legitimate. Live READ_DENIED does not imply an Edit-only restriction or an oversized argument (INVALID_REQUEST). Prefer bounded Edit for focused changes; retain Write replacement support. |
+
+A deterministic fixture reproduces both the context/tool-surface difference and
+`file.py` success versus `./file.py`/absolute-path denial. These are evidence for
+clarifying the contract, not proof of the precise cause of all live denials.
+Read.READ_DENIED covers exact membership/classification rejection and content
+rejection (including oversized content). Write.READ_DENIED can arise at write
+membership or an existing file's implicit authorized read. The worker receives
+the fixed FILE_TOOL_DENIED response, so it cannot infer the internal cause.
+This response and safe categorical telemetry remain unchanged.
+
+The general fix places one shared contract before task/context data. Compact
+JSON arrays separate readable files, read-only files, writable existing files,
+and creation-approved paths. The contract explains exact relative arguments,
+non-authorizing context/references, the new-file lifecycle, bounded Edit and
+Write replacement, and stopping denied probes. Read/Edit/Write MCP descriptions
+agree with these semantics. A short final rule points back to the lists without
+duplicating them. No denied-probe cache is added: repeated identical requests
+were not established, and caching failures could obscure current-content changes.
+
+Regression tests capture both final role commands, compare their manifests to
+the authenticated supervisor policy after relay replacement, and exercise real
+broker reads/edits/writes and denials. They also cover the capped context mismatch,
+exact paths and denied aliases, partitioning/new-file lifecycle, and discovery
+record paths versus embedded references. Existing authorization, telemetry and
+lease tests remain applicable. Authorization derivation, path normalization,
+content filtering, context selection, tools/schemas, caps, resource limits,
+180+60/240-second lease, trusted-progress rules, two-attempt Fixer limit and the
+420-second trusted self-suite budget are unchanged. No provider/model call,
+benchmark special case, permission expansion or security exception is introduced.
+
+One later controlled live retest is recommended to measure denial counts,
+successful edits, completion and timeout under the unchanged caps/lease. This
+local audit cannot prove model compliance or live denial reduction. Keep raw
+paths, arguments, model text and secrets out of telemetry.
+
+#### Stage 1.12 reconciliation with the independent sanitized audit
+
+The independent candidate in `/root/omnirush-freeagentos-stage112` was inspected
+read-only, file by file; none of its files or patches were copied wholesale.
+The existing real-repository candidate's early contract placement, explicit
+read-only/existing-write/new-path partitions, exact relative path instructions,
+Edit/Write semantics and regression coverage remain in place. The shared
+capability/context-coherence diagnosis is supported by executable fixtures.
+Precise live denied paths and repeated-identical probes still cannot be recovered
+from categorical counters alone. In particular, Write.READ_DENIED can also arise
+from the implicit read of an existing writable file after its contents change;
+the counts alone do not prove every Write attempted a non-write member.
+
+| Area/file | Reconciliation decision |
+| --- | --- |
+| `read_policy.py`: exact sealed policy | Already covered for the contract; extract a shared validated decoder for context consumers. Sealing and authority are unchanged. |
+| `read_policy.py`: repository facts | Missing and justified. Project known Inspector fields only, filtering every structured path/source field to final readable membership. Reuse Inspector identifier/version sanitizers and its bounded valid-JSON budget. Prefer this strict projection to preserving arbitrary scalar fields or extra record keys. |
+| `read_policy.py`: candidate ordering | Different implementation preferred: retain selection unchanged. README/tests/manifests can displace related sources at the eight-file cap, but removing unlisted structured hints/context resolves coherence without reallocating grants or assuming sources are more useful than specification files. |
+| `coder.py` | Missing and justified: seal policy before worker context construction; filter active related files, prior changed-file hints, and facts to it. Fail closed before the worker when any active target lacks write membership, including unsupported creation targets. This prevents silently incomplete units and does not grant permission. |
+| `coding_units.py` | Missing and justified: worker FILE blocks use `read_authorized` with the final policy and root identity. Filter summary test locations as well as file candidates. Legacy controller-only callers retain their bounded existing behavior. |
+| `fixer.py` | Missing and justified: derive candidates with the existing controller packet, seal/narrow the policy, then rebuild the packet for injection against the final policy. The first packet is never supplied to the model. No additional worker/model call is added. |
+| `repair_context.py` | Different implementation preferred: filter candidates before constructing both FILE blocks and the diff, not just the context and evidence lists. Filter changed/deleted path hints and context-summary locations to the same final list. |
+| `file_tools.py`: tool descriptions | Mostly already covered; also state that Glob/Grep results grant no write access. Tool names/schemas and authorization decisions remain unchanged. |
+| `file_tools.py`: denial feedback | Missing and justified: return `FILE_TOOL_DENIED:<SAFE_FIXED_REASON>`. Reuse the exact existing telemetry reason mapping, including INVALID_REQUEST and TOOL_BUDGET/SESSION_BUDGET; unknown/sanitized errors use BROKER_INTERNAL. Preserve isError, denied/error counters, budgets, session lifecycle and trusted-success timing. No request or exception text is returned. |
+| `test_contract.py` / `test_file_read_policy.py` | Extend the preserved real-repo regressions with final context/facts/unit coherence, narrowed Fixer diff/evidence, pre-worker target rejection and categorical-feedback privacy. Preserve bounded table-driven output. |
+| `test_worker_resource.py` | Update four existing mocked no-broker fixtures to mock the new sealed-policy decoder alongside their already mocked flags/contract; these tests still exercise the worker timeout/cleanup boundary. Production policy decoding is never bypassed. |
+
+Coherence is guaranteed for controller-generated structured repository path
+fields, actionable unit metadata, prior changed-file hints, injected FILE blocks,
+context-summary locations, repair candidate/change/deletion lists and diff file
+headers. Every such readable path belongs to the final sealed read list; active
+Coder targets must belong to its write list. New-file paths retain their explicit
+creation/lifecycle semantics. Original task/plan/research, implementation source
+text, test identifiers and sanitized failure excerpts remain non-authorizing data;
+they can naturally mention unlisted paths. Their text is not parsed into grants,
+and the contract and diagnostic heading explicitly distinguish it from actionable
+file capabilities. It is neither possible nor useful to interpret every textual
+reference as a capability.
+
+The Astra implementation's unfiltered Fixer diff, unfiltered context-summary
+locations and permissive unknown fact fields were not adopted. Nor were its
+older late contract placement or removal of the existing real-repo regression
+coverage. No denial circuit breaker, raw-manifest policy change, alias acceptance,
+read-order change, capability expansion, cap/lease change, model retry/call,
+telemetry path storage or benchmark-specific logic is introduced. Authorization
+selection remains byte-for-byte unchanged; denied activity still cannot update
+the controller-authenticated success timestamp used by the lease.

@@ -161,7 +161,7 @@ def _diff(repo, names, new_files):
     return {"text": "".join(chunks), "omitted_or_truncated_files": omitted}
 
 
-def repair_packet(state):
+def repair_packet(state, *, policy=None):
     from roles.coding_units import (_target_path, local_context_packet, MAX_CONTEXT_FILES, MAX_TARGET_FILES)
     from roles.tester import _is_test_file
 
@@ -192,6 +192,8 @@ def repair_packet(state):
             continue
         if name in current["deleted"] or name in candidates:
             continue
+        if policy is not None and name not in policy["files"]:
+            continue
         if name in current["new"] and state.get("allow_new_files") is not True:
             raise RuntimeError("FIXER_CONTEXT_POLICY_DENIED")
         if name not in tracked and name not in current["new"]:
@@ -211,7 +213,7 @@ def repair_packet(state):
                      "repo_facts": {**(state.get("repo_facts") or {}), "relevant_files": []}}
     context = local_context_packet(context_state, {"target_files": candidates[:MAX_TARGET_FILES],
                                                   "files": candidates[MAX_TARGET_FILES:]},
-                                   include_readme="README.md" not in current["deleted"])
+                                   include_readme="README.md" not in current["deleted"], policy=policy)
     machine = state.get("machine_failure_evidence")
     # Only Tester sets this field in production. Revalidate its bounded shape
     # for direct/legacy fixture callers; never accept path authority from it.
@@ -231,16 +233,20 @@ def repair_packet(state):
                      if isinstance(item, dict) and item.get("role") == "fixer"][-2:]
     if prior_repairs:
         previous = _count((prior_repairs[-1].get("context") or {}).get("fixer_current_failure_count"))
+
+    def visible(name):
+        return policy is None or name in policy["files"]
+
     packet = {"test_result": state.get("test_result") if state.get("test_result") in ("PASS", "FAIL") else "UNKNOWN",
               "test_exit": _count(state.get("test_exit")),
               "failure_evidence": evidence, "unit_progress": progress, "repair_progress": repair_progress,
               "baseline_failures": _count((state.get("workspace_test_attestation") or {}).get("baseline_failures")),
               "changed_files": [name for name in current["changed"]
-                                if _target_path(name) and not _is_test_file(name)][:24],
+                                if _target_path(name) and not _is_test_file(name) and visible(name)][:24],
               "changed_files_truncated": len([name for name in current["changed"]
-                                               if _target_path(name) and not _is_test_file(name)]) > 24,
+                                               if _target_path(name) and not _is_test_file(name) and visible(name)]) > 24,
               "authorized_deleted_files": [name for name in current["deleted"]
-                                           if _target_path(name) or name == "README.md"][:24],
+                                           if (_target_path(name) or name == "README.md") and visible(name)][:24],
               "deleted_files_truncated": len(current["deleted"]) > 24,
               "repair_candidates": candidates, "diff_check_exit": _count(state.get("diff_check_exit")),
               "integrity_clean": not any((state.get("integrity_violations") or {}).values()),

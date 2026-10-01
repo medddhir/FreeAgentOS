@@ -291,6 +291,7 @@ class FileReadPolicyTests(unittest.TestCase):
         self.assertEqual(len(replies[1]["result"]["tools"]), 5)
         self.assertIn("return 1", replies[2]["result"]["content"][0]["text"])
         self.assertTrue(replies[3]["result"]["isError"])
+        self.assertEqual(replies[3]["result"]["content"][0]["text"], "FILE_TOOL_DENIED:READ_DENIED")
         self.assertNotIn("../secret", result.stdout)
 
     def test_stdio_rejects_policy_tampering(self):

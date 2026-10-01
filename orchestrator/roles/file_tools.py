@@ -34,16 +34,26 @@ SCHEMAS = {
 
 
 def tool_list():
-    descriptions = {"read_file": "Read an authorized current file in bounded byte chunks.",
-                    "glob_files": "List only authorized current files matching a relative glob.",
-                    "grep_files": "Literal substring search only within authorized current files.",
-                    "edit_file": "Replace one exact unique substring in an authorized current file.",
-                    "write_file": "Write an authorized current or controller-approved new file."}
+    descriptions = {"read_file": "Read a listed workspace-relative path exactly (no absolute path or ./), in bounded byte chunks.",
+                    "glob_files": "List only authorized current files matching a relative glob; results grant no write access.",
+                    "grep_files": "Literal substring search only within authorized current files; results grant no write access.",
+                    "edit_file": "Edit a listed writable existing file; use its exact relative path and one nonempty unique old_text match.",
+                    "write_file": "Replace a listed writable existing file, or create a listed creation-approved path. Exact relative path; text at most 8192 UTF-8 bytes. Prefer Edit for focused changes."}
     return [{"name": name, "description": descriptions[name],
              "inputSchema": {"type": "object", "properties": properties,
                              "required": [key for key in properties if key != "offset"],
                              "additionalProperties": False}}
             for name, properties in SCHEMAS.items()]
+
+
+def denial_reason(exc, calls):
+    """Map fixed internal codes to the existing safe broker reason taxonomy."""
+    code = exc.args[0] if len(exc.args) == 1 else None
+    if code == "FILE_TOOL_BUDGET_EXHAUSTED":
+        return "TOOL_BUDGET" if calls > MAX_TOOL_CALLS else "SESSION_BUDGET"
+    if code == "FILE_TOOL_ARGUMENT_INVALID":
+        return "INVALID_REQUEST"
+    return code if isinstance(code, str) and code in REASONS else "BROKER_INTERNAL"
 
 
 def _identity(info):
@@ -112,13 +122,7 @@ class FileTools:
         try:
             result = self._call(name, arguments)
         except ReadDenied as exc:
-            code = exc.args[0] if len(exc.args) == 1 else None
-            if code == "FILE_TOOL_BUDGET_EXHAUSTED":
-                reason = "TOOL_BUDGET" if self.calls > MAX_TOOL_CALLS else "SESSION_BUDGET"
-            elif code == "FILE_TOOL_ARGUMENT_INVALID":
-                reason = "INVALID_REQUEST"
-            else:
-                reason = code if isinstance(code, str) and code in REASONS else "BROKER_INTERNAL"
+            reason = denial_reason(exc, self.calls)
             self.telemetry.failure(reason, error=reason == "BROKER_INTERNAL", tool=name)
             if reason == "BROKER_INTERNAL":
                 raise ReadDenied("FILE_TOOL_INTERNAL") from None
@@ -244,8 +248,11 @@ def serve(policy, input_stream, output_stream, telemetry=None):
                 try:
                     data = tools.call(params.get("name"), params.get("arguments", {}))
                     result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}
-                except (ReadDenied, OSError, ValueError, TypeError):
-                    result = {"content": [{"type": "text", "text": "FILE_TOOL_DENIED"}], "isError": True}
+                except (ReadDenied, OSError, ValueError, TypeError) as exc:
+                    # No exception/request data leaves this boundary: only a
+                    # member of the existing fixed controller reason taxonomy.
+                    reason = denial_reason(exc, tools.calls) if isinstance(exc, ReadDenied) else "BROKER_INTERNAL"
+                    result = {"content": [{"type": "text", "text": "FILE_TOOL_DENIED:" + reason}], "isError": True}
             elif method.startswith("notifications/"):
                 continue
             else:
