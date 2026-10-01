@@ -363,11 +363,19 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
     raw = json.dumps(request, separators=(",", ":")).encode()
     if len(raw) > 128 * 1024:
         raise WorkerBoundaryError("WORKER_REQUEST_TOO_LARGE")
+    from roles.model_profiles import command_identity, requested_identity, ModelProfileError
+    try:
+        model_selection = (command_identity(cmd, role) if cmd[0] == "claude-free" else
+                           requested_identity("researcher") if role.startswith("research:") else None)
+    except ModelProfileError as exc:
+        raise WorkerBoundaryError(str(exc)) from None
     resolution = {"worker_executable_resolved": shutil.which(cmd[0]) is not None,
                   "claude_free_resolved": shutil.which("claude-free") is not None
                   if cmd[0] == "claude-free" else None,
                   "claude_executable_available": shutil.which("claude") is not None
                   if cmd[0] == "claude-free" else None}
+    if model_selection is not None:
+        resolution["model_selection"] = model_selection
     health = _gateway_health() if cmd[0] == "claude-free" and policy_profile == "model" else {
         "gateway_health_status": "NOT_CHECKED", "gateway_health_latency_ms": None,
         "gateway_request_observed": "UNAVAILABLE"}

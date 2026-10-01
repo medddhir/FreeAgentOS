@@ -44,6 +44,8 @@ def _parser():
     parser.add_argument("--allow-test-changes", action="store_true",
                         help="Trusted permission for test edits; other protections still apply.")
     parser.add_argument("--json", action="store_true", help="Emit bounded machine-readable final status.")
+    parser.add_argument("--model-profile", action="append", default=[], metavar="ROLE=PROFILE",
+                        help="Optional controller role profile; default Auto preserves current selection.")
     parser.epilog = ("Exit codes: 0 VERIFIED, 1 UNVERIFIED, 2 BLOCKED, 3 invalid input, "
                      "4 controller failure, 130/143 interrupted. freeagent-test alone is not full verification.")
     return parser
@@ -120,6 +122,9 @@ def _evidence(value):
         result["activity"] = safe_activity(value["activity"])
     if "completion" in value:
         result["completion"] = safe_completion(value["completion"])
+    from roles.model_profiles import safe_model_selection
+    if "model_selection" in value:
+        result["model_selection"] = safe_model_selection(value["model_selection"])
     from roles.lease import safe_lease
     if "lease" in value:
         result["lease"] = safe_lease(value["lease"])
@@ -336,6 +341,19 @@ def main(argv=None):
     json_mode = "--json" in argv
     try:
         args = _parser().parse_args(argv)
+        from roles.model_profiles import configured_selection, ModelProfileError
+        overrides = {}
+        try:
+            if len(args.model_profile) > 5:
+                raise ModelProfileError("MODEL_SELECTION_INVALID")
+            for item in args.model_profile:
+                parts = item.split("=", 1)
+                if len(parts) != 2 or parts[0] in overrides:
+                    raise ModelProfileError("MODEL_SELECTION_INVALID")
+                overrides[parts[0]] = parts[1]
+            configured_selection(overrides)
+        except ModelProfileError as exc:
+            raise UsageError(str(exc)) from None
         repo = _repo(args.repo)
         task = _task(args.task)
     except UsageError as exc:
@@ -357,7 +375,8 @@ def main(argv=None):
         state = {"repo_dir": str(repo), "task": task, "trace": [],
                  "allow_new_files": args.allow_new_files, "allow_deletes": args.allow_deletes,
                  "allow_test_changes": args.allow_test_changes}
-        final = graph.build_graph().invoke(state)
+        controller_graph = graph.build_graph(model_profiles=overrides) if overrides else graph.build_graph()
+        final = controller_graph.invoke(state)
         result = _projection(final, repo, task, recovery)
         return_code = EXIT_CODES[result["status"]]
         _emit(result, args.json)

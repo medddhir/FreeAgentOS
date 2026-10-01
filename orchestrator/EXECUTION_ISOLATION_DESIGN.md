@@ -1009,3 +1009,110 @@ durations through a separately privacy-reviewed collector; never collect payload
 or logs. Existing worker fields alone cannot distinguish client waiting from
 provider silence, hidden reasoning, gateway retries or a missing SSE terminator.
 Do not infer automatic completion from inactivity or successful edits.
+
+## Stage 2.2 — Role-Aware Model Profiles & Compatibility Registry
+
+The Stage 2.1 live diagnostic completed the Coder path: successful tool calls,
+accepted success result, both pipe EOFs and process exit in about 34 seconds.
+Its public failure count regressed and the controller routed to Fixer. Fixer had
+no result/EOF, remained alive and timed out at the base lease with stale trusted
+progress. This disproves a permanent completion-detection failure; it does not
+establish upstream served identity or explain session variability/quality.
+Stage 1 permissions and Stage 2.1 completion/lease decisions remain intact.
+
+### Current selection and implemented foundation
+
+Planner, Coder, Fixer and Reviewer use a common model_command builder. Its default
+argv is byte-for-byte equivalent to their previous construction, including print,
+output format, sealed MCP flags, permission flags and prompt position. The launcher
+claude-free forwards argv to installed Claude Code 2.1.284 and sets the loopback
+Anthropic-compatible gateway URL/authentication. Its credential file was not read.
+The installed binary contains the --model <model> CLI option; no Claude process
+or model request was executed for this audit. Without explicit selection, client
+defaults/config and inherited ANTHROPIC_MODEL/family-model environment settings
+may influence requested identity; gateway family mappings/catalog routing determine
+the actual upstream choice. Runtime configuration/credentials were not inspected.
+
+roles/model_profiles.py defines three controller-owned profiles in a read-only
+registry with frozen records and immutable role sets:
+
+| Profile | Adapter | Requested model | Suitable roles |
+| --- | --- | --- | --- |
+| claude-free-default | claude-code-freellmapi | CLIENT_DEFAULT (no --model) | Planner, Coder, Fixer, Reviewer |
+| claude-free-auto | claude-code-freellmapi | auto (explicit --model auto) | Planner, Coder, Fixer, Reviewer |
+| research-tools | bounded-research-tools | NOT_APPLICABLE | Researcher |
+
+The auto identifier is grounded in the installed gateway's existing model route.
+The opt-in profile is not a different-provider adapter or a quality improvement
+claim. No specific catalog model, local model or Astra provider is fabricated.
+Researcher remains its real bounded Exa/dev/prompt/Jina action dispatcher; Inspector
+remains deterministic and has no model profile. Future adapters require a real
+implementation and compatibility evidence, not merely a new metadata entry.
+
+Auto is deterministic controller resolution: each role maps to its configured
+profile, otherwise the legacy default above. The optional trusted API is
+build_graph(model_profiles={"coder": "claude-free-auto"}); the CLI equivalent is
+--model-profile coder=claude-free-auto, repeatable for distinct roles (at most five).
+ROLE=auto selects that role's default. Unknown/duplicate/malformed/incompatible
+selections fail with fixed safe codes before workspace/model work. CLI behavior
+without this optional flag is unchanged. No state field or model response can
+select a profile: configuration is copied, validated and captured by the graph,
+then scoped with a ContextVar for each node. Scope resets on exceptions and is
+isolated across graph invocations/threads. No global mutable routing state,
+adaptive score, live-history selection, model retry or fallback is introduced.
+
+### Compatibility, identity and security separation
+
+Profiles contain only identity, role suitability, compatibility booleans,
+context/cost/availability classes. Current context capacity is UNKNOWN; cost and
+availability are CONFIGURED, not claims of current quota or availability. The
+booleans describe the installed client/adapter interface contract, including
+result envelopes, streaming and tools. They are controller declarations grounded
+in deterministic protocol tests and live completion evidence, not model claims
+or guarantees about every auto-routed provider's quality/long-session performance.
+
+Planner/Reviewer require structured results and result envelopes. Coder/Fixer
+require tools, streaming, dynamic tool schemas, result envelopes and agent-session
+support. Researcher requires its bounded-tools adapter and role suitability, not
+fictional model abilities. Validate all roles, including defaults, when building
+the graph and again during command construction/execution. Unsupported adapters
+and role/profile pairs fail closed. The worker checks that actual explicit model
+arguments agree with the selected profile before launching; it does not obtain
+requested identity from stdout or environment.
+
+The outer worker adds model_selection with exact registry-derived
+model_profile_id, adapter_id, requested_model_id and compatibility=VALIDATED.
+CLIENT_DEFAULT explicitly means the controller supplied no model identifier.
+served_model_id is always UNAVAILABLE: a requested pin/auto name cannot establish
+what the gateway served, and current gateway pin resolution can itself degrade to
+auto. Planner and CLI projections whitelist exact registered identity tuples,
+discard extra keys and reject spoofed served/requested identity. No credentials,
+prompt, model text, tool arguments, paths or provider payloads are retained here.
+Research workers expose their actual non-model transport profile in the same form.
+
+Model profiles are structurally separate from worker resource policy_profile.
+They cannot contain grants, security flags, resource/lease overrides, environment,
+arbitrary argv, executables or credential data. The builder changes only explicit
+model selection; read/write/new policy and MCP flags are supplied unchanged by
+the existing controller. Sandbox/cgroup and worker/role timeouts remain unchanged;
+selection never enters authorization derivation or trusted-progress decisions.
+Fixer attempts remain two; Coder/Fixer retain 180 seconds plus at most one trusted
+60-second grace, with a 240-second absolute cap. The trusted suite retains its
+420-second timeout and 64 KiB output cap.
+
+Regressions exercise immutable lookup, default/unknown/incompatible selection,
+every role capability requirement, frozen records, real role command/policy
+comparisons (including approved creation), broker denials, resource/lease equality,
+state/prompt injection resistance, concurrent graph scopes, exception reset,
+outer evidence projection and CLI configuration/privacy. Existing Stage 1 tests
+are unchanged. Registry fixtures are synthetic tests, not production adapters;
+no live generation is used. One grouped test entry preserves bounded verbose
+output while executing all new behavioral cases.
+
+Do not A/B the legacy and explicit-auto profiles as if they guaranteed different
+models. A useful later comparison needs one separately approved compatible
+catalog profile with independently established served identity, identical
+controller capability/leases, and exactly one default versus one candidate run.
+Compare completion/result/EOF, broker friction, public-test change and latency.
+Next milestone: validate one real coding/fixing model profile and served-identity
+evidence, then perform that bounded comparison; no automatic fallback yet.

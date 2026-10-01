@@ -320,14 +320,17 @@ def finalizer_node(state: AgentState):
     return result
 
 
-def build_graph():
+def build_graph(*, model_profiles=None):
     """Build the production graph; tests can replace model boundaries."""
+    from roles.model_profiles import configured_selection, profile_scope
+    selection = configured_selection(model_profiles)
     builder = StateGraph(AgentState)
 
     def timed(name, node):
         def run(state):
             started = time.monotonic_ns()
-            result = node(state)
+            with profile_scope(selection):
+                result = node(state)
             return {**result, "role_timing_history": [{
                 "role": name, "elapsed_ms": max(0, (time.monotonic_ns() - started) // 1_000_000)}]}
         return run

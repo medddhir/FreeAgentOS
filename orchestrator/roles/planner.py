@@ -6,6 +6,7 @@ from state import AgentState
 from roles.coding_units import (MAX_UNITS, MAX_EXPLICIT_GOAL, MAX_TARGET_FILES, MAX_TARGET_PATH,
                                 validate_planner_units, GOAL_GENERATION_PATTERN, UnitGoalFailure)
 from roles.worker import WorkerBoundaryError, run_worker
+from roles.model_profiles import model_command
 from roles.workspace import verify_execution_contract
 from roles.read_policy import no_file_tool_flags
 
@@ -105,6 +106,9 @@ def _safe_evidence(value):
         result["gateway_health_status"] = value["gateway_health_status"]
     if value.get("gateway_request_observed") == "UNAVAILABLE":
         result["gateway_request_observed"] = "UNAVAILABLE"
+    from roles.model_profiles import safe_model_selection
+    if "model_selection" in value:
+        result["model_selection"] = safe_model_selection(value["model_selection"])
     for key in ("resource_hits", "controls"):
         data = value.get(key)
         if isinstance(data, dict):
@@ -240,20 +244,7 @@ Rules:
 Return only the schema-constrained structured result.
 """.strip()
 
-    cmd = [
-        "claude-free",
-        *no_file_tool_flags(),
-        "--permission-mode",
-        "dontAsk",
-        "--permission-prompts",
-        "none",
-        "--output-format",
-        "json",
-        "--json-schema",
-        schema_json,
-        "-p",
-        prompt,
-    ]
+    cmd = model_command("planner", no_file_tool_flags(), prompt, schema=schema_json)
 
     try:
         result = run_worker(cmd, timeout=PLANNER_TIMEOUT, role="planner")

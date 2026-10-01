@@ -6,6 +6,7 @@ from state import AgentState
 from roles.integrity import policy_summary
 from roles.repair_context import repair_packet, sanitized
 from roles.worker import WorkerBoundaryError, run_worker
+from roles.model_profiles import model_command
 from roles.workspace import verify_execution_contract
 from roles.read_policy import file_tool_flags, validate_policy, capability_contract, sealed_policy
 from roles.intermediate_repair import repair_targets
@@ -152,17 +153,7 @@ This is repair attempt {attempts + 1} of 2 globally.
 """.strip()
     metrics = {**packet["metrics"], "fixer_prompt_chars": len(prompt)}
 
-    cmd = [
-        "claude-free",
-        "--output-format", "stream-json", "--verbose", "--no-session-persistence",
-        *tool_flags,
-        "--permission-mode",
-        "dontAsk",
-        "--permission-prompts",
-        "none",
-        "-p",
-        prompt,
-    ]
+    cmd = model_command("fixer", tool_flags, prompt)
 
     try:
         result = run_worker(cmd, cwd=repo, timeout=FIXER_TIMEOUT, role="fixer", stream_activity=True)

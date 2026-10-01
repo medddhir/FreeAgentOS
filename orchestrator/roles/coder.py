@@ -5,6 +5,7 @@ from state import AgentState
 from roles.integrity import policy_summary
 from roles.controller_git import run_git
 from roles.worker import WorkerBoundaryError, run_worker
+from roles.model_profiles import model_command
 from roles.workspace import verify_execution_contract
 from roles.coding_units import MAX_UNITS, local_context_packet
 from roles.read_policy import file_tool_flags, capability_contract, sealed_policy, worker_facts
@@ -241,17 +242,7 @@ Act on the repository now.
     context_metrics = {key: value for key, value in context_packet.items() if key != "text"}
     context_metrics.update({"coder_prompt_chars": len(prompt), "repo_facts_chars": len(repo_facts),
                             "planner_steps_context_count": len(steps)})
-    cmd = [
-        "claude-free",
-        "--output-format", "stream-json", "--verbose", "--no-session-persistence",
-        *tool_flags,
-        "--permission-mode",
-        "dontAsk",
-        "--permission-prompts",
-        "none",
-        "-p",
-        prompt,
-    ]
+    cmd = model_command("coder", tool_flags, prompt)
 
     try:
         verify_execution_contract(state)

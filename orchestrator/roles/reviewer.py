@@ -5,6 +5,7 @@ from typing import Any
 
 from state import AgentState
 from roles.worker import WorkerBoundaryError, run_worker
+from roles.model_profiles import model_command
 from roles.workspace import verify_execution_contract
 from roles.coding_units import MAX_UNITS
 from roles.sandbox import REQUIRED_CONTROLS
@@ -267,20 +268,7 @@ Return only the schema-constrained structured result.
 """.strip()
 
     result = run_worker(
-        [
-            "claude-free",
-            *no_file_tool_flags(),
-            "--permission-mode",
-            "dontAsk",
-            "--permission-prompts",
-            "none",
-            "--output-format",
-            "json",
-            "--json-schema",
-            schema,
-            "-p",
-            prompt,
-        ],
+        model_command("reviewer", no_file_tool_flags(), prompt, schema=schema),
         timeout=REVIEWER_TIMEOUT,
         role="reviewer",
     )
