@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Launch the external benchmark driver; default actions never invoke models."""
+import os
+from pathlib import Path
+import sys
+root=Path(__file__).resolve().parents[1]
+os.execv(str(root/'.venv-orchestrator/bin/python3'),[str(root/'.venv-orchestrator/bin/python3'),str(root/'benchmarks/shipment_ab.py'),*sys.argv[1:]])

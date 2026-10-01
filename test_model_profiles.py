@@ -24,7 +24,7 @@ import test_contract as contract
 class P(unittest.TestCase):
     def test(self):
         # One table entry preserves the trusted runner's 64 KiB verbose-output cap.
-        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification, self.fixture_audit, self.default_qualification):
+        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification, self.fixture_audit, self.default_qualification, self.shipment_ab):
             with self.subTest(case=case.__name__):
                 case()
 
@@ -399,3 +399,9 @@ class P(unittest.TestCase):
             with patch.object(qualification,'catalog_ready') as catalog, patch.object(qualification,'run_worker') as run:
                 with self.assertRaises(ValueError): qualification.qualify(invalid)
             catalog.assert_not_called();run.assert_not_called()
+
+
+    def shipment_ab(self):
+        # Preserve the trusted runner capture cap while executing all new assertions.
+        from test_shipment_ab import check_driver
+        check_driver(self)
