@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Default: safe description only. --live is an explicitly authorized future smoke."""
+import os
+from pathlib import Path
+import sys
+
+root = Path(__file__).resolve().parents[1]
+python = root / ".venv-orchestrator" / "bin" / "python3"
+module = root / "orchestrator" / "model_qualification.py"
+if not python.is_file() or not module.is_file():
+    print('{"status":"BLOCKED","reason":"QUALIFICATION_RUNTIME_UNAVAILABLE"}')
+    raise SystemExit(2)
+os.execv(str(python), [str(python), str(module), *sys.argv[1:]])

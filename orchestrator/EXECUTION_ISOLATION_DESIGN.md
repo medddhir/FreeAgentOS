@@ -1116,3 +1116,92 @@ controller capability/leases, and exactly one default versus one candidate run.
 Compare completion/result/EOF, broker friction, public-test change and latency.
 Next milestone: validate one real coding/fixing model profile and served-identity
 evidence, then perform that bounded comparison; no automatic fallback yet.
+
+## Stage 2.3 — one catalog-backed qualification candidate
+
+This milestone leaves default selection, authorization, resource policy, leases
+and fallback behavior unchanged. `claude-free-gpt-oss-120b` is opt-in and limited
+to Coder/Fixer. Its concrete selector is `openai/gpt-oss-120b`. The local enabled
+Groq catalog row declares tools and 131072 tokens of context; an enabled route
+and configured credential exist. These are configuration observations, not proof
+of usable credentials, available quota, served identity or model performance.
+Compatibility and qualification remain CONFIGURED. Adapter session capabilities
+are declarations; the particular model's long-session reliability is unverified.
+Planner/Reviewer structured-output compatibility is deliberately not claimed.
+
+### Installed chain, inspected without generation or credential values
+
+The installed `claude-free` launcher forwards `"$@"` to Claude Code. Installed
+Claude Code 2.1.284 supports `--model <model>` with aliases or full identifiers.
+The controller's immutable profile supplies that argument; task/model text does
+not select it. The current default supplies no flag (CLIENT_DEFAULT).
+
+In the running FreeLLMAPI container, `services/anthropic-map.js` resolves Claude
+families through `anthropic_model_map`. The inspected default/opus/sonnet/haiku
+mapping is auto for each. Concrete enabled catalog IDs can instead resolve to a
+model row. Unknown/disabled IDs degrade to auto, so client acceptance of a string
+alone proves nothing. `services/model-groups.js` currently enables model groups
+unconditionally; do not infer its effective behavior from the stored toggle.
+The Anthropic route uses a strict logical-model group chain when one is viable;
+provider dispatch/health/quota can still affect execution. A preferred-row route
+can otherwise use broader fallback. This gateway behavior is pre-existing;
+FreeAgentOS adds no fallback or retry.
+
+The configured Groq adapter is OpenAI-compatible. `providers/openai-compat.js`
+forwards the selected model identifier, tools and streaming flag upstream.
+Anthropic tool conversion preserves input_schema, including dynamic path enums.
+Other locally configured tool-capable selectors observed include
+`codestral-latest` and `nvidia/nemotron-3-super-120b-a12b:free`; no additional
+profiles or qualification sessions are added for them.
+
+### Attribution boundary
+
+The Anthropic route emits the requested model in message_start/non-stream model
+fields. X-Routed-Via identifies the gateway's selected route, not authenticated
+upstream identity, and is not exposed in Claude Code NDJSON. The gateway's
+`lib/served-model.js` observer is used in its OpenAI proxy route, not the inspected
+Anthropic route; its nullable drift record also cannot distinguish matching from
+missing identity. No raw request/log rows were consulted. Consequently all
+FreeAgentOS served_model_id values remain UNAVAILABLE. No identity match is
+claimed. Default auto may already choose the candidate; actual upstream
+distinctness is UNPROVEN until trustworthy attribution is available.
+
+Safe requested identity now includes registry-derived
+qualification_status=CONFIGURED; projection rejects spoofed verification or
+served identity, discards extra fields and still accepts older evidence tuples.
+No raw upstream headers/payloads, credentials or model transcripts are retained.
+
+### Exactly one future, separately authorized smoke
+
+Default description (no catalog probe, no generation):
+
+    /root/agent-stack/bin/freeagent-qualify-model --profile claude-free-gpt-oss-120b
+
+Only after separate operator authorization:
+
+    /root/agent-stack/bin/freeagent-qualify-model --profile claude-free-gpt-oss-120b --live
+
+The live command rechecks the exact enabled Groq row through a read-only database
+connection and emits only a readiness boolean internally. If unavailable it fails
+closed before generation. This cannot eliminate routing changes between check
+and dispatch, or establish served identity. It creates one synthetic Git fixture,
+uses the normal controller workspace/manifest and host preflight, seals a policy
+with one existing writable file and zero creation paths, and starts exactly one
+Coder worker. No Planner, Fixer, Reviewer or fallback model call is made. The
+worker gets the same production sandbox, cgroup, resource policy and 180-second
+lease with at most one trusted 60-second grace and 240-second absolute cap.
+
+The worker must perform one authorized Read and one Edit, produce a successful
+result event, reach stdout/stderr EOF and exit with confirmed cleanup; the
+controller checks the exact synthetic change and removes its workspace. Output
+contains bounded existing safe evidence plus fixed qualification categories,
+never paths or content. SESSION_SMOKE_PASS verifies only that short Coder tool
+loop. It does not verify Fixer repair quality, long sessions, served identity or
+upstream distinctness. It cannot by itself justify a distinct-model shipment A/B.
+No live invocation is part of deterministic testing.
+
+Tests execute actual fixture/workspace/sealed broker operations with the model
+worker mocked, reject incomplete completion evidence, verify default dry-run and
+stale catalog gating, and compare both candidate roles against the default under
+identical read/write/new, resource and lease state. Existing Stage 1 tests remain
+unchanged. Live attribution and this one smoke precede any shipment comparison.

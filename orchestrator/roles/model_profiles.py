@@ -28,6 +28,7 @@ class ModelProfile:
     context_class: str
     cost_class: str
     availability_class: str
+    qualification_status: str = "CONFIGURED"
 
 
 MODEL_ROLES = frozenset(("planner", "coder", "fixer", "reviewer"))
@@ -40,6 +41,11 @@ REGISTRY = MappingProxyType({
     "claude-free-auto": ModelProfile(
         "claude-free-auto", "claude-code-freellmapi", "auto", MODEL_ROLES,
         True, True, True, True, True, True, "UNKNOWN", "CONFIGURED", "CONFIGURED"),
+    # Local enabled Groq catalog entry; tools/context configured, live qualification pending.
+    "claude-free-gpt-oss-120b": ModelProfile(
+        "claude-free-gpt-oss-120b", "claude-code-freellmapi", "openai/gpt-oss-120b",
+        frozenset(("coder", "fixer")), True, True, False, True, True, True,
+        "128K_CONFIGURED", "CONFIGURED", "CONFIGURED"),
     "research-tools": ModelProfile(
         "research-tools", "bounded-research-tools", None, frozenset(("researcher",)),
         False, False, False, False, False, False, "NOT_APPLICABLE", "CONFIGURED", "CONFIGURED"),
@@ -113,7 +119,8 @@ def requested_identity(role):
     profile = selected_profile(role)
     return {"model_profile_id": profile.profile_id, "adapter_id": profile.adapter_id,
             "requested_model_id": profile.model_id or ("NOT_APPLICABLE" if role == "researcher" else "CLIENT_DEFAULT"),
-            "compatibility": "VALIDATED", "served_model_id": "UNAVAILABLE"}
+            "compatibility": "VALIDATED", "served_model_id": "UNAVAILABLE",
+            "qualification_status": profile.qualification_status}
 
 
 def safe_model_selection(value):
@@ -125,8 +132,11 @@ def safe_model_selection(value):
         return {}
     expected = {"model_profile_id": profile.profile_id, "adapter_id": profile.adapter_id,
                 "requested_model_id": profile.model_id or ("NOT_APPLICABLE" if profile.roles == frozenset(("researcher",)) else "CLIENT_DEFAULT"),
-                "compatibility": "VALIDATED", "served_model_id": "UNAVAILABLE"}
-    return expected if all(value.get(key) == item for key, item in expected.items()) else {}
+                "compatibility": "VALIDATED", "served_model_id": "UNAVAILABLE",
+                "qualification_status": profile.qualification_status}
+    # Preserve projection of older evidence; only the controller registry supplies this label.
+    return expected if all(value.get(key, item if key == "qualification_status" else None) == item
+                           for key, item in expected.items()) else {}
 
 
 def model_command(role, tool_flags, prompt, *, schema=None):
