@@ -90,15 +90,66 @@ def check_driver(self):
             unsafe=json.loads(first);unsafe['worker_cleanup']='UNPROVEN';first_record.write_text(json.dumps(unsafe))
             with self.assertRaisesRegex(h.Abort,'PREVIOUS_CLEANUP_UNPROVEN'): h.run_arm(path,'gptoss',True)
             first_record.write_text(first)
-            with patch.object(graph,'build_graph',return_value=mocked_graph),patch.object(h,'public_score',side_effect=h.Abort('PUBLIC_RESULTS_UNAVAILABLE')),patch.object(h,'cleanup_state',return_value='CONFIRMED') as cleanup:
+            # Eligibility checks inspect immutable provenance and actual worker
+            # cleanup evidence, not just a cached summary or workload success.
+            original=json.loads(first)
+            for outcome in ('VERIFIED','BLOCKED'):
+                prior={**original,'controller_final_state':outcome,'failure':'NONE'}
+                prior.pop('failure_class',None)
+                first_record.write_text(json.dumps(prior))
+                h.eligibility(path,plan,'gptoss')
+            timeout={**original,'failure':'PUBLIC_RESULTS_UNAVAILABLE',
+                     'controller_final_state':'BLOCKED','block_reason':'CODER_TIMEOUT','public_after':None}
+            timeout.pop('failure_class',None)
+            timeout['workers']=[{'role':'coder','evidence':{'cleanup_status':'CONFIRMED',
+                                'remaining_processes':0,'timeout_triggered':True,'worker_exit_code':124}}]
+            first_record.write_text(json.dumps(timeout))
+            self.assertEqual(h.failure_class(timeout),'ARM_OUTCOME_FAILURE')
+            h.eligibility(path,plan,'gptoss')
+            for prior,code in (({**timeout,'cleanup':'UNPROVEN'},'PREVIOUS_CLEANUP_UNPROVEN'),
+                               ({**timeout,'failure':'WORKLOAD_OR_VERIFICATION_FAILED'},'PREVIOUS_DRIVER_FAILURE'),
+                               ({**timeout,'plan_sha256':'bad'},'PREVIOUS_RECORD_MISMATCH'),
+                               ({**timeout,'failure_class':'DRIVER_FAILURE'},'PREVIOUS_DRIVER_FAILURE')):
+                first_record.write_text(json.dumps(prior))
+                with self.assertRaisesRegex(h.Abort,code): h.eligibility(path,plan,'gptoss')
+            remaining={**timeout,'workers':[{'role':'coder','evidence':{
+                       'cleanup_status':'CONFIRMED','remaining_processes':1}}]}
+            first_record.write_text(json.dumps(remaining))
+            with self.assertRaisesRegex(h.Abort,'PREVIOUS_CLEANUP_UNPROVEN'): h.eligibility(path,plan,'gptoss')
+            first_record.write_text(json.dumps(timeout))
+            self.assertFalse((path.parent/'gptoss-started.json').exists())
+            with patch.object(h,'validate',side_effect=h.Abort('WORKTREE_DIRTY')),patch.object(graph,'build_graph') as no_worker:
+                with self.assertRaisesRegex(h.Abort,'WORKTREE_DIRTY'): h.run_arm(path,'gptoss',True)
+                no_worker.assert_not_called()
+            self.assertFalse((path.parent/'gptoss-started.json').exists())
+            with patch.object(h,'validate',return_value={'status':'DRY_RUN_PASS','models_invoked':0}):
+                self.assertTrue(h.validate_arm(path,'gptoss')['eligible_for_first_live_workload'])
+            with self.assertRaisesRegex(h.Abort,'ARM_ALREADY_ATTEMPTED'): h.eligibility(path,plan,'auto')
+            first_record.write_text(first)
+            with patch.object(graph,'build_graph',return_value=mocked_graph),patch.object(h,'public_score',side_effect=h.Abort('PUBLIC_RESULTS_UNAVAILABLE')),patch.object(h,'final_patch',return_value={'changed_files':[],'final_patch_sha256':'e'*64}),patch.object(h,'cleanup_state',return_value='CONFIRMED') as cleanup:
                 failed=h.run_arm(path,'gptoss',True)
             cleanup.assert_called_once();self.assertIsNone(failed['public_after'])
             self.assertEqual(failed['failure'],'PUBLIC_RESULTS_UNAVAILABLE')
+            self.assertEqual(failed['failure_class'],'ARM_OUTCOME_FAILURE')
             comparison=h.compare(path);self.assertFalse(comparison['statistical_superiority_claimed'])
             self.assertFalse(comparison['hidden_suite_available'])
             self.assertEqual(comparison['arms']['auto']['public_after']['passed'],6)
             self.assertIsNone(comparison['arms']['gptoss']['public_after'])
             self.assertNotIn('PRIVATE',json.dumps(comparison))
+            crashed=h.prepare(fake_commit,['auto','gptoss']);crash_path=Path(crashed['plan'])
+            crashed_graph=Mock();crashed_graph.stream.side_effect=RuntimeError('PRIVATE')
+            with patch.object(graph,'build_graph',return_value=crashed_graph),patch.object(h,'cleanup_state',return_value='CONFIRMED'):
+                failure=h.run_arm(crash_path,'auto',True)
+            self.assertEqual(failure['failure_class'],'DRIVER_FAILURE')
+            self.assertNotIn('PRIVATE',json.dumps(failure))
+            with self.assertRaisesRegex(h.Abort,'PREVIOUS_DRIVER_FAILURE'): h.run_arm(crash_path,'gptoss',True)
+            self.assertFalse((crash_path.parent/'gptoss-started.json').exists())
+            self.assertEqual(h.failure_class({'failure':'NONE','controller_final_state':'VERIFIED'}),'NONE')
+            self.assertEqual(h.failure_class({'failure':'INTERRUPTED','cleanup':'CONFIRMED'}),'DRIVER_FAILURE')
+            with patch.object(h,'git',side_effect=[fake_commit.encode(),b'benchmarks/shipment_ab.py\n']):
+                self.assertEqual(h.execution_commit(plan,'b'*40),'b'*40)
+            with patch.object(h,'git',side_effect=[fake_commit.encode(),b'orchestrator/graph.py\n']):
+                with self.assertRaisesRegex(h.Abort,'CONTINUATION_PRODUCTION_CHANGED'): h.execution_commit(plan,'b'*40)
             tampered={**plan,'role_profiles':{**plan['role_profiles'],'gptoss':h.assignments('auto')}}
             path.write_text(json.dumps(tampered));path.chmod(0o600)
             with self.assertRaisesRegex(h.Abort,'PLAN_CHANGED'): h.load_plan(path)

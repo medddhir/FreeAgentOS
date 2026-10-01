@@ -92,3 +92,54 @@ single-run/no-statistical-superiority flags. Attribute workload results to a
 route only with SESSION_BOUND_DISPATCH and ROUTER_DISPATCH. A blocked workload
 still has a public score if final scoring completes; failed scoring stays unknown.
 Do not promote either result to the immutable canonical benchmark.
+
+## Stage 2.7B outcome classification and existing-plan continuation
+
+The original second-arm gate required `failure == NONE`. The collected AUTO
+CODER_TIMEOUT instead had `failure = PUBLIC_RESULTS_UNAVAILABLE`: its final
+sandbox output did not satisfy the authoritative 15-test parser. Cleanup and
+worker cleanup were confirmed, but the gate conflated absent scoring with a
+benchmark driver failure. Neither missing verification nor absence of a
+promotion patch was checked by that gate. The GPT-OSS command stopped before
+validation, attempt-marker creation, attribution provisioning or graph execution.
+
+New records explicitly classify `NONE`, `ARM_OUTCOME_FAILURE`, or `DRIVER_FAILURE`.
+A normally returned BLOCKED graph is a collected arm outcome. If its final score
+is unavailable, it remains null and is never replaced with baseline results.
+Unexpected graph exceptions, interruptions, integrity/sandbox/count errors and
+failed evidence writes remain driver failures. Cleanup must be proven in both
+summary and every worker's actual evidence, including zero remaining processes.
+The gate also checks the first arm's attempt marker and result against the exact
+plan hash, provenance, profiles, baseline and start time before permitting another
+arm. An interrupted/crashed driver without a complete result remains blocked.
+
+Existing records are never rewritten. The only legacy non-NONE failure accepted
+as an arm outcome is PUBLIC_RESULTS_UNAVAILABLE with controller BLOCKED,
+CODER_TIMEOUT or FIXER_TIMEOUT, null final score, and corresponding independently
+recorded worker timeout/exit-124/confirmed-cleanup/zero-process evidence. Other
+legacy failures remain blocking. Comparison adds this derived classification to
+its output, leaving the original AUTO evidence bytes untouched. There is no
+migration or replacement plan, and the completed AUTO attempt remains locked.
+
+A corrected external harness necessarily has a newer commit than the immutable
+plan. `--harness-commit FULL_SHA` explicitly pins that implementation while the
+original controller_commit remains the production/experiment provenance. The
+new commit must descend from the original and change only this driver, this
+document and its deterministic test helper. Any production graph, role, resource,
+permission, model-profile or other code difference rejects continuation. The
+current tree must be clean at that exact implementation commit. New arm records
+include both commits. Without this explicit option the original strict pin still
+applies. This is a disclosed harness correction, not a workload-policy change.
+
+Non-generation eligibility validation, before any separately authorized run:
+
+```sh
+bin/freeagent-shipment-ab validate --plan ORIGINAL_PLAN --arm gptoss --harness-commit FULL_CORRECTED_COMMIT
+```
+
+Validation rechecks both untouched baseline clones, their exact 6/15 results,
+canonical immutability, profiles, health, resource preflight, order and cleanup.
+It creates no workload marker and invokes no model. A later authorized GPT-OSS
+command uses the same plan and `--harness-commit`; AUTO can never be rerun. The
+previous blocked command had no persisted GPT-OSS workload marker or result and
+therefore did not consume its one workload attempt.
