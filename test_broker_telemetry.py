@@ -56,7 +56,7 @@ class BrokerTelemetryTests(unittest.TestCase):
         self.deny("read_file", {"path": "unrelated.py"}, "READ_DENIED")
 
     def test_protected(self):
-        self.deny("write_file", {"path": "test_app.py", "text": "# replaced"}, "READ_DENIED")
+        self.deny("write_file", {"path": "test_app.py", "text": "# replaced"}, "WRITE_DENIED")
 
     def test_secret_path(self):
         self.deny("read_file", {"path": ".env"}, "READ_DENIED")

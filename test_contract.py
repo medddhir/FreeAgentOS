@@ -217,7 +217,7 @@ class C(unittest.TestCase):
         for path in paths: self.assertNotIn(path, text)
         by_tool = evidence['broker']['denials_by_tool']
         self.assertEqual(by_tool['Read'], {'READ_DENIED': 6, 'INVALID_REQUEST': 1})
-        self.assertEqual(by_tool['Edit'], {'READ_DENIED': 1})
+        self.assertEqual(by_tool['Edit'], {'WRITE_DENIED': 1})
         self.assertEqual(by_tool['Write'], {'INVALID_REQUEST': 1})
         self.assertEqual(by_tool['Glob'], {'INVALID_REQUEST': 1})
         self.assertEqual(by_tool['Grep'], {'INVALID_REQUEST': 1})
@@ -252,7 +252,9 @@ class C(unittest.TestCase):
                          'facts_and_unit_metadata_coherence',
                          'existing_target_fail_closed',
                          'fixer_final_context_coherence',
-                         'categorical_feedback_privacy'):
+                         'categorical_feedback_privacy',
+                         'schema_binding_roles', 'schema_creation_lifecycle',
+                         'schema_empty_and_isolation', 'schema_bypass_and_denials'):
             with self.subTest(scenario=scenario):
                 self.reset()
                 getattr(self, scenario)()
@@ -286,7 +288,7 @@ class C(unittest.TestCase):
                         for path in set(sections['read']) - set(sections['write']):
                             for tool, args in [('edit_file', {'old_text': 'x', 'new_text': 'y'}),
                                                ('write_file', {'text': 'replacement\n'})]:
-                                with self.assertRaisesRegex(ReadDenied, '^READ_DENIED$'):
+                                with self.assertRaisesRegex(ReadDenied, '^WRITE_DENIED$'):
                                     tools.call(tool, {'path': path, **args})
                         self.assertEqual(session.policy, policy)
                     finally:
@@ -376,7 +378,7 @@ class C(unittest.TestCase):
                                           'unit_index': 0 if role is coder else 1})
             prompts.append(capability_contract(cmd))
         self.assertEqual(prompts[0], prompts[1])
-        descriptions = {item['name']: item['description'] for item in tool_list()}
+        descriptions = {item['name']: item['description'] for item in tool_list(self.policy)}
         self.assertIn('no absolute path or ./', descriptions['read_file'])
         self.assertIn('writable existing file', descriptions['write_file'])
         self.assertIn('creation-approved path', descriptions['write_file'])
@@ -497,7 +499,7 @@ class C(unittest.TestCase):
         serve(self.policy, io.BytesIO(''.join(json.dumps(r) + '\n' for r in requests).encode()), out, telemetry)
         replies = [json.loads(line) for line in out.getvalue().splitlines()]
         errors = [r['result']['content'][0]['text'] for r in replies if r['result'].get('isError')]
-        self.assertEqual(errors, ['FILE_TOOL_DENIED:READ_DENIED', 'FILE_TOOL_DENIED:READ_DENIED',
+        self.assertEqual(errors, ['FILE_TOOL_DENIED:READ_DENIED', 'FILE_TOOL_DENIED:WRITE_DENIED',
                                   'FILE_TOOL_DENIED:INVALID_REQUEST'])
         for message in errors:
             self.assertIn(message.split(':')[1], REASONS)
@@ -509,3 +511,125 @@ class C(unittest.TestCase):
         self.assertEqual(denial_reason(ReadDenied('FILE_TOOL_BUDGET_EXHAUSTED'), MAX_TOOL_CALLS + 1), 'TOOL_BUDGET')
         self.assertEqual(denial_reason(ReadDenied('FILE_TOOL_BUDGET_EXHAUSTED'), 1), 'SESSION_BUDGET')
         self.assertEqual(denial_reason(ReadDenied('private-marker'), 1), 'BROKER_INTERNAL')
+
+    def schema_binding_roles(self):
+        from roles.file_tools import tool_list, SCHEMAS
+        original = copy.deepcopy(SCHEMAS)
+        manifests = []
+        for role in (coder, fixer):
+            _, cmd, policy = self.capture(role, {**self.state, 'coding_units': [self.unit],
+                                               'allow_new_files': True,
+                                               'task': 'Improve the implementation. You may add implementation files.',
+                                               'unit_index': 0 if role is coder else 1})
+            definitions = {item['name']: item for item in tool_list(policy)}
+            paths = {name: definitions[name]['inputSchema']['properties']['path']['enum']
+                     for name in ('read_file', 'edit_file', 'write_file')}
+            self.assertEqual(paths['read_file'], policy['files'])
+            self.assertEqual(paths['edit_file'], policy['write_files'])
+            self.assertEqual(paths['write_file'], policy['write_files'])
+            self.assertEqual(paths['edit_file'], ['app.py'])
+            self.assertNotIn('helper.py', paths['write_file'])
+            self.assertIn('NEW FILE CREATION: NONE', definitions['write_file']['description'])
+            self.assertIn('NEW FILE CREATION: NONE', cmd[-1])
+            manifests.append(paths)
+            # Every advertised path can be used with the broker for this role.
+            tools = FileTools(policy)
+            for path in paths['read_file']:
+                tools.call('read_file', {'path': path})
+            tools.call('edit_file', {'path': 'app.py', 'old_text': 'return 1', 'new_text': 'return 2'})
+            tools.call('write_file', {'path': 'app.py', 'text': 'def value():\n    return 1\n'})
+        self.assertEqual(manifests[0], manifests[1])
+        self.assertEqual(SCHEMAS, original)
+        text = json.dumps(definitions)
+        for hidden in ('orchestrator/state.py', 'hidden-tests/spec.py', '.env', str(self.repo)):
+            self.assertNotIn(hidden, text)
+
+    def schema_creation_lifecycle(self):
+        import io
+        from roles.file_tools import serve, tool_list
+        unit = {**self.unit, 'target_files': ['app.py', 'new.py']}
+        flags = file_tool_flags({**self.state, 'allow_new_files': True}, 'coder', unit=unit)
+        policy = self.decoded_policy(flags)
+        defs = {item['name']: item for item in tool_list(policy)}
+        self.assertEqual(defs['edit_file']['inputSchema']['properties']['path']['enum'], ['app.py'])
+        self.assertEqual(defs['write_file']['inputSchema']['properties']['path']['enum'], ['app.py', 'new.py'])
+        # Real protocol: approved creation changes Edit availability, never authority.
+        def call(identifier, name, args):
+            return {'jsonrpc': '2.0', 'id': identifier, 'method': 'tools/call',
+                    'params': {'name': name, 'arguments': args}}
+        requests = fixtures.messages()[:3] + [
+            call(3, 'write_file', {'path': 'other.py', 'text': 'value = 1\n'}),
+            call(4, 'write_file', {'path': 'new.py', 'text': 'value = 1\n'}),
+            {'jsonrpc': '2.0', 'id': 5, 'method': 'tools/list'},
+            call(6, 'edit_file', {'path': 'new.py', 'old_text': '1', 'new_text': '2'}),
+            call(7, 'write_file', {'path': 'new.py', 'text': 'value = 3\n'})]
+        out = io.StringIO()
+        from roles.broker_telemetry import BrokerTelemetry
+        telemetry = BrokerTelemetry()
+        serve(policy, io.BytesIO(''.join(json.dumps(r) + '\n' for r in requests).encode()), out, telemetry)
+        responses = [json.loads(line) for line in out.getvalue().splitlines()]
+        notifications = [r for r in responses if 'method' in r]
+        self.assertEqual(notifications, [{'jsonrpc': '2.0', 'method': 'notifications/tools/list_changed'}])
+        indexed = {r['id']: r['result'] for r in responses if 'id' in r}
+        self.assertTrue(indexed[1]['capabilities']['tools']['listChanged'])
+        updated = {d['name']: d for d in indexed[5]['tools']}
+        self.assertEqual(updated['edit_file']['inputSchema']['properties']['path']['enum'], ['app.py', 'new.py'])
+        self.assertEqual(indexed[3]['content'][0]['text'], 'FILE_TOOL_DENIED:WRITE_DENIED')
+        for identifier in (4, 6, 7):
+            self.assertFalse(indexed[identifier]['isError'])
+        self.assertEqual((self.repo / 'new.py').read_text(), 'value = 3\n')
+        self.assertEqual(telemetry.snapshot()['requests_total'], 4)
+        self.assertEqual(telemetry.snapshot()['denied_total'], 1)
+        self.assertEqual(telemetry.snapshot()['success_total'], 3)
+        self.assertEqual(policy, self.decoded_policy(flags))
+
+    def schema_empty_and_isolation(self):
+        from roles.file_tools import tool_list, SCHEMAS
+        empty = copy.deepcopy(self.policy)
+        empty.update(write_files=[], new_files=[])
+        descriptors = {item['name']: item for item in tool_list(empty)}
+        for name in ('edit_file', 'write_file'):
+            path = descriptors[name]['inputSchema']['properties']['path']
+            self.assertEqual(path, {'type': 'string', 'not': {}})
+            self.assertIn('NO AUTHORIZED PATHS', descriptors[name]['description'])
+        # Descriptor mutation cannot contaminate another worker or broker policy.
+        descriptors['read_file']['inputSchema']['properties']['path']['enum'].append('unrelated.py')
+        self.assertNotIn('unrelated.py', self.policy['files'])
+        self.assertNotIn('enum', SCHEMAS['read_file']['path'])
+        self.assertEqual({d['name']: d for d in tool_list(self.policy)}['edit_file']['inputSchema']['properties']['path']['enum'], ['app.py'])
+        for name, args in [('edit_file', {'old_text': '1', 'new_text': '2'}),
+                           ('write_file', {'text': 'value = 2\n'})]:
+            with self.assertRaisesRegex(ReadDenied, '^WRITE_DENIED$'):
+                FileTools(empty).call(name, {'path': 'app.py', **args})
+
+    def schema_bypass_and_denials(self):
+        from roles.file_tools import tool_list
+        tools = FileTools(self.policy)
+        forged = {item['name']: item for item in tool_list(self.policy)}
+        forged['write_file']['inputSchema']['properties']['path']['enum'].append('helper.py')
+        # Ignore or forge model-facing enums: real broker checks still apply.
+        for path in ('helper.py', 'new.py', './app.py', str(self.repo / 'app.py'),
+                     '../app.py', 'dir/../app.py', 'dir//app.py', 'dir\\app.py'):
+            for name, args in [('edit_file', {'old_text': '1', 'new_text': '2'}),
+                               ('write_file', {'text': 'value = 2\n'})]:
+                with self.assertRaisesRegex(ReadDenied, '^WRITE_DENIED$'):
+                    tools.call(name, {'path': path, **args})
+        for path in ('./app.py', str(self.repo / 'app.py'), '../app.py'):
+            with self.assertRaisesRegex(ReadDenied, '^READ_DENIED$'):
+                tools.call('read_file', {'path': path})
+        self.assertIn('test_app.py', tools.call('glob_files', {'pattern': '*.py'})['matches'])
+        self.assertTrue(tools.call('grep_files', {'query': 'public test'})['matches'])
+        with self.assertRaisesRegex(ReadDenied, '^WRITE_DENIED$'):
+            tools.call('write_file', {'path': 'helper.py', 'text': 'value = 2\n'})
+        # Match errors differ from write-membership rejection.
+        with self.assertRaisesRegex(ReadDenied, '^EDIT_MATCH_INVALID$'):
+            tools.call('edit_file', {'path': 'app.py', 'old_text': 'missing', 'new_text': '2'})
+        # An authorized mutation's implicit read can still be denied by content policy.
+        (self.repo / 'app.py').write_text('api_token = "private-marker"\n')
+        for name, args in [('edit_file', {'old_text': 'marker', 'new_text': 'value'}),
+                           ('write_file', {'text': 'value = 2\n'})]:
+            with self.assertRaisesRegex(ReadDenied, '^READ_DENIED$'):
+                tools.call(name, {'path': 'app.py', **args})
+        safe = json.dumps(tools.telemetry.snapshot())
+        for value in ('app.py', 'helper.py', 'new.py', 'private-marker', str(self.repo)):
+            self.assertNotIn(value, safe)

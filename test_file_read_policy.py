@@ -275,7 +275,7 @@ class FileReadPolicyTests(unittest.TestCase):
         self.assertEqual(server["args"][0], "-I")
         self.assertEqual(server["args"][3], hashlib.sha256(server["args"][2].encode()).hexdigest())
         self.assertEqual(set(flags[flags.index("--allowedTools") + 1].split(",")),
-                         {"mcp__freeagent_files__" + t["name"] for t in tool_list()})
+                         {"mcp__freeagent_files__" + t["name"] for t in tool_list(self.policy)})
         self.assertEqual(json.loads(no_file_tool_flags()[-1]), {"mcpServers": {}})
 
     def test_real_stdio_server_handshake_authorization_and_errors(self):

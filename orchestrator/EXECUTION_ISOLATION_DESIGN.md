@@ -810,3 +810,73 @@ read-order change, capability expansion, cap/lease change, model retry/call,
 telemetry path storage or benchmark-specific logic is introduced. Authorization
 selection remains byte-for-byte unchanged; denied activity still cannot update
 the controller-authenticated success timestamp used by the lease.
+
+#### Stage 1.13 — Mutation Capability Compliance
+
+The persistent Stage 1.12 live counters validate the read-context improvement:
+Read succeeded 24/25 times, versus 7/20 in Stage 1.11. Mutation friction remains:
+Edit succeeded 2/11 times and Write 0/3; all 13 total denials were READ_DENIED.
+These private categorical counters cannot establish historical requested paths,
+aliases, repeated probes, or whether an implicit read rejected changed contents.
+There were no broker internal errors. No live model was called for this audit.
+
+The deterministic trace exposes an interface gap. Both roles seal the controller
+policy before the capability contract and broker session. The contract partitions
+read-only, existing writable and creation-approved paths, but the former MCP
+Read/Edit/Write path schemas accepted any string. Tool descriptions gave no
+session-specific path choices. Task/source text remained non-authorizing and
+could suggest other files. Edit calls require_write before reading the existing
+file and matching old_text; Write calls require_write before creating/replacing,
+and replacement also reads the current file. The write-membership check formerly
+reported READ_DENIED, indistinguishable from its implicit read failures.
+
+The supplied task wording permits implementation additions generally, whereas
+the live unit has two existing targets and zero approved new targets. General
+permission does not select a creation path. The evidence JSON retains only task
+length/hash, so that wording is supplied by the operator, not recovered from the
+JSON. The contract and Write description now explicitly state NEW FILE CREATION:
+NONE whenever the sealed new_files list is empty.
+
+| Alternative | Decision and evidence |
+| --- | --- |
+| More prompt wording only | Insufficient: Stage 1.12 already supplies explicit capability partitions. Add only the empty-creation statement shared with the actual tool interface. |
+| Controller-generated tool path enums | Adopt: MCP inputSchema is JSON Schema. Read advertises exactly files; Write exactly write_files (existing plus approved new); Edit existing write_files, including approved new paths after safe creation. Each list is bounded by the unchanged eight-file cap. |
+| READ_ONLY/WRITABLE FILE labels | Defer: existing contract already partitions these paths, and schemas constrain the argument at tool selection without changing context format. |
+| Fixed mutation-denial reasons | Adopt existing WRITE_DENIED for write-membership/path rejection. READ_DENIED remains for failed reads, including implicit reads. Match errors remain EDIT_MATCH_INVALID. No new telemetry taxonomy or path storage. |
+| Repeated-denial suppression | Defer: historical repeated identical requests cannot be established; categorical feedback and constrained schemas are the smaller change. |
+| Blame model/provider without a change | Unsupported as the sole diagnosis: free-form path schemas are a reproducible orchestration gap. Actual provider compliance/efficiency remains a live question. |
+
+The common MCP server constructs descriptors from its validated session policy,
+not prompt/model output. Descriptor copies cannot mutate policy or another
+session. Empty capabilities use a string schema with not:{} (reject every value),
+not an invalid empty enum or fake sentinel path; descriptions say no authorized
+paths. Approved creation makes that path available to Edit; sessions with approved
+new paths advertise tools.listChanged and emit notifications/tools/list_changed
+when a successful Write changes Edit availability. The next tools/list returns
+the updated descriptor. No authority is added by that lifecycle transition.
+
+Protocol references: [MCP 2025-06-18 tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools),
+[JSON Schema enum](https://json-schema.org/understanding-json-schema/reference/enum),
+and [empty/false schema semantics](https://json-schema.org/understanding-json-schema/basics).
+Official exact-page reading was used after the discovery helper failed. Local
+Draft 4 and Draft 2020-12 validators accepted the generated schemas and rejected
+unlisted/alias/absolute/traversal paths in 108 validation cases; no dependency was
+added to production or the test runtime.
+
+Schemas are descriptive constraints, never authority. Even when ignored or forged,
+the existing broker predicates reject read-only/unapproved paths and aliases.
+Content, inode/root identity, symlink/hardlink/special-file protections still run.
+Categorical responses retain FILE_TOOL_DENIED:<SAFE_FIXED_REASON>, isError and
+safe bounded telemetry. Discovery cannot grant mutation rights. Authorization
+selection, caps, worker calls, Fixer attempts, leases, trusted-progress rules and
+the 420-second trusted suite budget are unchanged.
+
+Deterministic regressions capture both final role policies, exercise their actual
+broker operations, test descriptor isolation, empty creation and approved creation
+with MCP list-change notification, and bypass/forge schemas to prove the broker
+still denies. They distinguish membership, match and implicit-content-read errors
+without retaining request data in telemetry. One controlled Stage 1.13 live run
+is needed to measure actual client/provider enum compliance, denial friction and
+completion. If capabilities are coherent and denials low but the unchanged
+240-second hard cap is still reached, move to model/provider routing and worker
+efficiency rather than further permission tuning.

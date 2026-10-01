@@ -33,17 +33,41 @@ SCHEMAS = {
 }
 
 
-def tool_list():
+def tool_list(policy):
+    """Bound tool argument choices to the controller's validated session policy."""
+    policy = validate_policy(policy)
+    existing = []
+    for path in policy["write_files"]:
+        if path in policy["new_files"]:
+            try:
+                read_authorized(policy, path)
+            except ReadDenied:
+                continue
+        existing.append(path)
+    choices = {"read_file": policy["files"], "edit_file": existing,
+               "write_file": policy["write_files"]}
     descriptions = {"read_file": "Read a listed workspace-relative path exactly (no absolute path or ./), in bounded byte chunks.",
                     "glob_files": "List only authorized current files matching a relative glob; results grant no write access.",
                     "grep_files": "Literal substring search only within authorized current files; results grant no write access.",
                     "edit_file": "Edit a listed writable existing file; use its exact relative path and one nonempty unique old_text match.",
                     "write_file": "Replace a listed writable existing file, or create a listed creation-approved path. Exact relative path; text at most 8192 UTF-8 bytes. Prefer Edit for focused changes."}
-    return [{"name": name, "description": descriptions[name],
-             "inputSchema": {"type": "object", "properties": properties,
-                             "required": [key for key in properties if key != "offset"],
-                             "additionalProperties": False}}
-            for name, properties in SCHEMAS.items()]
+    creation = ("NEW FILE CREATION: only CREATION APPROVED paths." if policy["new_files"]
+                else "NEW FILE CREATION: NONE. Write replaces listed existing files only.")
+    descriptions["write_file"] += " " + creation
+    result = []
+    for name, definition in SCHEMAS.items():
+        properties = copy.deepcopy(definition)
+        if name in choices:
+            paths = list(choices[name])
+            # Do not publish an invalid empty enum or a fake sentinel path.
+            properties["path"].update({"enum": paths} if paths else {"not": {}})
+            if not paths:
+                descriptions[name] += " NO AUTHORIZED PATHS; do not call this tool."
+        result.append({"name": name, "description": descriptions[name],
+                       "inputSchema": {"type": "object", "properties": properties,
+                                       "required": [key for key in properties if key != "offset"],
+                                       "additionalProperties": False}})
+    return result
 
 
 def denial_reason(exc, calls):
@@ -213,6 +237,8 @@ class FileTools:
 def serve(policy, input_stream, output_stream, telemetry=None):
     tools = FileTools(policy, telemetry)
     initialized = ready = False
+    advertised = tool_list(tools.policy)
+    list_changes = bool(tools.policy["new_files"])
     for _ in range(MAX_TOOL_CALLS + 32):
         line = input_stream.readline(MAX_MESSAGE_BYTES + 1)
         if not line:
@@ -222,6 +248,7 @@ def serve(policy, input_stream, output_stream, telemetry=None):
             tools.telemetry.failure("MALFORMED_REQUEST")
             return
         request = None
+        changed = False
         try:
             request = json.loads(line)
             if (not isinstance(request, dict) or request.get("jsonrpc") != "2.0"
@@ -235,7 +262,7 @@ def serve(policy, input_stream, output_stream, telemetry=None):
                 raise ReadDenied("FILE_TOOL_PROTOCOL_INVALID")
             if method == "initialize" and not initialized:
                 initialized = True
-                result = {"protocolVersion": PROTOCOL, "capabilities": {"tools": {"listChanged": False}},
+                result = {"protocolVersion": PROTOCOL, "capabilities": {"tools": {"listChanged": list_changes}},
                           "serverInfo": {"name": "freeagent_files", "version": "1"}}
             elif method == "notifications/initialized" and initialized:
                 ready = True
@@ -243,11 +270,16 @@ def serve(policy, input_stream, output_stream, telemetry=None):
             elif method == "ping":
                 result = {}
             elif method == "tools/list" and ready:
-                result = {"tools": tool_list()}
+                advertised = tool_list(tools.policy)
+                result = {"tools": advertised}
             elif method == "tools/call" and ready:
                 try:
                     data = tools.call(params.get("name"), params.get("arguments", {}))
                     result = {"content": [{"type": "text", "text": json.dumps(data)}], "isError": False}
+                    if list_changes and params.get("name") == "write_file":
+                        current = tool_list(tools.policy)
+                        changed = current != advertised
+                        advertised = current
                 except (ReadDenied, OSError, ValueError, TypeError) as exc:
                     # No exception/request data leaves this boundary: only a
                     # member of the existing fixed controller reason taxonomy.
@@ -265,6 +297,8 @@ def serve(policy, input_stream, output_stream, telemetry=None):
         if isinstance(request, dict) and "id" not in request:
             continue
         output_stream.write(json.dumps(response) + "\n")
+        if changed:
+            output_stream.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}) + "\n")
         output_stream.flush()
 
 
