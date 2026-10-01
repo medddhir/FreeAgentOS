@@ -106,6 +106,9 @@ def _safe_evidence(value):
         result["gateway_health_status"] = value["gateway_health_status"]
     if value.get("gateway_request_observed") == "UNAVAILABLE":
         result["gateway_request_observed"] = "UNAVAILABLE"
+    from roles.model_attribution import safe_gateway_observation
+    if "gateway_attribution" in value:
+        result["gateway_attribution"] = safe_gateway_observation(value["gateway_attribution"])
     from roles.model_profiles import safe_model_selection
     if "model_selection" in value:
         result["model_selection"] = safe_model_selection(value["model_selection"])

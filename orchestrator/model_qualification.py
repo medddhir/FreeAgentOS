@@ -134,6 +134,11 @@ def qualify(profile_id):
                                     role="coder", stream_activity=True)
             verify_execution_contract(state)
             evidence = _evidence(worker.evidence)
+            observation = evidence.get("gateway_attribution", {})
+            if observation.get("routed_evidence") == "ROUTER_DISPATCH":
+                result["identity_attribution"].update(observation)
+                result["identity_attribution"]["attribution_status"] = "SESSION_BOUND_DISPATCH"
+
             # Do not short-circuit the semantic read behind unrelated execution gates.
             fixture_matches = verify_fixture(policy)
             checks = qualification_checks(worker.returncode, evidence, fixture_matches)

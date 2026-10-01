@@ -77,3 +77,93 @@ class I(unittest.TestCase):
             self.assertEqual(qualification.main(['--profile',qualification.PROFILE,'--live']),2)
         self.assertNotIn('FAKE_SECRET',output.getvalue())
         self.assertEqual(profiles.selected_profile('coder').profile_id,'claude-free-default')
+        self.session_binding()
+
+    def session_binding(self):
+        import os,socket,tempfile,threading,subprocess
+        import cli
+        sid='a'*32
+        def payload(session_id=sid):
+            return {'status':'COMPLETE','version':1,'session_id':session_id,'request_count':2,
+                    'requests':[{'ordinal':i,'closed':True,'attempts':[{'ordinal':1,'provider_id':'groq',
+                      'model_id':'openai/gpt-oss-120b','outcome':'COMPLETED'}]} for i in (1,2)]}
+        good=attribution.route_observation(payload(),sid)
+        # Active transport and attribution cannot affect sealed capabilities or resources.
+        fixture=contract.C();fixture.reset();self.addCleanup(fixture.doCleanups)
+        baseline=sealed_policy(file_tool_flags(fixture.state,'coder',unit=fixture.unit))
+        resource=worker._effective_policy(None)
+        active=attribution.GatewaySession();active.token='c'*64
+        with active.scope():
+            self.assertEqual(sealed_policy(file_tool_flags(fixture.state,'coder',unit=fixture.unit)),baseline)
+            self.assertEqual(worker._effective_policy(None),resource)
+            lease=ActivityLease(180,'coder','model',True,240,0)
+            self.assertFalse(lease.extend(180*NS))
+            self.assertEqual(lease.evidence(180*NS,success=False)['hard_cap_ms'],240000)
+        self.assertIsNone(attribution.current_transport())
+        self.assertEqual(good['route_status'],'SINGLE_ROUTE')
+        self.assertEqual(good['routed_evidence'],'ROUTER_DISPATCH')
+        many=payload();many['requests'][1]['attempts'][0].update(provider_id='mistral',model_id='codestral-latest')
+        observed=attribution.route_observation(many,sid)
+        self.assertEqual(observed['route_status'],'MULTIPLE_ROUTES');self.assertEqual(observed['routed_model_id'],'UNAVAILABLE')
+        for field,value in (('status','INCOMPLETE'),('session_id','b'*32),('request_count',3),('version',0)):
+            bad=payload();bad[field]=value
+            self.assertEqual(attribution.route_observation(bad,sid)['routed_evidence'],'UNAVAILABLE')
+        bad=payload();bad['requests'][0]['attempts'][0]['model_id']='https://FAKE_SECRET'
+        self.assertEqual(attribution.route_observation(bad,sid)['routed_evidence'],'UNAVAILABLE')
+        for field,value in (('closed',False),('ordinal',2),('attempts',[])):
+            bad=payload();bad['requests'][0][field]=value
+            self.assertEqual(attribution.route_observation(bad,sid)['routed_evidence'],'UNAVAILABLE')
+        self.assertNotIn('FAKE_SECRET',json.dumps(cli._evidence({'gateway_attribution':{**good,'headers':'FAKE_SECRET','served_model_id':'FAKE_SECRET'}})))
+        with tempfile.TemporaryDirectory(prefix='freeagent-attribution-test-') as tmp:
+            os.chmod(tmp,0o700);path=Path(tmp)/'gateway.sock'
+            server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);server.bind(str(path));os.chmod(path,0o600);server.listen(4);server.settimeout(.1)
+            stop=threading.Event();seen=[]
+            def serve():
+                while not stop.is_set():
+                    try: connection,_=server.accept()
+                    except socket.timeout: continue
+                    except OSError: break
+                    with connection:
+                        raw=connection.recv(1024);request=json.loads(raw);seen.append(request['op'])
+                        reply=({'status':'REGISTERED','token':'c'*64} if request['op']=='register' else payload(request['session_id']))
+                        connection.sendall(json.dumps(reply).encode()+b'\n')
+            thread=threading.Thread(target=serve,daemon=True);thread.start()
+            try:
+                session=attribution.GatewaySession(path,os.getuid())
+                def execute(cmd,**kwargs):
+                    self.assertEqual(attribution.current_transport()['session_id'],session.session_id)
+                    env=attribution.transport_environment(attribution.current_transport())
+                    self.assertIn('X-FreeAgentOS-Attribution-Session: '+session.session_id,env['ANTHROPIC_CUSTOM_HEADERS'])
+                    self.assertNotIn(session.session_id,json.dumps(cmd));self.assertEqual(kwargs['timeout'],180)
+                    return worker.WorkerResult(0,'FAKE_MODEL_TEXT',{'gateway_attribution':{'served_model_id':'MODEL_CLAIM'}})
+                with patch.object(attribution,'GatewaySession',return_value=session),patch.object(worker,'_run_worker_impl',side_effect=execute) as run:
+                    result=worker.run_worker(['claude-free','-p','FAKE_TASK'],role='coder',timeout=180)
+                run.assert_called_once();self.assertEqual(seen,['register','finish'])
+                self.assertEqual(result.evidence['gateway_attribution'],good)
+                self.assertIsNone(session.token);self.assertIsNone(attribution.current_transport())
+                self.assertNotIn('MODEL_CLAIM',json.dumps(result.evidence))
+                self.assertNotIn('c'*64,json.dumps(result.evidence))
+                os.chmod(path,0o666)
+                denied=attribution.GatewaySession(path,os.getuid());denied.begin();self.assertIsNone(denied.token)
+                self.assertEqual(denied.finish()['routed_evidence'],'UNAVAILABLE')
+            finally:
+                stop.set();server.close();thread.join(timeout=1)
+        # Observer failures must leave invocation/return untouched, without retry.
+        with patch.object(attribution,'GatewaySession',side_effect=OSError('FAKE_SECRET')),patch.object(worker,'_run_worker_impl',return_value=worker.WorkerResult(0,'',{})) as run:
+            self.assertEqual(worker.run_worker(['claude-free','-p','fixture']).returncode,0)
+        run.assert_called_once()
+        transport={'session_id':sid,'token':'c'*64}
+        with patch.dict(os.environ,{'ANTHROPIC_CUSTOM_HEADERS':'x-FREEAGENTOS-attribution-session: bad\nx-freeagentos-attribution-token: bad\nOther-Header: retained'}):
+            env=attribution.transport_environment(transport)
+        self.assertNotIn(': bad',env['ANTHROPIC_CUSTOM_HEADERS']);self.assertIn('Other-Header: retained',env['ANTHROPIC_CUSTOM_HEADERS'])
+        # Execute only the installed client's extracted header parser, not Claude.
+        binary=Path('/root/.local/share/claude/versions/2.1.284').read_bytes()
+        start=binary.index(b'function $at(){');end=binary.index(b'var YLe=',start)
+        parser=binary[start:end].decode()
+        self.assertIn(b'ne=$at(),ge=',binary);self.assertIn(b'defaultHeaders:ge',binary)
+        wrapper=Path('/usr/local/bin/claude-free').read_text()
+        self.assertIn('exec claude "$@"',wrapper);self.assertNotIn('unset ANTHROPIC_CUSTOM_HEADERS',wrapper)
+        script='function I0(){return false}function wbn(){return null}function t(){}'+parser+';let h=$at();if(h["X-FreeAgentOS-Attribution-Session"]!==process.env.TEST_SESSION)process.exit(2);if(h["X-FreeAgentOS-Attribution-Token"]!==process.env.TEST_TOKEN)process.exit(3);'
+        parser_env={**os.environ,'ANTHROPIC_CUSTOM_HEADERS':attribution.transport_environment(transport)['ANTHROPIC_CUSTOM_HEADERS'],'TEST_SESSION':sid,'TEST_TOKEN':'c'*64}
+        checked=subprocess.run(['/usr/bin/node','-e',script],env=parser_env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=5)
+        self.assertEqual(checked.returncode,0);self.assertEqual(checked.stdout,b'')

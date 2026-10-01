@@ -264,7 +264,9 @@ def _run_inner(area, request):
         command = ["/usr/bin/setpriv", "--bounding-set=-all", "--no-new-privs", "--", *broker_command]
         spawn_started_ns = time.monotonic_ns()
         try:
+            from roles.model_attribution import transport_environment
             process = subprocess.Popen(command, cwd=request["cwd"],
+                                       env=transport_environment(request.get("attribution_transport")),
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        start_new_session=True,
                                        preexec_fn=lambda: _child_limits(scope, policy, timeout))
@@ -358,9 +360,16 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
     scope_name = "freeagentos-worker-" + uuid.uuid4().hex
     request = {"cmd": cmd, "cwd": str(cwd or os.getcwd()), "timeout": min(timeout, policy["wall_timeout_seconds"]),
                "role": role, "policy": policy, "limits": limits or {}, "profile": policy_profile}
+    from roles.model_attribution import current_transport
+    transport = current_transport()
+    if transport is not None:
+        request["attribution_transport"] = transport
     request["scope_name"] = scope_name
     request["stream_activity"] = stream_activity
     raw = json.dumps(request, separators=(",", ":")).encode()
+    if len(raw) > 128 * 1024 and "attribution_transport" in request:
+        request.pop("attribution_transport")
+        raw = json.dumps(request, separators=(",", ":")).encode()
     if len(raw) > 128 * 1024:
         raise WorkerBoundaryError("WORKER_REQUEST_TOO_LARGE")
     from roles.model_profiles import command_identity, requested_identity, ModelProfileError
@@ -454,8 +463,23 @@ def _cleanup_outer_scope(scope_name):
 def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
                policy_profile="model", stream_activity=False):
     try:
-        return _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
-                                policy_profile=policy_profile, stream_activity=stream_activity)
+        from roles.model_attribution import GatewaySession
+        try:
+            session = GatewaySession() if cmd and cmd[0] == "claude-free" else None
+        except Exception:
+            session = None
+        if session is None:
+            return _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
+                                    policy_profile=policy_profile, stream_activity=stream_activity)
+        session.begin()
+        try:
+            with session.scope():
+                result = _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
+                                          policy_profile=policy_profile, stream_activity=stream_activity)
+        finally:
+            observation = session.finish()
+        result.evidence["gateway_attribution"] = observation
+        return result
     except WorkerBoundaryError:
         raise
     except Exception as exc:
