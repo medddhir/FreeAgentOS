@@ -269,6 +269,7 @@ def state_evidence(state):
             'role_timings_ms':[{'role':t['role'],'elapsed_ms':t['elapsed_ms']} for t in (state.get('role_timing_history') or [])[-32:] if t.get('role') in ('planner','coder','fixer','reviewer','tester','preflight','researcher') and type(t.get('elapsed_ms')) is int and 0<=t['elapsed_ms']<=10000000],
             'controller_final_state':state.get('status') if state.get('status') in ('VERIFIED','BLOCKED','UNVERIFIED') else 'UNAVAILABLE',
             'workers':workers,'coding_route':route_summary(workers),
+            'worker_cleanup':('NOT_APPLICABLE' if not workers else 'CONFIRMED' if all(w['evidence'].get('cleanup_status')=='CONFIRMED' and w['evidence'].get('remaining_processes')==0 for w in workers) else 'UNPROVEN'),
             'fixer_invocations':sum(w['role']=='fixer' for w in workers),
             'verification_status':state.get('test_result') if state.get('test_result') in ('PASS','FAIL') else 'UNAVAILABLE',
             'preflight':state.get('preflight_status') if state.get('preflight_status') in ('PASS','BLOCKED') else 'UNAVAILABLE'}
@@ -310,7 +311,9 @@ def run_arm(path, arm, live):
         for earlier in plan['run_order'][:index]:
             previous=directory/(earlier+'-result.json')
             require(previous.is_file(), 'RUN_ORDER_VIOLATION')
-            require(read_record(previous).get('cleanup') in ('CONFIRMED','NONE'), 'PREVIOUS_CLEANUP_UNPROVEN')
+            prior=read_record(previous)
+            require(prior.get('cleanup') in ('CONFIRMED','NONE') and prior.get('worker_cleanup') in ('CONFIRMED','NOT_APPLICABLE'), 'PREVIOUS_CLEANUP_UNPROVEN')
+            require(prior.get('failure')=='NONE', 'PREVIOUS_DRIVER_FAILURE')
         validate(plan) # fail closed before graph/model execution
         started=utc();clock=time.monotonic_ns()
         write_record(directory/(arm+'-started.json'),{'arm':arm,'started_at':started,'plan_sha256':digest(path.read_bytes())})
@@ -319,7 +322,7 @@ def run_arm(path, arm, live):
                         'role_profiles':assignments(arm),'public_before':plan['baseline'],'started_at':started,
                         'public_after':None,'final_patch_sha256':None,'changed_files':[],
                         'promotion_patch_status':'NONE','verification_status':'UNAVAILABLE','failure':'NONE',
-                        'controller_final_state':'UNAVAILABLE','workers':[],'coding_route':route_summary([]),'fixer_invocations':0}
+                        'controller_final_state':'UNAVAILABLE','workers':[],'coding_route':route_summary([]),'worker_cleanup':'NOT_APPLICABLE','fixer_invocations':0}
         old={s:signal.getsignal(s) for s in (signal.SIGINT,signal.SIGTERM)}
         def interrupted(signum,frame): raise KeyboardInterrupt()
         try:
@@ -372,7 +375,7 @@ def compare(path):
         require(result.get('plan_sha256')==digest(path.read_bytes()) and result.get('arm')==arm
                 and result.get('controller_commit')==plan['controller_commit']
                 and result.get('role_profiles')==assignments(arm), 'COMPARISON_RECORD_MISMATCH')
-        allowed={'schema_version','arm','plan_sha256','controller_commit','baseline_commit','role_profiles','public_before','started_at','public_after','final_patch_sha256','changed_files','promotion_patch_status','verification_status','failure','controller_final_state','workers','coding_route','fixer_invocations','preflight','patch_hash_format','promotion_patch_sha256','final_public_verification','cleanup','ended_at','elapsed_ms','block_reason','fix_attempts','target_verification_evidence','role_timings_ms'}
+        allowed={'schema_version','arm','plan_sha256','controller_commit','baseline_commit','role_profiles','public_before','started_at','public_after','final_patch_sha256','changed_files','promotion_patch_status','verification_status','failure','controller_final_state','workers','coding_route','fixer_invocations','preflight','patch_hash_format','promotion_patch_sha256','final_public_verification','cleanup','ended_at','elapsed_ms','block_reason','fix_attempts','target_verification_evidence','role_timings_ms','worker_cleanup'}
         require(set(result)<=allowed, 'COMPARISON_RECORD_INVALID')
         result['workers']=[{'role':w['role'],'evidence':_evidence(w.get('evidence'))} for w in result.get('workers',[]) if w.get('role') in ('planner','coder','fixer','reviewer')]
         result['coding_route']=route_summary(result['workers'])

@@ -35,7 +35,9 @@ Every live arm revalidates both untouched baseline clones and all preconditions
 before model invocation. Run requires explicit --live. An exclusive lock enforces
 serial execution/order and an exclusive arm-started record prevents reruns even
 when an arm fails. Never automatically retry or add repeats. The second arm is
-blocked if the first arm's cleanup is unproven.
+blocked if workspace or worker cleanup is unproven, or the first driver failed.
+A collected BLOCKED workload is still a valid observation when cleanup is proven.
+Driver exit zero means evidence was collected, not that the workload passed.
 
 Prepare and validate invoke no production task graph or model; active preflight
 executes only deterministic Python probes. The production graph is invoked only

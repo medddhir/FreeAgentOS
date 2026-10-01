@@ -64,7 +64,7 @@ def check_driver(self):
             with self.assertRaisesRegex(h.Abort,'RUN_ORDER_VIOLATION'): h.run_arm(path,'gptoss',True)
             gateway={'status':'COMPLETE','version':1,'session_id':'c'*32,'request_count':1,'requests':[{'ordinal':1,'closed':True,'attempts':[{'ordinal':1,'provider_id':'groq','model_id':'openai/gpt-oss-120b','outcome':'COMPLETED'}]}]}
             observation=route_observation(gateway,'c'*32)
-            state={'status':'BLOCKED','worker_history':[{'role':'coder','evidence':{'gateway_attribution':observation,'raw_model':'PRIVATE'}}],
+            state={'status':'BLOCKED','worker_history':[{'role':'coder','evidence':{'gateway_attribution':observation,'raw_model':'PRIVATE','cleanup_status':'CONFIRMED','remaining_processes':0}}],
                    'coder_output':'PRIVATE','test_output':'PRIVATE','diff':'PRIVATE','fix_attempts':0}
             result=h.state_evidence(state);self.assertNotIn('PRIVATE',json.dumps(result))
             self.assertEqual(result['coding_route']['routed_evidence'],'ROUTER_DISPATCH')
@@ -86,6 +86,10 @@ def check_driver(self):
             self.assertEqual(result['controller_final_state'],'BLOCKED')
             self.assertEqual(result['promotion_patch_status'],'NONE')
             with self.assertRaisesRegex(h.Abort,'ARM_ALREADY_ATTEMPTED'): h.run_arm(path,'auto',True)
+            first_record=path.parent/'auto-result.json';first=first_record.read_text()
+            unsafe=json.loads(first);unsafe['worker_cleanup']='UNPROVEN';first_record.write_text(json.dumps(unsafe))
+            with self.assertRaisesRegex(h.Abort,'PREVIOUS_CLEANUP_UNPROVEN'): h.run_arm(path,'gptoss',True)
+            first_record.write_text(first)
             with patch.object(graph,'build_graph',return_value=mocked_graph),patch.object(h,'public_score',side_effect=h.Abort('PUBLIC_RESULTS_UNAVAILABLE')),patch.object(h,'cleanup_state',return_value='CONFIRMED') as cleanup:
                 failed=h.run_arm(path,'gptoss',True)
             cleanup.assert_called_once();self.assertIsNone(failed['public_after'])
