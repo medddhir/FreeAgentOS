@@ -24,7 +24,7 @@ import test_contract as contract
 class P(unittest.TestCase):
     def test(self):
         # One table entry preserves the trusted runner's 64 KiB verbose-output cap.
-        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification):
+        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification, self.fixture_audit):
             with self.subTest(case=case.__name__):
                 case()
 
@@ -228,6 +228,7 @@ class P(unittest.TestCase):
             tools.call('edit_file',{'path':'sample.py','old_text':'0','new_text':'1'})
             evidence={'model_selection':identity,'broker':tools.telemetry.snapshot(),
                       'cleanup_status':'CONFIRMED','remaining_processes':0,'cgroup_status':'ENFORCED',
+                      'resource_hits':{'memory':False,'process_count':False},
                       'controls':{key:'ENFORCED' for key in ('cpu','memory','process_count','output','file_descriptors','file_size')},
                       'activity':{'activity_status':'COMPLETE','result_event_observed':True,'result_category':'SUCCESS'},
                       'completion':{'state':'PROCESS_EXITED','stdout_eof_before_cleanup':True,
@@ -246,3 +247,87 @@ class P(unittest.TestCase):
         with patch.object(qualification,'catalog_ready',return_value=True), patch.object(preflight,'check_host',return_value=host), patch.object(qualification,'run_worker',return_value=worker.WorkerResult(0,'',{})) as run:
             result=qualification.qualify(qualification.PROFILE)
         run.assert_called_once();self.assertEqual(result['status'],'UNQUALIFIED')
+
+    def fixture_audit(self):
+        from roles import preflight, read_policy
+        self.assertEqual(qualification.FIXTURE_INITIAL,b'value = 0\n')
+        self.assertEqual(qualification.FIXTURE_EXPECTED,b'value = 1\n')
+        self.assertIn('change only its integer literal 0 to 1',qualification.FIXTURE_TASK)
+        self.assertIn('Preserve every other byte',qualification.FIXTURE_TASK)
+        host={'status':'PASS','capabilities':{},'required_failures':[],'optional_failures':[],'error':''}
+        original_prepare=qualification.prepare_workspace_node
+        original_verify=qualification.verify_fixture
+        original_cleanup=qualification.cleanup_active_workspace
+        paths={};events=[]
+        def prepare(state):
+            paths['source']=Path(state['repo_dir'])
+            self.assertEqual((paths['source']/'sample.py').read_bytes(),qualification.FIXTURE_INITIAL)
+            result=original_prepare(state)
+            paths['workspace']=Path(result['repo_dir'])
+            self.assertNotEqual(paths['source'],paths['workspace'])
+            return result
+        def verify(policy):
+            self.assertTrue(paths['workspace'].exists())
+            self.assertEqual(Path(policy['root']),paths['workspace'])
+            self.assertEqual((paths['source']/'sample.py').read_bytes(),qualification.FIXTURE_INITIAL)
+            events.append('verify')
+            return original_verify(policy)
+        def cleanup():
+            events.append('cleanup')
+            return original_cleanup()
+        cases=(('1',None,'SESSION_SMOKE_PASS','PASS'),
+               ('2',None,'UNQUALIFIED','FAIL'),
+               (None,None,'UNQUALIFIED','FAIL'),
+               ('1','resource','UNQUALIFIED','PASS'),
+               ('1','result','UNQUALIFIED','PASS'),
+               ('1','eof','UNQUALIFIED','PASS'))
+        for replacement,failure,status,semantics in cases:
+            events.clear()
+            def session(cmd,**kwargs):
+                self.assertIn(qualification.FIXTURE_TASK,cmd[-1])
+                policy=read_policy.sealed_policy(cmd)
+                tools=FileTools(policy)
+                tools.call('read_file',{'path':'sample.py'})
+                if replacement is not None:
+                    tools.call('edit_file',{'path':'sample.py','old_text':'0','new_text':replacement})
+                evidence={'broker':tools.telemetry.snapshot(),'cleanup_status':'CONFIRMED',
+                          'remaining_processes':0,'cgroup_status':'ENFORCED',
+                          'resource_hits':{'memory':False,'process_count':False},
+                          'controls':{k:'ENFORCED' for k in ('cpu','memory','process_count','output','file_descriptors','file_size')},
+                          'activity':{'activity_status':'COMPLETE','result_event_observed':True,'result_category':'SUCCESS'},
+                          'completion':{'state':'PROCESS_EXITED','process_alive_at_observation_end':False,
+                                        'stdout_eof_before_cleanup':True,'stderr_eof_before_cleanup':True}}
+                if failure=='resource': evidence['resource_hits']['memory']=True
+                if failure=='result': evidence['activity']['result_category']='ERROR'
+                if failure=='eof': evidence['completion']['stdout_eof_before_cleanup']=False
+                return worker.WorkerResult(0,'FAKE_PRIVATE_RESULT',evidence)
+            with patch.object(qualification,'catalog_ready',return_value=True), patch.object(preflight,'check_host',return_value=host), \
+                    patch.object(qualification,'prepare_workspace_node',side_effect=prepare), \
+                    patch.object(qualification,'verify_fixture',side_effect=verify), \
+                    patch.object(qualification,'cleanup_active_workspace',side_effect=cleanup), \
+                    patch.object(qualification,'run_worker',side_effect=session) as run:
+                result=qualification.qualify(qualification.PROFILE)
+            run.assert_called_once();self.assertEqual(events,['verify','cleanup'])
+            self.assertFalse(paths['workspace'].exists())
+            self.assertEqual(result['status'],status)
+            self.assertEqual(result['qualification_checks']['fixture_semantics'],semantics)
+            self.assertEqual(result['fixture_change_verified'],semantics=='PASS')
+            self.assertEqual(result['qualification_checks']['tool_loop_compatibility'],'FAIL' if replacement is None else 'PASS')
+            self.assertEqual(result['identity_attribution']['served_model_id'],'UNAVAILABLE')
+            self.assertEqual(result['identity_attribution']['routed_model_id'],'UNAVAILABLE')
+            for forbidden in ('FAKE_PRIVATE_RESULT','sample.py','value =','old_text','new_text',str(paths['workspace'])):
+                self.assertNotIn(forbidden,json.dumps(result))
+        for raw in (qualification.FIXTURE_EXPECTED,b'value=1\n',b'value = 1',b'value = 1\r\n',b'value = 1.0\n'):
+            with patch.object(qualification,'read_authorized',return_value=raw):
+                self.assertEqual(qualification.verify_fixture({}),raw==qualification.FIXTURE_EXPECTED)
+        # Reproduce the historical gate with the exact production resource shape.
+        hits={'memory':False,'process_count':False}
+        self.assertFalse(not hits)
+        self.assertFalse(any(hits.values()))
+        for invalid in (None,{}, {'memory':True,'process_count':False},
+                        {'memory':False,'process_count':True}, {'memory':0,'process_count':False}):
+            checks=qualification.qualification_checks(0,{'resource_hits':invalid},True)
+            self.assertEqual(checks['execution_compatibility'],'FAIL')
+        with patch.object(qualification,'read_authorized',side_effect=ReadDenied('FAKE_SECRET')):
+            self.assertIsNone(qualification.verify_fixture({}))
+        self.assertEqual(qualification.qualification_checks(0,{},None)['fixture_semantics'],'NOT_OBSERVED')

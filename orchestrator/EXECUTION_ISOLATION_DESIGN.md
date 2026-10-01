@@ -1334,3 +1334,62 @@ New grouped deterministic cases check exact evidence enums, echoed/claimed/raw
 metadata rejection, field separation, default/candidate policy and resource
 identity, unchanged lease behavior, selection independence and non-live default.
 Existing Stage 2.3 profile tests and Stage 1 tests remain unchanged.
+
+## Stage 2.4A — qualification fixture gate audit
+
+The single supplied live qualification completed a healthy tool loop: one Read,
+one Edit, no broker denials/errors, SUCCESS result, both EOFs, zero worker exit,
+confirmed cleanup, enforced controls and no reported resource hits. Its recorded
+UNQUALIFIED result does NOT establish a failed semantic task.
+
+The harness incorrectly used `not evidence.get("resource_hits")` in the aggregate
+pass expression. Production reports a nonempty dictionary with memory=false and
+process_count=false. Such a dictionary is truthy in Python, so this gate rejected
+the healthy run and short-circuited before read_authorized reached the fixture.
+fixture_change_verified was assigned that aggregate result rather than an
+independent fixture observation. The prior positive test omitted resource_hits,
+which masked the defect. It now uses the real production dictionary shape.
+
+The correction checks both fixed resource flags as explicit False, failing
+closed for absent/malformed evidence or any hit. It computes fixture verification
+independently before cleanup and emits separate fixed PASS/FAIL categories for
+execution_compatibility, tool_loop_compatibility, result_compatibility and
+completion_compatibility. fixture_semantics is PASS/FAIL/NOT_OBSERVED;
+fixture_change_verified reports only the observed exact fixture match. Full
+SESSION_SMOKE_PASS still requires every category to pass. Correct bytes cannot
+compensate for bad execution, missing tools, failed result or missing EOF.
+An inaccessible fixture reports NOT_OBSERVED and cannot qualify.
+
+The generated fixture begins as UTF-8 bytes `value = 0` followed by LF and must
+end as `value = 1` followed by LF. The previous prompt requested changing the
+integer but did not explicitly forbid formatting changes, whereas the verifier
+was byte-exact. The prompt now says to change only the integer literal and
+preserve every other byte, including the final newline. Expected bytes are not
+relaxed or normalized. Style, CRLF, omitted newline or float-literal alternatives
+remain failures under that explicit contract. This clarification is independent
+of the proven resource gate defect; no historical final content is inferred.
+
+Broker Edit replaces exactly one nonempty unique old_text with new_text; it
+checks authorization and a concurrent-change guard. It does not understand task
+semantics and can successfully apply a different or even identical replacement.
+The broker writes/flushes/fsyncs a temporary file, then atomically replaces the
+target before returning success. Verification reads policy.root (the actual
+isolated workspace), not the unchanged source fixture, after worker return and
+manifest verification and before workspace cleanup in finally. No race or stale
+copy defect was found in this ordering. Parent-directory fsync concerns crash
+durability, not the synchronous subsequent read in this audit.
+
+The historical candidate remains recorded UNQUALIFIED; its semantic outcome is
+NOT_OBSERVED and is unrecoverable from retained safe evidence after cleanup.
+Execution/tool/result/completion compatibility was live demonstrated under the
+requested profile. This does not establish served identity, Fixer/long-session
+quality or a fully qualified candidate. Attribution remains independently
+REQUESTED_CONFIG with routed/served UNAVAILABLE. No live rerun is part of this
+audit, and existing evidence is not rewritten.
+
+Grouped deterministic fixtures use actual sealed broker Read/Edit and workspace
+operations with the model worker mocked. Cases cover correct edits, wrong
+permitted edits, no Edit, resource hits, failed results and missing EOF; verify
+initial/task/expected bytes, unchanged source, authoritative target and the
+verification-before-cleanup order; reject style/newline variants and absent
+resource evidence; and prove safe output contains no content, prompts or args.

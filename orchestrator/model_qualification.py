@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 
 from roles.model_profiles import profile_scope, resolve_profile, requested_identity, model_command
-from roles.read_policy import file_tool_flags, capability_contract, sealed_policy, read_authorized
+from roles.read_policy import file_tool_flags, capability_contract, sealed_policy, read_authorized, ReadDenied
 from roles.model_attribution import attribution_for
 from roles.worker import run_worker
 from roles.controller_git import run_git
@@ -21,6 +21,11 @@ from cli import _evidence
 PROFILE = "claude-free-gpt-oss-120b"
 MODEL = "openai/gpt-oss-120b"
 CONTAINER = "freellmapi-freellmapi-1"
+FIXTURE_INITIAL = b"value = 0\n"
+FIXTURE_EXPECTED = b"value = 1\n"
+FIXTURE_TASK = ("Use Read once on the authorized existing implementation file, then Edit once "
+                "to change only its integer literal 0 to 1. Preserve every other byte, including "
+                "the final newline. Do not use Write, discovery, shell or tests. Finish with a concise result.")
 # No gateway imports/initializers: open the installed driver read-only and project booleans only.
 CATALOG_SCRIPT = r'''
 const DB=require("better-sqlite3");
@@ -58,6 +63,45 @@ def describe(profile_id):
             "base_ms": 180000, "max_grace_ms": 60000, "hard_cap_ms": 240000}
 
 
+def verify_fixture(policy):
+    """Read the actual sealed workspace target, before workspace cleanup."""
+    try:
+        return read_authorized(policy, "sample.py") == FIXTURE_EXPECTED
+    except ReadDenied:
+        return None
+
+
+def qualification_checks(returncode, evidence, fixture_matches):
+    """Independent fixed outcomes; completion never implies task correctness."""
+    broker = evidence.get("broker", {})
+    activity = evidence.get("activity", {})
+    completion = evidence.get("completion", {})
+    hits = evidence.get("resource_hits")
+    resource_clear = (isinstance(hits, dict) and set(hits) == {"memory", "process_count"}
+                      and all(value is False for value in hits.values()))
+    execution = (returncode == 0 and evidence.get("cleanup_status") == "CONFIRMED"
+                 and evidence.get("remaining_processes") == 0
+                 and evidence.get("cgroup_status") == "ENFORCED" and resource_clear
+                 and all(evidence.get("controls", {}).get(key) == "ENFORCED"
+                         for key in ("cpu", "memory", "process_count", "output", "file_descriptors", "file_size")))
+    tools = (broker.get("requests_total") == 2 and broker.get("success_total") == 2
+             and broker.get("denied_total") == 0 and broker.get("error_total") == 0
+             and broker.get("read_success") == 1 and broker.get("edit_success") == 1)
+    result = (activity.get("activity_status") == "COMPLETE"
+              and activity.get("result_event_observed") is True
+              and activity.get("result_category") == "SUCCESS")
+    exited = (completion.get("state") == "PROCESS_EXITED"
+              and completion.get("process_alive_at_observation_end") is False
+              and completion.get("stdout_eof_before_cleanup") is True
+              and completion.get("stderr_eof_before_cleanup") is True)
+    return {"execution_compatibility": "PASS" if execution else "FAIL",
+            "tool_loop_compatibility": "PASS" if tools else "FAIL",
+            "result_compatibility": "PASS" if result else "FAIL",
+            "completion_compatibility": "PASS" if exited else "FAIL",
+            "fixture_semantics": ("PASS" if fixture_matches is True else
+                                  "FAIL" if fixture_matches is False else "NOT_OBSERVED")}
+
+
 def qualify(profile_id):
     result = describe(profile_id)
     if not catalog_ready():
@@ -65,7 +109,7 @@ def qualify(profile_id):
     with tempfile.TemporaryDirectory(prefix="freeagentos-qualification-") as temporary:
         source = Path(temporary) / "source"
         source.mkdir()
-        (source / "sample.py").write_text("value = 0\n")
+        (source / "sample.py").write_bytes(FIXTURE_INITIAL)
         for args in (["init", "--quiet"], ["config", "user.name", "FreeAgentOS qualification"],
                      ["config", "user.email", "qualification@localhost.invalid"],
                      ["config", "core.hooksPath", "/dev/null"], ["add", "--", "sample.py"],
@@ -83,36 +127,21 @@ def qualify(profile_id):
             unit = {"target_files": ["sample.py"]}
             flags = file_tool_flags(state, "coder", unit=unit)
             policy = sealed_policy(flags)
-            prompt = capability_contract(flags) + "\nUse Read once on the authorized existing implementation file, then Edit once to change its integer value from 0 to 1. Do not use Write, discovery, shell or tests. Finish with a concise result."
+            prompt = capability_contract(flags) + "\n" + FIXTURE_TASK
             with profile_scope({"coder": profile_id}):
                 command = model_command("coder", flags, prompt)
                 worker = run_worker(command, cwd=state["repo_dir"], timeout=180,
                                     role="coder", stream_activity=True)
             verify_execution_contract(state)
             evidence = _evidence(worker.evidence)
-            broker = evidence.get("broker", {})
-            activity = evidence.get("activity", {})
-            completion = evidence.get("completion", {})
-            passed = (worker.returncode == 0 and broker.get("requests_total") == 2
-                      and broker.get("success_total") == 2 and broker.get("denied_total") == 0
-                      and broker.get("error_total") == 0 and broker.get("read_success") == 1
-                      and broker.get("edit_success") == 1 and activity.get("activity_status") == "COMPLETE"
-                      and activity.get("result_event_observed") is True
-                      and activity.get("result_category") == "SUCCESS"
-                      and completion.get("state") == "PROCESS_EXITED"
-                      and completion.get("process_alive_at_observation_end") is False
-                      and completion.get("stdout_eof_before_cleanup") is True
-                      and completion.get("stderr_eof_before_cleanup") is True
-                      and evidence.get("cleanup_status") == "CONFIRMED"
-                      and evidence.get("remaining_processes") == 0
-                      and evidence.get("cgroup_status") == "ENFORCED"
-                      and not evidence.get("resource_hits")
-                      and all(evidence.get("controls", {}).get(key) == "ENFORCED"
-                              for key in ("cpu", "memory", "process_count", "output", "file_descriptors", "file_size"))
-                      and read_authorized(policy, "sample.py") == b"value = 1\n")
+            # Do not short-circuit the semantic read behind unrelated execution gates.
+            fixture_matches = verify_fixture(policy)
+            checks = qualification_checks(worker.returncode, evidence, fixture_matches)
+            passed = all(value == "PASS" for value in checks.values())
             return {**result, "status": "SESSION_SMOKE_PASS" if passed else "UNQUALIFIED",
                     "live_result": "PASS" if passed else "FAIL", "evidence": evidence,
-                    "fixture_change_verified": passed}
+                    "qualification_checks": checks,
+                    "fixture_change_verified": fixture_matches is True}
         finally:
             if cleanup_active_workspace() != "CONFIRMED":
                 raise RuntimeError("QUALIFICATION_CLEANUP_UNPROVEN")
