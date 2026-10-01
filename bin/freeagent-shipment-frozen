@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Non-generation default launcher for the frozen-plan coding experiment."""
+import os
+from pathlib import Path
+import sys
+root=Path(__file__).resolve().parents[1]
+os.chdir(root)
+os.execv(str(root/'.venv-orchestrator/bin/python3'),[str(root/'.venv-orchestrator/bin/python3'),'-m','benchmarks.shipment_frozen',*sys.argv[1:]])

@@ -153,3 +153,5 @@ def check_driver(self):
             tampered={**plan,'role_profiles':{**plan['role_profiles'],'gptoss':h.assignments('auto')}}
             path.write_text(json.dumps(tampered));path.chmod(0o600)
             with self.assertRaisesRegex(h.Abort,'PLAN_CHANGED'): h.load_plan(path)
+    from test_shipment_frozen import check_frozen_driver
+    check_frozen_driver(self)
