@@ -8,6 +8,8 @@ from roles.worker import WorkerBoundaryError, run_worker
 from roles.workspace import verify_execution_contract
 from roles.coding_units import MAX_UNITS
 from roles.sandbox import REQUIRED_CONTROLS
+from roles.read_policy import no_file_tool_flags
+from roles.repair_context import sanitized
 
 
 REVIEWER_TIMEOUT = 90
@@ -46,6 +48,11 @@ REVIEW_SCHEMA = {
 
 def machine_verification_error(state, *, final=True):
     """Return a bounded code when controller evidence cannot support review."""
+    if final:
+        from roles.intermediate_repair import completed_repair_error
+        error = completed_repair_error(state)
+        if error:
+            return error
     if state.get("status") == "BLOCKED":
         return "CONTROLLER_BLOCKED"
     if (state.get("tester_error") or state.get("workspace_integrity_error")
@@ -240,10 +247,10 @@ TRUSTED POLICY ALLOWS TEST CHANGES:
 {state.get("allow_test_changes") is True}
 
 TEST OUTPUT:
-{test_output}
+{sanitized(test_output, 3000)}
 
 FINAL DIFF:
-{diff}
+{sanitized(diff, 3500)}
 
 Review requirements:
 - determine whether the actual diff addresses the task
@@ -262,8 +269,7 @@ Return only the schema-constrained structured result.
     result = run_worker(
         [
             "claude-free",
-            "--tools",
-            "",
+            *no_file_tool_flags(),
             "--permission-mode",
             "dontAsk",
             "--permission-prompts",

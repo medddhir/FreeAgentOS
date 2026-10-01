@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from roles.activity import ActivityCapture, MAX_TIME_MS
+from roles.lease import ActivityLease, hard_cap_seconds
 from roles.sandbox import (BoundedCapture, MS_BIND, MS_PRIVATE, MS_RDONLY, MS_REC, MS_REMOUNT,
                            _drain_ready, _event_values, _mount, _read_bounded,
                            _scope_pids, _start_cgroup, _stop_scope, _umount)
@@ -83,17 +85,22 @@ def _gateway_health():
             "gateway_request_observed": "UNAVAILABLE"}
 
 
-def _read_worker_streams(proc, seconds, capture, spawned_ns):
+def _read_worker_streams(proc, seconds, capture, spawned_ns, *, lease=None, broker=None):
     """Drain both pipes with one bounded capture and independent byte counters."""
     stats = {"worker_stdout_bytes_seen": 0, "worker_stderr_bytes_seen": 0,
              "worker_first_stdout_byte_ms": None, "worker_first_stderr_byte_ms": None}
-    deadline = time.monotonic() + seconds
+    lease = lease or ActivityLease(seconds, "worker", "model", False, seconds, spawned_ns)
     with selectors.DefaultSelector() as selector:
         for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, name)
-        while time.monotonic() < deadline:
-            events = selector.select(min(0.05, max(0, deadline - time.monotonic())))
+        while True:
+            now_ns = time.monotonic_ns()
+            lease.observe(broker=broker, capture=capture)
+            if now_ns >= lease.deadline_ns:
+                if proc.poll() is not None or not lease.extend(now_ns, broker=broker, capture=capture):
+                    break
+            events = selector.select(min(0.05, max(0, (lease.deadline_ns - time.monotonic_ns()) / 1e9)))
             for key, _ in events:
                 try:
                     chunk = os.read(key.fileobj.fileno(), 65536)
@@ -111,6 +118,8 @@ def _read_worker_streams(proc, seconds, capture, spawned_ns):
                 # Stderr is diagnostic transport, never model/research stdout.
                 # Drain it without retaining its potentially sensitive text.
                 if name == "stdout":
+                    if isinstance(capture, ActivityCapture):
+                        capture.now_ms = min(MAX_TIME_MS, _elapsed_ms(spawned_ns))
                     capture.add(chunk)
             if proc.poll() is not None and not events:
                 return False, stats
@@ -132,6 +141,8 @@ def _drain_worker_ready(proc, capture, stats, spawned_ns):
             if stats[first_key] is None:
                 stats[first_key] = _elapsed_ms(spawned_ns)
             if name == "stdout":
+                if isinstance(capture, ActivityCapture):
+                    capture.now_ms = min(MAX_TIME_MS, _elapsed_ms(spawned_ns))
                 capture.add(chunk)
 
 
@@ -219,10 +230,14 @@ def _run_inner(area, request):
     mountpoint, scope = _start_cgroup(Path(area) / "root", policy, request["scope_name"])
     setup_ms = _elapsed_ms(setup_started_ns)
     process = None
+    broker = None
     evidence = None
-    capture = BoundedCapture(policy["max_output_bytes"])
+    capture = (ActivityCapture() if request.get("stream_activity") else
+               BoundedCapture(policy["max_output_bytes"]))
     try:
-        command = ["/usr/bin/setpriv", "--bounding-set=-all", "--no-new-privs", "--", *request["cmd"]]
+        from roles.broker_session import prepare_session
+        broker_command, broker = prepare_session(request["cmd"], area)
+        command = ["/usr/bin/setpriv", "--bounding-set=-all", "--no-new-privs", "--", *broker_command]
         spawn_started_ns = time.monotonic_ns()
         try:
             process = subprocess.Popen(command, cwd=request["cwd"],
@@ -235,11 +250,19 @@ def _run_inner(area, request):
                 "remaining_processes": None}) from exc
         spawn_ms = _elapsed_ms(spawn_started_ns)
         spawned_ns = time.monotonic_ns()
-        timed_out, streams = _read_worker_streams(process, timeout, capture, spawned_ns)
+        if broker is not None:
+            broker.start()
+        lease = ActivityLease(timeout, request["role"], request["profile"],
+                              request.get("stream_activity"), policy["wall_timeout_seconds"], spawned_ns)
+        timed_out, streams = _read_worker_streams(process, timeout, capture, spawned_ns,
+                                                lease=lease, broker=broker)
+        ended_ns = time.monotonic_ns()
         cleanup_started_ns = time.monotonic_ns()
         cleanup = _stop_scope(scope, process, policy["termination_grace_seconds"])
         runtime_ms = _elapsed_ms(spawned_ns)
+        broker_evidence = broker.stop() if broker is not None else None
         _drain_worker_ready(process, capture, streams, spawned_ns)
+        activity = capture.finish() if isinstance(capture, ActivityCapture) else None
         memory = _event_values(scope / "memory.events")
         pids = _event_values(scope / "pids.events")
         hits = {"memory": bool(memory.get("oom", 0) or memory.get("oom_kill", 0)),
@@ -248,7 +271,12 @@ def _run_inner(area, request):
                      streams["worker_stdout_bytes_seen"] + streams["worker_stderr_bytes_seen"]
                      > policy["max_output_bytes"])
         code = 124 if timed_out else (1 if truncated or any(hits.values()) else process.returncode)
-        evidence = {**cleanup, "role": request["role"], "timeout_triggered": timed_out,
+        if activity is not None and not timed_out and code == 0 and activity["activity_status"] != "COMPLETE":
+            code = 65
+        evidence = {**cleanup, "lease": lease.evidence(ended_ns, success=code == 0),
+                    **({"broker": broker_evidence} if broker_evidence is not None else {}),
+                    **({"activity": activity} if activity is not None else {}),
+                    "role": request["role"], "timeout_triggered": timed_out,
                     "output_truncated": truncated,
                     "output_total_bytes": (streams["worker_stdout_bytes_seen"] +
                                            streams["worker_stderr_bytes_seen"]),
@@ -276,19 +304,26 @@ def _run_inner(area, request):
         if process is not None:
             process.stdout.close()
             process.stderr.close()
-        scope.rmdir()
-        _umount(mountpoint)
-        mountpoint.rmdir()
+        try:
+            if broker is not None:
+                broker.stop()
+        finally:
+            scope.rmdir()
+            _umount(mountpoint)
+            mountpoint.rmdir()
         if evidence is not None:
             evidence["worker_cleanup_ms"] = _elapsed_ms(cleanup_started_ns)
             evidence["worker_total_ms"] = _elapsed_ms(inner_started_ns)
 
 
 def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
-                     policy_profile="model"):
+                     policy_profile="model", stream_activity=False):
     """Run only the CLI tree in a cgroup; keep this controller outside it."""
     outer_started_ns = time.monotonic_ns()
     policy = _effective_policy(limits, policy_profile)
+    if (type(stream_activity) is not bool or stream_activity and
+            (policy_profile != "model" or role not in ("coder", "fixer"))):
+        raise WorkerBoundaryError("WORKER_ACTIVITY_MODE_INVALID")
     if (type(timeout) is not int or timeout <= 0 or not isinstance(cmd, list) or not cmd
             or any(not isinstance(item, str) for item in cmd)):
         raise WorkerBoundaryError("WORKER_REQUEST_INVALID")
@@ -296,6 +331,7 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
     request = {"cmd": cmd, "cwd": str(cwd or os.getcwd()), "timeout": min(timeout, policy["wall_timeout_seconds"]),
                "role": role, "policy": policy, "limits": limits or {}, "profile": policy_profile}
     request["scope_name"] = scope_name
+    request["stream_activity"] = stream_activity
     raw = json.dumps(request, separators=(",", ":")).encode()
     if len(raw) > 128 * 1024:
         raise WorkerBoundaryError("WORKER_REQUEST_TOO_LARGE")
@@ -322,7 +358,9 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
         try:
             process.stdin.write(raw)
             process.stdin.close()
-            emergency = _read_bounded(process, request["timeout"] + 10, capture)
+            emergency_seconds = hard_cap_seconds(request["timeout"], role, policy_profile,
+                                                 stream_activity, policy["wall_timeout_seconds"])
+            emergency = _read_bounded(process, emergency_seconds + 10, capture)
             if emergency:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -378,10 +416,10 @@ def _cleanup_outer_scope(scope_name):
 
 
 def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
-               policy_profile="model"):
+               policy_profile="model", stream_activity=False):
     try:
         return _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
-                                policy_profile=policy_profile)
+                                policy_profile=policy_profile, stream_activity=stream_activity)
     except WorkerBoundaryError:
         raise
     except Exception as exc:

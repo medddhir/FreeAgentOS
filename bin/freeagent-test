@@ -16,10 +16,10 @@ SCRIPT = Path(__file__).resolve()
 CONTROLLER_ROOT = SCRIPT.parents[1]
 CONTROLLER_VENV = CONTROLLER_ROOT / ".venv-orchestrator"
 CONTROLLER_PYTHON = CONTROLLER_VENV / "bin" / "python3"
-# The controller's expanding deterministic self-suite needs a longer lease.
+# The complete controller self-suite measures about 320s; allow bounded headroom.
 # Target repositories keep the original runner lease and the independent
 # 130-second namespace sandbox ceiling.
-TIMEOUT = 240 if ROOT.resolve() == Path(__file__).resolve().parents[1] else 180
+TIMEOUT = 420 if ROOT.resolve() == Path(__file__).resolve().parents[1] else 180
 MAX_CAPTURE = 64 * 1024
 
 

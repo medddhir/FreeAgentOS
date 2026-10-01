@@ -42,7 +42,9 @@ def safe_identifier(value):
 
 
 def safe_path(name):
-    if len(name) > 180 or any(ord(ch) < 32 for ch in name):
+    if (not isinstance(name, str) or not name or len(name) > 180
+            or "\\" in name or any(ord(ch) < 32 or ord(ch) > 126 for ch in name)
+            or any(part in ("", ".", "..") for part in name.split("/"))):
         return False
     parts = PurePosixPath(name).parts
     if not parts or PurePosixPath(name).is_absolute() or ".." in parts:
@@ -55,15 +57,36 @@ def safe_path(name):
     return not parts[-1].lower().startswith(("settings.", "config.", "keys.", "ssh_config", "id_rsa", "id_ed25519"))
 
 
-def _read(repo, name):
-    """Open every component without following symlinks; never open special files."""
+def _parent_fd(repo, name, root_identity=None, *, create=False):
+    """Anchor path operations to a verified root and no-follow directories."""
+    if not safe_path(name):
+        raise RuntimeError("UNSAFE_INSPECTION_PATH")
     directory = os.open(repo, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
+        info = os.fstat(directory)
+        if root_identity is not None and (info.st_dev, info.st_ino) != tuple(root_identity):
+            raise RuntimeError("INSPECTION_ROOT_CHANGED")
         parts = PurePosixPath(name).parts
         for part in parts[:-1]:
+            if create:
+                try:
+                    os.mkdir(part, mode=0o755, dir_fd=directory)
+                except FileExistsError:
+                    pass
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
             os.close(directory)
             directory = child
+        return directory
+    except BaseException:
+        os.close(directory)
+        raise
+
+
+def _read(repo, name, root_identity=None):
+    """Open every component without following symlinks; never open special files."""
+    directory = _parent_fd(repo, name, root_identity)
+    try:
+        parts = PurePosixPath(name).parts
         before = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
             raise RuntimeError("UNSAFE_INSPECTION_FILE")
@@ -155,7 +178,8 @@ def inspector_node(state):
         raw_paths = git(repo, "ls-files", "-z").split("\0")
         if len(raw_paths) > MAX_PATHS + 1:
             raise RuntimeError("INSPECTION_PATH_BUDGET_EXCEEDED")
-        paths = sorted({name for name in raw_paths if name and safe_path(name)})
+        from roles.read_policy import inspector_path_allowed, inspector_read
+        paths = sorted({name for name in raw_paths if name and inspector_path_allowed(name)})
         task_words = set(re.findall(r"[a-z]{3,}", state.get("task", "").lower()))
         def rank(name):
             manifest = PurePosixPath(name).name in MANIFESTS
@@ -174,7 +198,7 @@ def inspector_node(state):
             if consumed + MAX_FILE_BYTES > MAX_TOTAL_BYTES:
                 facts["truncated"] = True
                 break
-            content = _read(repo, name)
+            content = inspector_read(repo, name, candidates)
             if content is None:
                 facts["truncated"] = True
                 continue

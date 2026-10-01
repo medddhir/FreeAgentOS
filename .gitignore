@@ -11,3 +11,10 @@ __pycache__/
 .env.*
 *.log
 .DS_Store
+/.archify/
+/backups/
+/integrity-workspace/
+/research-workspace/
+/test-workspace/
+/sources/
+/orchestrator/roles/*.before-*

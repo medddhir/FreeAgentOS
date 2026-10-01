@@ -3,9 +3,11 @@ import time
 from typing import Any
 
 from state import AgentState
-from roles.coding_units import MAX_UNITS, MAX_EXPLICIT_GOAL, MAX_TARGET_FILES, MAX_TARGET_PATH, validate_planner_units
+from roles.coding_units import (MAX_UNITS, MAX_EXPLICIT_GOAL, MAX_TARGET_FILES, MAX_TARGET_PATH,
+                                validate_planner_units, GOAL_GENERATION_PATTERN, UnitGoalFailure)
 from roles.worker import WorkerBoundaryError, run_worker
 from roles.workspace import verify_execution_contract
+from roles.read_policy import no_file_tool_flags
 
 
 PLANNER_TIMEOUT = 90
@@ -146,7 +148,10 @@ PLANNER_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "goal": {"type": "string", "minLength": 1, "maxLength": MAX_EXPLICIT_GOAL},
+                    "goal": {"type": "string", "minLength": 1, "maxLength": MAX_EXPLICIT_GOAL,
+                             "pattern": GOAL_GENERATION_PATTERN,
+                             "description": "Concise behavioral implementation outcome, beginning with an action verb; "
+                                            "at most 300 characters including whitespace. Keep details in steps/target_files."},
                     "target_files": {"type": "array", "maxItems": MAX_TARGET_FILES,
                                      "items": {"type": "string", "minLength": 1,
                                                "maxLength": MAX_TARGET_PATH},
@@ -207,7 +212,17 @@ Rules:
 - use at most 5 concise steps
 - steps describe the bounded overall implementation workflow; they may include reading and verification
 - coding_units define the expensive Coder model-call boundaries, with 1 to 3 coherent implementation outcomes
+- tests run after EVERY coding unit: choose test-coherent behavioral slices, not one-file-per-unit edits
+- each unit must be independently implementable and leave the repository testable without increasing known test failures
+- include tightly coupled implementation files needed for the behavior in that unit's bounded target_files
+- order prerequisites before dependents: domain foundations, then core behavior, then interfaces/output
+- do not separate coupled model/interface changes from their consumers merely to give each file a unit
 - each coding unit goal must name an actual code change, not just reading, inspection, diagnosis, running tests, or reviewing a diff
+- each goal must be concise, nonblank, and at most {MAX_EXPLICIT_GOAL} characters INCLUDING whitespace
+- start each goal with an implementation verb followed by a space, preferably Implement, Fix, Add, or Update
+- prefer a single-line behavioral outcome such as "Implement domain models and parsing for valid records"
+- keep detailed requirements in the supporting steps and target_files; do not turn goals into long pseudo-specifications
+- never shorten goals by omitting tightly coupled behavior; summarize the coherent outcome instead
 - fold preparation and verification into the coding unit that needs them; never create a read-only or test-only coding unit
 - collectively, coding units must address the user task and overall plan; their goals are the execution objectives
 - each coding unit has up to 4 target_files: normalized relative implementation paths only
@@ -227,8 +242,7 @@ Return only the schema-constrained structured result.
 
     cmd = [
         "claude-free",
-        "--tools",
-        "",
+        *no_file_tool_flags(),
         "--permission-mode",
         "dontAsk",
         "--permission-prompts",
@@ -344,8 +358,10 @@ def _normalize(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             coding_units = validate_planner_units(clean_steps, payload["coding_units"])
         except ValueError as exc:
-            raise PlannerFailure("PLANNER_CODING_UNITS_INVALID", "schema",
-                                 {"unit_validation_code": str(exc)}) from None
+            diagnostic = {"unit_validation_code": str(exc)}
+            if isinstance(exc, UnitGoalFailure):
+                diagnostic["unit_goal_validation_reason"] = exc.reason
+            raise PlannerFailure("PLANNER_CODING_UNITS_INVALID", "schema", diagnostic) from None
         source = "PLANNER_EXPLICIT"
     else:
         coding_units = []

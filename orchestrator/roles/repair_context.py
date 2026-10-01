@@ -5,8 +5,9 @@ import json
 import re
 
 from roles.controller_git import ControllerGitError, run_git
-from roles.inspector import OPAQUE, SECRET_NAME, _read
+from roles.inspector import OPAQUE, SECRET_NAME
 from roles.integrity import changes, check_baseline, git
+from roles.read_policy import context_read
 
 MAX_FAILURE_IDENTIFIERS = 24
 MAX_IDENTIFIER_CHARS = 180
@@ -120,7 +121,7 @@ def _diff(repo, names, new_files):
     omitted = 0
     used = 0
     for index, name in enumerate(names):
-        current = _read(repo, name)
+        current = context_read({"repo_dir": str(repo)}, name, names)
         if current is None:
             omitted += 1
             continue
@@ -171,7 +172,13 @@ def repair_packet(state):
         raise RuntimeError("FIXER_CONTEXT_POLICY_DENIED")
     history = [item for item in (state.get("unit_history") or [])
                if isinstance(item, dict) and item.get("phase") != "repair"][:3]
-    completed = min(3, max(0, state.get("unit_index", 0)))
+    repair_state = state.get("intermediate_repair")
+    intermediate = isinstance(repair_state, dict) and repair_state.get("status") == "PENDING"
+    active_targets = None
+    if intermediate:
+        from roles.intermediate_repair import repair_targets
+        active_targets = repair_targets(state)
+    completed = min(3, max(0, state.get("unit_index", 0)) + int(intermediate))
     units = (state.get("coding_units") or [])[:completed]
     candidates = []
     # Failure text is intentionally never used as a path source. All candidates
@@ -180,6 +187,8 @@ def repair_packet(state):
     related = (state.get("repo_facts") or {}).get("relevant_files", [])[:24]
     for name in [*current["changed"], *hints, *related]:
         if not isinstance(name, str) or not _target_path(name) or _is_test_file(name):
+            continue
+        if active_targets is not None and name not in active_targets:
             continue
         if name in current["deleted"] or name in candidates:
             continue
@@ -191,7 +200,8 @@ def repair_packet(state):
             continue
         # Enforce regular, single-link, no-symlink reads before inclusion.
         # Model hints never weaken this boundary.
-        _read(repo, name)
+        if context_read(state, name, [name]) is None:
+            continue
         candidates.append(name)
         if len(candidates) == MAX_CONTEXT_FILES:
             break
@@ -211,6 +221,11 @@ def repair_packet(state):
                  "before": _count(item.get("test_failures_before")),
                  "after": _count(item.get("test_failures_after"))}
                 for item in history]
+    repair_progress = [{"before": _count(item.get("test_failures_before")),
+                        "after": _count(item.get("test_failures_after")),
+                        "fix_attempt": _count(item.get("fix_attempt"))}
+                       for item in (state.get("unit_history") or [])[-5:]
+                       if isinstance(item, dict) and item.get("phase") == "repair"][-2:]
     previous = progress[-1]["before"] if progress else None
     prior_repairs = [item for item in (state.get("worker_history") or [])
                      if isinstance(item, dict) and item.get("role") == "fixer"][-2:]
@@ -218,7 +233,7 @@ def repair_packet(state):
         previous = _count((prior_repairs[-1].get("context") or {}).get("fixer_current_failure_count"))
     packet = {"test_result": state.get("test_result") if state.get("test_result") in ("PASS", "FAIL") else "UNKNOWN",
               "test_exit": _count(state.get("test_exit")),
-              "failure_evidence": evidence, "unit_progress": progress,
+              "failure_evidence": evidence, "unit_progress": progress, "repair_progress": repair_progress,
               "baseline_failures": _count((state.get("workspace_test_attestation") or {}).get("baseline_failures")),
               "changed_files": [name for name in current["changed"]
                                 if _target_path(name) and not _is_test_file(name)][:24],
@@ -230,7 +245,8 @@ def repair_packet(state):
               "repair_candidates": candidates, "diff_check_exit": _count(state.get("diff_check_exit")),
               "integrity_clean": not any((state.get("integrity_violations") or {}).values()),
               "rollback_completed": bool(state.get("rollback_evidence")),
-              "last_unit_goal": progress[-1]["goal"] if progress else ""}
+              "last_unit_goal": progress[-1]["goal"] if progress else "",
+              "intermediate_repair": (state.get("intermediate_repair") if intermediate else None)}
     # A structured packet is never cut into invalid JSON; drop secondary output
     # first if unusual history consumes its independent diagnostic budget.
     text = json.dumps(packet, sort_keys=True)
@@ -250,4 +266,5 @@ def repair_packet(state):
                "fixer_diff_omitted_files_count": delta["omitted_or_truncated_files"],
                "fixer_previous_failure_count": previous,
                "fixer_current_failure_count": evidence["failure_count"]}
-    return {"evidence": text, "context": context["text"], "diff": delta, "metrics": metrics}
+    return {"evidence": text, "context": context["text"], "diff": delta, "metrics": metrics,
+            "read_candidates": candidates}

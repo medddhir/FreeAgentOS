@@ -8,6 +8,7 @@ from pathlib import PurePosixPath
 from roles.inspector import OPAQUE, SECRET_NAME, _read, safe_path
 from roles.integrity import check_baseline, git, is_verification_file
 from roles.tester import _is_test_file
+from roles.read_policy import context_read, generated_content, path_allowed
 
 
 MAX_UNITS = 3
@@ -21,12 +22,35 @@ CONTEXT_EXCLUDED_DIRS = {"data", "datasets", "fixtures", "uploads", "generated",
 GENERATED_MARKER = re.compile(r"(?im)^\s*(?:#|//|/\*|\*)?\s*(?:@?generated|auto.generated|do not edit)\b")
 BEARER_CREDENTIAL = re.compile(r"(?i)\bbearer\s+\S+")
 IMPLEMENTATION_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".php", ".rb"}
+IMPLEMENTATION_VERBS = (
+    "add", "implement", "fix", "update", "change", "correct", "modify", "create", "write", "refactor",
+    "support", "handle", "replace", "remove", "build", "produce", "extend", "integrate", "repair",
+    "complete", "make", "introduce", "improve", "enable", "harden", "wire", "parse", "render",
+)
 IMPLEMENTATION_ACTION = re.compile(
     r"(?i)(?:^|[,;:]\s*|\b(?:and|then|to)\s+)"
-    r"(?:add|implement|fix|update|change|correct|modify|create|write|refactor|"
-    r"support|handle|replace|remove|build|produce|extend|integrate|repair|"
-    r"complete|make|introduce|improve|enable|harden|wire|parse|render)\b"
+    + r"(?:" + "|".join(IMPLEMENTATION_VERBS) + r")\b"
 )
+# Portable generation subset: leading Python-strip whitespace, then an ASCII
+# action verb followed by whitespace/end. The controller still accepts its
+# existing broader action placement and Unicode rules; no goal is truncated.
+GOAL_GENERATION_PATTERN = (
+    r"^[\u0009-\u000D\u001C-\u0020\u0085\u00A0\u1680\u2000-\u200A"
+    r"\u2028\u2029\u202F\u205F\u3000]*(?:"
+    + "|".join("".join("[" + ch.upper() + ch + "]" for ch in verb)
+               for verb in IMPLEMENTATION_VERBS)
+    + r")(?:\s|$)"
+)
+GOAL_VALIDATION_REASONS = ("GOAL_NOT_STRING", "GOAL_EMPTY", "GOAL_TOO_LONG", "GOAL_NO_IMPLEMENTATION_ACTION")
+
+
+class UnitGoalFailure(ValueError):
+    """Only a fixed code/reason; never retain the rejected goal."""
+    def __init__(self, reason):
+        super().__init__("UNIT_GOAL_INVALID")
+        self.reason = reason
+
+
 VERIFICATION_START = re.compile(r"(?i)^\s*(?:run|verify|check|confirm)\b")
 INSPECT_START = re.compile(r"(?i)^\s*(?:inspect|review)\b")
 VERIFICATION_TARGET = re.compile(r"(?i)\b(?:tests?|diff|changes?|results?|output|behavior)\b")
@@ -148,9 +172,14 @@ def validate_planner_units(steps, proposed):
         if not isinstance(unit, dict) or set(unit) != {"goal", "target_files"}:
             raise ValueError("UNIT_SCHEMA_INVALID")
         goal = unit["goal"]
-        if (not isinstance(goal, str) or not goal.strip() or len(goal) > MAX_EXPLICIT_GOAL
-                or _step_kind(goal.strip()) != "implementation"):
-            raise ValueError("UNIT_GOAL_INVALID")
+        if not isinstance(goal, str):
+            raise UnitGoalFailure("GOAL_NOT_STRING")
+        if not goal.strip():
+            raise UnitGoalFailure("GOAL_EMPTY")
+        if len(goal) > MAX_EXPLICIT_GOAL:
+            raise UnitGoalFailure("GOAL_TOO_LONG")
+        if _step_kind(goal.strip()) != "implementation":
+            raise UnitGoalFailure("GOAL_NO_IMPLEMENTATION_ACTION")
         targets = unit["target_files"]
         if (not isinstance(targets, list) or len(targets) > MAX_TARGET_FILES
                 or any(not _target_path(name) for name in targets)
@@ -288,6 +317,7 @@ def local_context_packet(state, unit, *, include_readme=True):
     candidates = []
     for name in [*targets, *unit.get("files", []), *facts.get("relevant_files", []), *(["README.md"] if include_readme else [])]:
         if (isinstance(name, str) and name not in candidates and _context_path(name)
+                and path_allowed(name, allow_tests=state.get("allow_test_changes") is True)
                 and (name in tracked or (name in targets and name in prior_changes
                                          and state.get("allow_new_files") is True))
                 and (name == "README.md" or
@@ -306,7 +336,7 @@ def local_context_packet(state, unit, *, include_readme=True):
             if name in targets:
                 target_truncated += 1
             continue
-        raw = _read(repo, name)
+        raw = context_read(state, name, candidates)
         if raw is None:
             if name in targets:
                 target_truncated += 1
@@ -315,10 +345,9 @@ def local_context_packet(state, unit, *, include_readme=True):
             content = raw.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        # Conservative exclusion: a source file with apparent credential material
-        # is left to the restricted file tools, never copied into model context.
+        # File tools use the same exclusions; they cannot retrieve omitted secrets.
         if (SECRET_NAME.search(content) or OPAQUE.search(content)
-                or GENERATED_MARKER.search(content[:1024]) or BEARER_CREDENTIAL.search(content)):
+                or generated_content(content) or BEARER_CREDENTIAL.search(content)):
             continue
         encoded = content.encode("utf-8")[:MAX_CONTEXT_FILE_BYTES]
         text = encoded.decode("utf-8", "ignore")

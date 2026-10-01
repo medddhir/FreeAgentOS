@@ -1,11 +1,15 @@
 """The trusted self-runner and copied target runner select their own runtimes."""
 
+import ast
+import contextlib
+import io
 import os
 import runpy
 import shutil
 import subprocess
 import sys
 import tempfile
+import tokenize
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -157,6 +161,50 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
             with patch.dict(self.globals, {"ROOT": repo}), \
                     patch.object(self.globals["shutil"], "which", return_value="/usr/bin/npm"):
                 self.assertEqual(self.detect(), (["npm", "test", "--", "--runInBand"], "npm-test"))
+
+    def test_budget(self):
+        self.assertEqual(self.globals["TIMEOUT"], 420)
+        self.assertEqual(self.globals["MAX_CAPTURE"], 64 * 1024)
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(Path, "cwd", return_value=Path(directory)):
+            self.assertEqual(runpy.run_path(str(RUNNER))["TIMEOUT"], 180)
+
+        def constant(filename, name):
+            tree = ast.parse((ROOT / "orchestrator" / "roles" / filename).read_text())
+            return next(ast.literal_eval(node.value) for node in tree.body
+                        if isinstance(node, ast.Assign) and any(
+                            isinstance(target, ast.Name) and target.id == name
+                            for target in node.targets))
+
+        self.assertEqual(constant("coder.py", "CODER_TIMEOUT"), 180)
+        self.assertEqual(constant("fixer.py", "FIXER_TIMEOUT"), 180)
+        for name, value in (("BASE_SECONDS", 180), ("GRACE_SECONDS", 60),
+                            ("HARD_SECONDS", 240), ("RECENT_SECONDS", 30)):
+            self.assertEqual(constant("lease.py", name), value)
+        for path in (ROOT / "orchestrator" / "roles").glob("*.py"):
+            with self.subTest(production_module=path.name):
+                # Octal file mode 0o644 also equals 420 numerically; it is not
+                # a reference to the decimal full-suite wall-clock budget.
+                tokens = tokenize.generate_tokens(io.StringIO(path.read_text()).readline)
+                self.assertFalse(any(token.type == tokenize.NUMBER and token.string == "420"
+                                     for token in tokens))
+
+        cases = [("print('SUITE_COMPLETE')", 5, 0, "PASS"),
+                 ("raise SystemExit(7)", 5, 7, "FAIL"),
+                 ("import time; time.sleep(10)", 0.02, 124, "TIMEOUT")]
+        for code, budget, expected_exit, expected_result in cases:
+            with self.subTest(result=expected_result), \
+                    patch.dict(self.globals, {"TIMEOUT": budget}), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                result = self.globals["run"]([sys.executable, "-c", code], "fixture")
+            self.assertEqual(result, expected_exit)
+            text = output.getvalue()
+            self.assertIn("RESULT=" + expected_result, text)
+            self.assertIn("EXIT_CODE=" + str(expected_exit), text)
+            if expected_result == "PASS":
+                self.assertLess(text.index("SUITE_COMPLETE"), text.index("RESULT=PASS"))
+            else:
+                self.assertNotIn("RESULT=PASS", text)
 
 
 if __name__ == "__main__":

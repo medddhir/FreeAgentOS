@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "orchestrator"))
 from roles.worker import (WORKER_POLICY, WorkerBoundaryError, WorkerResult, _validate_evidence,
                           run_worker)
 from roles import coder, fixer
+from roles.read_policy import no_file_tool_flags
 import graph
 
 
@@ -135,8 +136,11 @@ class WorkerResourceTests(unittest.TestCase):
             failure = WorkerBoundaryError("WORKER_BOUNDARY_UNVERIFIED",
                                           {"cleanup_status": "UNPROVEN", "remaining_processes": 1})
             with patch.object(coder, "_git_clean", return_value=True), \
-                    patch.object(coder, "run_worker", side_effect=failure):
+                    patch.object(coder, "file_tool_flags", return_value=no_file_tool_flags()), \
+                    patch.object(coder, "capability_contract", return_value="Fixture: no file capabilities"), \
+                    patch.object(coder, "run_worker", side_effect=failure) as worker:
                 result = coder.coder_node({"task": "edit app", "repo_dir": str(repo), "plan_steps": ["edit"]})
+                worker.assert_called_once()
             self.assertEqual(result["status"], "BLOCKED")
             self.assertEqual(graph.route_after_coder(result), "finalizer")
             self.assertEqual(result["worker_history"][0]["evidence"]["remaining_processes"], 1)
@@ -146,6 +150,8 @@ class WorkerResourceTests(unittest.TestCase):
             failure = WorkerBoundaryError("WORKER_BOUNDARY_UNVERIFIED",
                                           {"cleanup_status": "UNPROVEN", "remaining_processes": 1})
             with patch.object(fixer, "repair_packet", return_value={"evidence": "{}", "context": "", "diff": {"text": "", "omitted_or_truncated_files": 0}, "metrics": {}}), \
+                    patch.object(fixer, "file_tool_flags", return_value=no_file_tool_flags()), \
+                    patch.object(fixer, "capability_contract", return_value="Fixture: no file capabilities"), \
                     patch.object(fixer, "run_worker", side_effect=failure) as worker:
                 result = fixer.fixer_node({"task": "repair app", "repo_dir": temp, "fix_attempts": 1})
                 worker.assert_called_once()
@@ -159,19 +165,26 @@ class WorkerResourceTests(unittest.TestCase):
             (repo / ".git").write_text("fixture")
             timeout = WorkerResult(124, "", {"cleanup_status": "CONFIRMED", "remaining_processes": 0})
             with patch.object(coder, "_git_clean", return_value=True), \
-                    patch.object(coder, "run_worker", return_value=timeout):
+                    patch.object(coder, "file_tool_flags", return_value=no_file_tool_flags()), \
+                    patch.object(coder, "capability_contract", return_value="Fixture: no file capabilities"), \
+                    patch.object(coder, "run_worker", return_value=timeout) as worker:
                 result = coder.coder_node({"task": "edit app", "repo_dir": str(repo), "plan_steps": ["edit"]})
+                worker.assert_called_once()
             self.assertEqual(result["status"], "BLOCKED")
+            self.assertEqual(result["coder_error"], "CODER_TIMEOUT")
             self.assertEqual(graph.route_after_coder(result), "finalizer")
 
     def test_fixer_timeout_with_proven_cleanup_cannot_verify(self):
         with TemporaryDirectory() as temp:
             timeout = WorkerResult(124, "", {"cleanup_status": "CONFIRMED", "remaining_processes": 0})
             with patch.object(fixer, "repair_packet", return_value={"evidence": "{}", "context": "", "diff": {"text": "", "omitted_or_truncated_files": 0}, "metrics": {}}), \
+                    patch.object(fixer, "file_tool_flags", return_value=no_file_tool_flags()), \
+                    patch.object(fixer, "capability_contract", return_value="Fixture: no file capabilities"), \
                     patch.object(fixer, "run_worker", return_value=timeout) as worker:
                 result = fixer.fixer_node({"task": "repair app", "repo_dir": temp, "fix_attempts": 1})
                 worker.assert_called_once()
             self.assertEqual(result["status"], "BLOCKED")
+            self.assertEqual(result["fixer_error"], "FIXER_TIMEOUT")
             self.assertEqual(graph.route_after_fixer(result), "finalizer")
 
 

@@ -17,6 +17,7 @@ from roles.workspace import prepare_workspace_node, discovery_baseline_node, fin
 from roles.preflight import preflight_node
 from roles.coding_units import MAX_UNITS, derive_units_node, failure_count
 from roles.integrity import ERRORS, fingerprint
+from roles.intermediate_repair import repair_checkpoint, repair_targets
 
 
 MAX_FIX_ATTEMPTS = 2
@@ -67,6 +68,13 @@ def route_after_tester(state: AgentState):
     if machine_verification_error(state, final=False):
         return "finalizer"
 
+    if state.get("unit_gate_status") == "REPAIR_REQUIRED":
+        try:
+            repair_checkpoint(state)
+        except ValueError:
+            return "finalizer"
+        return "fixer"
+
     if state.get("unit_gate_status") == "CONTINUE":
         return "coder"
 
@@ -92,6 +100,15 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
     units = state.get("coding_units") or []
     index = state.get("unit_index", 0)
     attempts = state.get("fix_attempts", 0)
+    repair_state = state.get("intermediate_repair")
+    intermediate = isinstance(repair_state, dict) and repair_state.get("status") == "PENDING"
+    checkpoint = None
+    if intermediate:
+        try:
+            checkpoint = repair_checkpoint(state, tested=True)
+        except ValueError:
+            return {**result, "status": "BLOCKED", "unit_error": "INTERMEDIATE_REPAIR_STATE_INVALID",
+                    "unit_gate_status": "BLOCKED"}
     # Final Coders advance past the last unit even when tests still fail.
     # Repaired integration must revisit that checkpoint, including its gates.
     repairing_final = (bool(units) and type(index) is int and index == len(units)
@@ -99,7 +116,7 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
                        and type(attempts) is int and 1 <= attempts <= MAX_FIX_ATTEMPTS)
     if repairing_final:
         index -= 1
-    repairing = repairing_final or ((len(units) == 1 or state.get("unit_gate_status") == "INTEGRITY_OR_SANDBOX_FAILURE")
+    repairing = intermediate or repairing_final or ((len(units) == 1 or state.get("unit_gate_status") == "INTEGRITY_OR_SANDBOX_FAILURE")
                                     and type(index) is int and 0 <= index < len(units)
                                     and type(attempts) is int and 1 <= attempts <= MAX_FIX_ATTEMPTS)
     if not units or type(index) is not int or index >= len(units):
@@ -112,7 +129,8 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
         before = (prior_evidence.get("failure_count") if isinstance(prior_evidence, dict)
                   and type(prior_evidence.get("failure_count")) is int else
                   failure_count(state.get("test_output"), framework))
-    after = (0 if result.get("test_result") == "PASS" else
+    count = (result.get("machine_failure_evidence") or {}).get("failure_count")
+    after = (0 if result.get("test_result") == "PASS" else count if type(count) is int and count >= 0 else
              failure_count(result.get("test_output"), framework))
     workers = state.get("worker_history") or []
     worker_record = next((item for item in reversed(workers)
@@ -170,6 +188,9 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
         record.update({"phase": "repair", "fix_attempt": attempts})
     result = {**result, "unit_history": [record], "unit_file_fingerprints": current_fingerprints}
     if result.get("status") == "BLOCKED" or (result.get("integrity_violations") or {}).get("all"):
+        if intermediate:
+            return {**result, "status": "BLOCKED", "unit_error": "INTERMEDIATE_REPAIR_INTEGRITY_FAILED",
+                    "unit_file_fingerprints": prior_fingerprints, "unit_gate_status": "BLOCKED"}
         return {**result, "unit_file_fingerprints": prior_fingerprints,
                 "unit_gate_status": "INTEGRITY_OR_SANDBOX_FAILURE"}
     if unit.get("enforced_files"):
@@ -179,6 +200,11 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
         if unauthorized:
             return {**result, "status": "BLOCKED", "unit_error": "UNIT_PATH_VIOLATION",
                     "unit_gate_status": "BLOCKED"}
+    if intermediate:
+        allowed = set(repair_targets({**state, "fix_attempts": checkpoint["fix_attempts_before"]}))
+        if set(unit_changed) - allowed:
+            return {**result, "status": "BLOCKED", "unit_error": "UNIT_PATH_VIOLATION",
+                    "unit_gate_status": "BLOCKED"}
     if index == len(units) - 1:
         return {**result, "unit_index": index + 1, "unit_gate_status": "FINAL"}
     if (result.get("tester_error") or result.get("workspace_integrity_error")
@@ -186,7 +212,23 @@ def tested_unit_node(state: AgentState, tester_runner=tester_node):
             or type(before) is not int or type(after) is not int):
         return {**result, "status": "BLOCKED", "unit_error": "UNIT_TEST_EVIDENCE_UNAVAILABLE",
                 "unit_gate_status": "BLOCKED"}
+    threshold = checkpoint["failures_before_unit"] if intermediate else before
+    if intermediate:
+        recovered = after <= threshold
+        repair = {**checkpoint, "status": "RECOVERED" if recovered else "FAILED",
+                  "failures_after_intermediate_fix": after}
+        if machine_verification_error({**state, **result}, final=False) or not recovered:
+            return {**result, "status": "BLOCKED", "unit_error": "UNIT_TEST_FAILURES_INCREASED",
+                    "unit_gate_status": "BLOCKED", "intermediate_repair": repair}
+        return {**result, "unit_index": index + 1, "unit_failure_before": after,
+                "unit_gate_status": "CONTINUE", "unit_error": "", "intermediate_repair": repair}
     if after > before:
+        clean = not machine_verification_error({**state, **result}, final=False)
+        if clean and type(attempts) is int and 0 <= attempts < MAX_FIX_ATTEMPTS:
+            return {**result, "unit_error": "", "unit_gate_status": "REPAIR_REQUIRED",
+                    "intermediate_repair": {"status": "PENDING", "unit_index": index,
+                        "failures_before_unit": before, "failures_after_coder": after,
+                        "fix_attempts_before": attempts, "failures_after_intermediate_fix": None}}
         return {**result, "status": "BLOCKED", "unit_error": "UNIT_TEST_FAILURES_INCREASED",
                 "unit_gate_status": "BLOCKED"}
     return {**result, "unit_index": index + 1, "unit_failure_before": after,
@@ -231,8 +273,7 @@ def route_after_fixer(state: AgentState):
     if state.get("status") == "BLOCKED":
         return "finalizer"
     if state.get("fixer_error"):
-        if state.get("fix_attempts", 0) >= MAX_FIX_ATTEMPTS:
-            return "finalizer"
+        return "finalizer"
 
     return "tester"
 

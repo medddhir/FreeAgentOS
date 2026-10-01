@@ -112,6 +112,15 @@ def _evidence(value):
         result["gateway_health_status"] = value["gateway_health_status"]
     if value.get("gateway_request_observed") == "UNAVAILABLE":
         result["gateway_request_observed"] = "UNAVAILABLE"
+    from roles.broker_telemetry import safe_broker
+    if "broker" in value:
+        result["broker"] = safe_broker(value["broker"])
+    from roles.activity import safe_activity
+    if "activity" in value:
+        result["activity"] = safe_activity(value["activity"])
+    from roles.lease import safe_lease
+    if "lease" in value:
+        result["lease"] = safe_lease(value["lease"])
     return result
 
 
@@ -143,6 +152,9 @@ def _planner_diagnostic(value):
                                                    "UNIT_SCHEMA_INVALID", "UNIT_GOAL_INVALID",
                                                    "UNIT_TARGET_FILE_INVALID"):
         result["unit_validation_code"] = value["unit_validation_code"]
+    from roles.coding_units import GOAL_VALIDATION_REASONS
+    if value.get("unit_goal_validation_reason") in GOAL_VALIDATION_REASONS:
+        result["unit_goal_validation_reason"] = value["unit_goal_validation_reason"]
     present = value.get("known_keys_present")
     if isinstance(present, list):
         result["known_keys_present"] = [key for key in
@@ -164,6 +176,7 @@ def _projection(state, repo, task, recovery):
                  "PASS" if state.get("test_result") == "PASS" and state.get("diff_check_exit") == 0 else "UNKNOWN")
     research = ("BLOCKED" if state.get("research_error") else
                 "PASS" if state.get("needs_research") and state.get("research_results", 0) > 0 else "SKIPPED")
+    from roles.intermediate_repair import safe_intermediate
     workers = state.get("worker_history") or []
     research_workers = state.get("research_execution_history") or []
     role_timings = state.get("role_timing_history") or []
@@ -243,6 +256,7 @@ def _projection(state, repo, task, recovery):
         "unit_error": (state.get("unit_error") if isinstance(state.get("unit_error"), str)
                        and SAFE_CODE.fullmatch(state["unit_error"]) else ""),
         "unit_history": units,
+        "intermediate_repair": safe_intermediate(state.get("intermediate_repair"), state.get("fix_attempts", 0), status == "BLOCKED"),
         "resource_evidence": {
             "workers": [{"role": str(item.get("role", ""))[:40],
                          "unit_id": item.get("unit_id") if item.get("unit_id") in

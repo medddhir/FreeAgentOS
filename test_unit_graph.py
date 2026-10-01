@@ -173,6 +173,8 @@ class UnitGraphTests(unittest.TestCase):
         self.assertEqual(result["status"], "BLOCKED")
         self.assertEqual(result["unit_error"], "UNIT_TEST_FAILURES_INCREASED")
         self.assertEqual(calls["coder"], 1)
+        self.assertEqual(calls["fixer"], 1)
+        self.assertEqual(result["intermediate_repair"]["status"], "FAILED")
 
     def test_path_violation_blocks(self):
         result, calls = self.invoke([lambda repo: (repo / "note.txt").write_text("unrelated\n"),

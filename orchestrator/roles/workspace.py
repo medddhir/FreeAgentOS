@@ -47,6 +47,8 @@ CONTROLLER_FILES = (
     "orchestrator/roles/reviewer.py",
     "orchestrator/roles/coding_units.py",
     "orchestrator/roles/repair_context.py",
+    "orchestrator/roles/read_policy.py",
+    "orchestrator/roles/file_tools.py",
     "bin/exa-intel", "bin/dev-intel", "bin/prompt-intel",
 )
 

@@ -158,7 +158,7 @@ class StageOneHardeningTests(unittest.TestCase):
         before = {**self.state, "unit_index": 0, "unit_gate_status": "READY",
                   "unit_failure_before": 2, "unit_history": []}
         for count, gate, status in ((1, "CONTINUE", None), (2, "CONTINUE", None),
-                                    (3, "BLOCKED", "BLOCKED"), (None, "BLOCKED", "BLOCKED")):
+                                    (3, "REPAIR_REQUIRED", None), (None, "BLOCKED", "BLOCKED")):
             output = (f"Ran 3 tests in 0.1s\nFAILED (failures={count})" if count is not None
                       else "no structured test summary")
             result = graph.tested_unit_node(before, lambda _, value=output: {

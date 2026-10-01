@@ -77,6 +77,7 @@ class AgentState(TypedDict, total=False):
     # Deterministic bounded coding units; one fresh Coder lease per unit.
     coding_units: list[dict]
     unit_index: int
+    intermediate_repair: dict
     unit_failure_before: int
     unit_gate_status: str
     unit_error: str
