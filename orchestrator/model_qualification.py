@@ -11,6 +11,7 @@ import tempfile
 
 from roles.model_profiles import profile_scope, resolve_profile, requested_identity, model_command
 from roles.read_policy import file_tool_flags, capability_contract, sealed_policy, read_authorized
+from roles.model_attribution import attribution_for
 from roles.worker import run_worker
 from roles.controller_git import run_git
 from roles.workspace import prepare_workspace_node, verify_execution_contract, cleanup_active_workspace
@@ -49,7 +50,9 @@ def describe(profile_id):
     resolve_profile("fixer", profile_id)
     with profile_scope({"coder": profile_id}):
         identity = requested_identity("coder")
+        attribution = attribution_for("coder")
     return {"status": "CONFIGURED", "live_result": "NOT_RUN", "model_selection": identity,
+            "identity_attribution": attribution,
             "coder_compatibility": "CONFIGURED", "fixer_compatibility": "CONFIGURED",
             "context_class": profile.context_class, "long_session_verified": False,
             "base_ms": 180000, "max_grace_ms": 60000, "hard_cap_ms": 240000}

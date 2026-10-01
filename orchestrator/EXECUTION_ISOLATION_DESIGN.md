@@ -1205,3 +1205,132 @@ worker mocked, reject incomplete completion evidence, verify default dry-run and
 stale catalog gating, and compare both candidate roles against the default under
 identical read/write/new, resource and lease state. Existing Stage 1 tests remain
 unchanged. Live attribution and this one smoke precede any shipment comparison.
+
+## Stage 2.4 — explicit attribution levels and installed-path limitation
+
+The qualification output now separates requested_profile_id/requested_model_id,
+routed_provider_id/routed_model_id, and served_model_id under identity_attribution.
+Evidence vocabulary is fixed: REQUESTED_CONFIG, ROUTER_DISPATCH,
+UPSTREAM_REPORTED, UNAVAILABLE. Requested identity is derived from the immutable
+controller profile scope. All routed/served fields and their evidence levels
+currently remain UNAVAILABLE, with the fixed status
+GATEWAY_SESSION_BINDING_UNAVAILABLE. This is an observed transport limitation,
+not a model-selection failure. No worker stdout, result envelope, echoed model,
+header-shaped model output or claimed evidence category can upgrade provenance.
+The projection accepts only the currently implemented registry-derived tuple,
+drops extra data and rejects claimed routed/served values. Profiles, commands,
+capability policy, resources and leases are unaffected.
+
+### Read-only installed source audit
+
+The gateway is a separately installed service: image
+`ghcr.io/tashfeenahmed/freellmapi:latest`, container
+`freellmapi-freellmapi-1`. Its only mounted destination is the data volume at
+/app/server/data, not an approved development source checkout. No service source,
+configuration, data, image or deployment was modified. No traffic logs or request
+rows were read, and no generation was invoked. Source references below are to
+the installed /app/server/dist tree, rather than files owned by this repository.
+
+* routes/anthropic.js:418 copies the client body.model into requestedModel
+  (default auto); :419 strips an initial claude/ only for routing.
+  services/anthropic-map.js resolveAnthropicModel maps families and exact enabled
+  catalog selectors. The current anthropic_model_map setting is absent; its
+  source-defined effective default/opus/sonnet/haiku values are all auto.
+  CLIENT_DEFAULT is a FreeAgentOS configuration label (no --model flag), not
+  evidence of the literal HTTP body model chosen internally by Claude Code.
+* routes/anthropic.js:536 builds a strict logical-model group chain when viable;
+  :599 invokes routeRequest. services/router.js:1235 returns platform/modelId,
+  selected provider and internal routing state. The gateway therefore knows the
+  actual outbound route for every attempt, including Auto and concrete pins.
+  Auto depends on runtime availability, budget, health and session affinity;
+  catalog configuration alone cannot identify the next selected route.
+* routes/anthropic.js:625 and :802 pass route.modelId to the selected provider.
+  providers/openai-compat.js:253 and :367 put that value in the outbound model
+  argument. A successful dispatch is router evidence, not proof of served model.
+* OpenAI-compatible success handling retains native upstream model metadata in
+  its JSON/chunks. However, error tool-call rescue at :284 and :396 synthesizes
+  model=modelId. A generic model field at this adapter boundary is consequently
+  insufficient without provenance identifying native versus synthesized data.
+* routes/anthropic.js:692 sets the non-stream response model=requestedModel;
+  :765 sets streaming message_start model=ctx.requestedModel. Neither is upstream
+  identity. :822 captures finish_reason; :970 translates it to Anthropic
+  tool_use/max_tokens/end_turn and emits message_stop. These completion markers
+  provide completion evidence, not identity evidence.
+* routes/anthropic.js:698 and :757 emit X-Routed-Via from the actual selected
+  route.platform/route.modelId. lib/header-value.js sanitizes/limits the combined
+  string to 256 characters. This is useful dispatch evidence at the HTTP response
+  boundary; it is not served identity, is not an all-attempt trace and may be
+  truncated. Streaming headers are committed only at first meaningful output,
+  after invisible pre-commit failover. They cannot identify every outbound attempt.
+* Anthropic logRequest calls supply routed platform/model but served_model=null.
+  The lib/served-model.js observer is used in routes/proxy.js, not this Anthropic
+  path. It records drift only; NULL conflates matching, missing and placeholder
+  identities. Existing requests/request_attempts analytics lack a controller
+  nonce/session correlation column. Time-window/client-agent matching would
+  falsely attribute concurrent/background calls and is deliberately not used.
+* claude-free fixes ANTHROPIC_BASE_URL to the loopback gateway and forwards argv
+  unchanged. FreeAgentOS receives Claude Code NDJSON, not gateway HTTP headers;
+  activity.py deliberately discards session IDs and payloads. No authenticated,
+  request-bound bridge from X-Routed-Via to this controller is implemented.
+
+Result: routed identity is available within the gateway/HTTP boundary but is not
+currently attributable to a FreeAgentOS session. Served identity is unavailable
+at this gateway boundary. Running the existing smoke does not repair that missing
+bridge. No header interception proxy, raw NDJSON persistence or heuristic database
+polling is introduced merely to work around it.
+
+### Smallest proposed separate gateway patch — NOT applied
+
+Accurate controller-visible attribution needs a separately approved gateway
+change plus a small controller consumer. The proposed contract is:
+
+1. Bind requests to one controller-generated, unpredictable qualification nonce.
+   Carry it as a dedicated metadata header, never prompt/model text. Installed
+   Claude Code binary contains ANTHROPIC_CUSTOM_HEADERS and --session-id support;
+   this is a potential injection surface, not verified header propagation. Verify
+   the chosen surface against a synthetic local HTTP fixture before deployment.
+   Do not use shared IP, timestamps or requested selector as a session binding.
+2. At the existing dispatch callback, project only catalog-validated provider and
+   concrete model identifiers for each outbound attempt. Record fixed attempt
+   outcome categories; distinguish dispatch from a completed/committed response.
+   A session can contain several model requests/routes, so retain a bounded set
+   with explicit overflow/incompleteness rather than claiming one route for it.
+3. At the native upstream response ingestion point, separately capture only the
+   model identifier, before gateway echo/normalization/rescue. Accept only an
+   approved non-secret identifier from a controller/gateway allowlist. Synthetic
+   rescue, placeholders, absent or inconsistent identifiers remain UNAVAILABLE.
+   Native provider metadata may be UPSTREAM_REPORTED, not hardware attestation.
+   Do not reuse the existing drift-only NULL convention or infer a match.
+4. Publish only those fixed fields through a controller-only, request-bound
+   local channel (for example a root-owned bounded spool with restrictive ACLs,
+   TTL and exact nonce binding). It must exclude keys/key labels, URLs, request
+   bodies, prompts, content, headers, exceptions and session identifiers from
+   public output. Worker/model claims cannot populate this channel. A public
+   unauthenticated diagnostics endpoint is not an acceptable substitute.
+5. Verify fresh source, nonce, session completeness and schema at the controller
+   boundary. Only then may the projector emit ROUTER_DISPATCH/UPSTREAM_REPORTED.
+   Missing/malformed/stale/overflow evidence reports UNAVAILABLE. Do not change
+   model routing, weights, preferences, fallback, authentication or completion.
+
+This is a patch specification, not a fake implemented adapter or an authorization
+request to mutate the installed service. Until separately approved instrumentation
+exists, safe_attribution intentionally cannot accept even plausible routed claims.
+Default and candidate would need the same instrumentation. Route distinctness
+requires bound observations of both sessions (potentially sets of routes), not
+one configured pin compared with a guessed default or one candidate smoke alone.
+
+### Qualification and deterministic verification
+
+The Stage 2.3 command remains non-live by default; --live remains explicit opt-in
+and is not run in this milestone. Its future safe output adds the fixed identity
+fields above alongside existing result category, EOF flags, process state,
+cleanup status, broker counts and short-session compatibility result. A later
+separately authorized smoke can still verify Read/Edit/completion, but its current
+attribution fields will remain UNAVAILABLE. It cannot establish distinctness or
+long-session/Fixer quality. Do not infer an A/B comparison is ready from a smoke
+pass. No automatic retry, fallback, extra role call or profile is added.
+
+New grouped deterministic cases check exact evidence enums, echoed/claimed/raw
+metadata rejection, field separation, default/candidate policy and resource
+identity, unchanged lease behavior, selection independence and non-live default.
+Existing Stage 2.3 profile tests and Stage 1 tests remain unchanged.
