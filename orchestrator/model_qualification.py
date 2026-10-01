@@ -1,4 +1,4 @@
-"""One opt-in synthetic Coder session; default invocation sends no generation.
+"""One opt-in synthetic Coder profile session; descriptions send no generation.
 
 No payloads/transcripts are persisted. Passing the session smoke is not proof
 of upstream served identity, coding quality or long-session reliability.
@@ -19,6 +19,7 @@ from roles.preflight import preflight_node
 from cli import _evidence
 
 PROFILE = "claude-free-gpt-oss-120b"
+DEFAULT_PROFILE = "claude-free-default"
 MODEL = "openai/gpt-oss-120b"
 CONTAINER = "freellmapi-freellmapi-1"
 FIXTURE_INITIAL = b"value = 0\n"
@@ -49,7 +50,7 @@ def catalog_ready():
 
 
 def describe(profile_id):
-    if profile_id != PROFILE:
+    if profile_id not in (PROFILE, DEFAULT_PROFILE):
         raise ValueError("QUALIFICATION_PROFILE_INVALID")
     profile = resolve_profile("coder", profile_id)
     resolve_profile("fixer", profile_id)
@@ -60,6 +61,7 @@ def describe(profile_id):
             "identity_attribution": attribution,
             "coder_compatibility": "CONFIGURED", "fixer_compatibility": "CONFIGURED",
             "context_class": profile.context_class, "long_session_verified": False,
+            "qualification_scope": ("CLIENT_DEFAULT_SESSION" if profile_id == DEFAULT_PROFILE else "EXPLICIT_MODEL_SESSION"),
             "base_ms": 180000, "max_grace_ms": 60000, "hard_cap_ms": 240000}
 
 
@@ -104,7 +106,9 @@ def qualification_checks(returncode, evidence, fixture_matches):
 
 def qualify(profile_id):
     result = describe(profile_id)
-    if not catalog_ready():
+    # Only the explicit candidate depends on its pinned catalog route.
+    # Client default deliberately leaves model selection to the installed client/gateway.
+    if profile_id == PROFILE and not catalog_ready():
         return {**result, "status": "BLOCKED", "reason": "MODEL_CATALOG_UNAVAILABLE"}
     with tempfile.TemporaryDirectory(prefix="freeagentos-qualification-") as temporary:
         source = Path(temporary) / "source"
@@ -153,7 +157,7 @@ def qualify(profile_id):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Describe one candidate, or explicitly run its contained session smoke.")
+    parser = argparse.ArgumentParser(description="Describe the explicit candidate or client-default profile, or explicitly run its contained session smoke.")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--live", action="store_true", help="Run one live Coder session; requires separate operator authorization.")
     args = parser.parse_args(argv)

@@ -24,7 +24,7 @@ import test_contract as contract
 class P(unittest.TestCase):
     def test(self):
         # One table entry preserves the trusted runner's 64 KiB verbose-output cap.
-        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification, self.fixture_audit):
+        for case in (self.registry, self.commands, self.security, self.scope, self.identity, self.cli, self.candidate, self.qualification, self.fixture_audit, self.default_qualification):
             with self.subTest(case=case.__name__):
                 case()
 
@@ -331,3 +331,71 @@ class P(unittest.TestCase):
         with patch.object(qualification,'read_authorized',side_effect=ReadDenied('FAKE_SECRET')):
             self.assertIsNone(qualification.verify_fixture({}))
         self.assertEqual(qualification.qualification_checks(0,{},None)['fixture_semantics'],'NOT_OBSERVED')
+
+
+    def default_qualification(self):
+        from roles import preflight, read_policy, model_attribution
+        profile=qualification.DEFAULT_PROFILE
+        with patch.object(qualification,'run_worker') as run, patch.object(qualification,'catalog_ready') as catalog, redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(qualification.main(['--profile',profile]),0)
+        run.assert_not_called();catalog.assert_not_called()
+        description=json.loads(output.getvalue())
+        self.assertEqual(description['qualification_scope'],'CLIENT_DEFAULT_SESSION')
+        self.assertEqual(description['model_selection']['requested_model_id'],'CLIENT_DEFAULT')
+        self.assertEqual(description['identity_attribution']['requested_evidence'],'REQUESTED_CONFIG')
+        self.assertEqual(description['identity_attribution']['routed_model_id'],'UNAVAILABLE')
+        host={'status':'PASS','capabilities':{},'required_failures':[],'optional_failures':[],'error':''}
+        cases=(('absent',None,'SESSION_SMOKE_PASS'),('single',None,'SESSION_SMOKE_PASS'),
+               ('multiple',None,'SESSION_SMOKE_PASS'),('single','semantics','UNQUALIFIED'),
+               ('single','result','UNQUALIFIED'),('single','eof','UNQUALIFIED'),
+               ('single','resource','UNQUALIFIED'),('single','tools','UNQUALIFIED'))
+        for route,failure,expected_status in cases:
+            def session(cmd,**kwargs):
+                self.assertNotIn('--model',cmd[:-2]);self.assertEqual(kwargs['timeout'],180)
+                self.assertEqual(kwargs['role'],'coder');self.assertTrue(kwargs['stream_activity'])
+                identity=mp.command_identity(cmd,'coder')
+                self.assertEqual(identity['model_profile_id'],profile)
+                self.assertEqual(identity['requested_model_id'],'CLIENT_DEFAULT')
+                policy=read_policy.sealed_policy(cmd)
+                self.assertEqual(policy['files'],['sample.py'])
+                self.assertEqual(policy['write_files'],['sample.py']);self.assertEqual(policy['new_files'],[])
+                tools=FileTools(policy);tools.call('read_file',{'path':'sample.py'})
+                if failure!='tools': tools.call('edit_file',{'path':'sample.py','old_text':'0','new_text':'2' if failure=='semantics' else '1'})
+                evidence={'model_selection':identity,'broker':tools.telemetry.snapshot(),
+                          'cleanup_status':'CONFIRMED','remaining_processes':0,'cgroup_status':'ENFORCED',
+                          'resource_hits':{'memory':failure=='resource','process_count':False},
+                          'controls':{k:'ENFORCED' for k in ('cpu','memory','process_count','output','file_descriptors','file_size')},
+                          'activity':{'activity_status':'COMPLETE','result_event_observed':True,'result_category':'ERROR' if failure=='result' else 'SUCCESS'},
+                          'completion':{'state':'PROCESS_EXITED','stdout_eof_before_cleanup':failure!='eof',
+                                        'stderr_eof_before_cleanup':True,'process_alive_at_observation_end':False}}
+                if route!='absent':
+                    attempts=[{'ordinal':1,'provider_id':'groq','model_id':'openai/gpt-oss-120b','outcome':'COMPLETED'}]
+                    if route=='multiple': attempts.append({'ordinal':2,'provider_id':'mistral','model_id':'codestral-latest','outcome':'COMPLETED'})
+                    evidence['gateway_attribution']=model_attribution.route_observation(
+                        {'status':'COMPLETE','version':1,'session_id':'a'*32,'request_count':1,
+                         'requests':[{'ordinal':1,'closed':True,'attempts':attempts}]},'a'*32)
+                    evidence['gateway_attribution']['served_model_id']='FAKE_SERVED_CLAIM'
+                return worker.WorkerResult(0,'FAKE_PRIVATE_RESULT',evidence)
+            with patch.object(qualification,'catalog_ready',return_value=False) as catalog, patch.object(preflight,'check_host',return_value=host), patch.object(qualification,'run_worker',side_effect=session) as run:
+                result=qualification.qualify(profile)
+            catalog.assert_not_called();run.assert_called_once()
+            self.assertEqual(result['status'],expected_status)
+            attribution=result['identity_attribution']
+            self.assertEqual(attribution['requested_profile_id'],profile)
+            self.assertEqual(attribution['requested_model_id'],'CLIENT_DEFAULT')
+            self.assertEqual(attribution['requested_evidence'],'REQUESTED_CONFIG')
+            self.assertEqual(attribution['served_model_id'],'UNAVAILABLE')
+            self.assertEqual(attribution['served_evidence'],'UNAVAILABLE')
+            if route=='absent':
+                self.assertEqual(attribution['routed_evidence'],'UNAVAILABLE')
+                self.assertEqual(attribution['routed_model_id'],'UNAVAILABLE')
+            else:
+                self.assertEqual(attribution['routed_evidence'],'ROUTER_DISPATCH')
+                self.assertEqual(attribution['attribution_status'],'SESSION_BOUND_DISPATCH')
+                self.assertEqual(attribution['route_status'],'MULTIPLE_ROUTES' if route=='multiple' else 'SINGLE_ROUTE')
+                self.assertEqual(attribution['routed_model_id'],'UNAVAILABLE' if route=='multiple' else 'openai/gpt-oss-120b')
+            self.assertNotIn('FAKE_',json.dumps(result))
+        for invalid in ('missing','research-tools','claude-free-auto'):
+            with patch.object(qualification,'catalog_ready') as catalog, patch.object(qualification,'run_worker') as run:
+                with self.assertRaises(ValueError): qualification.qualify(invalid)
+            catalog.assert_not_called();run.assert_not_called()
