@@ -44,6 +44,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege_transport import TransportLifetimeCases
         with self.subTest(case="transport_lifetime"):
             TransportLifetimeCases().cases()
+        from test_privilege_socket import SocketRecoveryCases
+        with self.subTest(case="socket_recovery"):
+            SocketRecoveryCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

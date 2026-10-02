@@ -643,3 +643,104 @@ Final diff inspection found only protocol/server transport changes, the focused
 test table/foundation wiring and this document. Initial focused failures were
 fixture registration/time-unit errors corrected without altering production
 policy or weakening validation. No real new-backend kernel operations executed.
+
+## Focused B5 repair — ownership-bound socket cleanup/recovery
+
+IMPLEMENTED / STATICALLY REVIEWED / TEMPORARY IPC TESTED only. Stage3.1D is
+NOT AUTHORIZED. No installed/root service or production worker cutover occurred.
+
+### Authority, proof and concurrency
+
+`socket_state.SocketState` is internal to deterministic LocalServer startup and
+close, not an RPC, tool/model API, general rollback executor or directory scanner.
+The registered socket parent is pinned with existing component-wise no-follow
+directory validation. Simulation uses owner-only0700; the future service uses
+root-owned0750, with enrolled clients unable to write it. Its canonical parent
+identity is rechecked against the pinned directory; bind/connect use the Linux
+`/proc/self/fd/<parent-fd>/<name>` address because AF_UNIX lacks bindat/connectat.
+
+A0600 single-link regular `<socket>.lock` is opened no-follow/CLOEXEC and held
+with nonblocking exclusive flock through listener lifetime/cleanup. It is never
+unlinked: removing lock files would create a second-lock/ABA startup race. Busy
+lock returns SOCKET_BUSY without touching the socket. Lock pathname identity,
+file owner/group/mode and directory identity are rechecked. Cooperating startup
+and recovery paths cannot retire one another's listener. Private/root-owned
+parent write exclusion is mandatory: advisory locking is not protection from a
+compromised process with the supervisor's own UID/root authority.
+
+A bounded0600 atomic `<socket>.owner.json` record binds schema1, current policy
+hash, backend installation owner, enrollment ID, socket basename, parent
+device/inode, expected socket UID/GID/mode, phase, socket device/inode/ctime and
+observed owner/group/mode. No token, prompt, environment or model data is stored.
+Initial PREPARING intent precedes bind; BOUND identity is captured immediately
+after bind and after permission setup; READY is persisted after listen/timeout
+setup. Capture cannot switch to a different inode. Required files/socket are
+no-follow, single-link, type/owner/mode validated; reads are capped at2048 bytes
+with strict fields/types/duplicate rejection. No missing/mismatched record is
+synthesized. Both policies and the new module are bound by B2's explicit source
+allowlist (now42 files); old-policy socket/control/resource records remain
+rejected without rewriting, deleting or relabeling them.
+
+### Inactivity and retirement
+
+Only an exact BOUND/READY record/socket identity match plus the lifetime lock
+allows an inactivity probe. A bounded local connect must return ECONNREFUSED.
+Successful connect returns SOCKET_ACTIVE; timeout, permission errors, backlog
+ambiguity and all other outcomes block. No credentials/RPC/model are sent.
+Free lock or parent ownership alone is never inactivity/ownership proof.
+
+After probe the parent, lock and full socket identity are rechecked. An O_PATH,
+no-follow, CLOEXEC FD pins the inode. Linux renameat2(RENAME_NOREPLACE) retires
+only that basename to fixed `<socket>.retired`; the moved inode/type is compared
+to the pinned FD before descriptor-relative unlink. A replacement raced into
+the source name is not deleted: it is restored only if that name is vacant,
+otherwise retained and blocked. Foreign/replacement inode, symlink, regular file
+or unrelated socket is never accepted. No insecure rename fallback exists.
+The final unlink relies on the mandatory trusted-parent writer exclusion and
+lifetime lock; hostile same-UID/root writes are outside that authority model.
+
+Normal close is idempotent and closes listener, joins/shuts down clients,
+attempts exact owned retirement and independently closes lock/parent FDs. Any
+failed step is reported SOCKET_RECOVERY_BLOCKED; repeated close preserves that
+blocked result without retrying deletion. Constructor failure cleanup only
+targets a socket bound by that constructor. Future service teardown retains
+socket failure while continuing existing backend cleanup, rather than letting
+a socket error skip it. This is not a new general rollback executor.
+
+### Ambiguous windows / operator intervention
+
+Crash before durable bound identity, PREPARING without sufficient proof,
+missing/nonmatching socket, replacement parent, unsafe metadata, active listener,
+policy/enrollment/installation mismatch, pending atomic write or interrupted
+retirement all fail closed. `<socket>.pending` or `<socket>.retired` leftovers
+are retained, not automatically deleted/reconciled. A crash after rename before
+clean-ledger persistence may therefore require separately reviewed operator
+intervention. These deliberately ambiguous states are not certified clean.
+Completed proven stale READY/BOUND recovery removes the exact inactive socket,
+persists CLEAN, and allows subsequent startup. No service installation or
+operator recovery command is implemented here.
+
+### Deterministic evidence and remaining scope
+
+`test_privilege_socket.py` supplies13 compact cases: post-bind chmod/listen/
+timeout/persistence/setup failures; normal/repeated close; early unproven bind;
+proven stale restart; listener outliving its lock; file/symlink/socket/parent
+replacement; unsafe owner/mode/missing/policy evidence; concurrent startup;
+unlink and atomic-write failures; injected rename race; descriptor closure
+despite another close error; byte-preserved mismatch rejection. Process-death
+is simulated by closing owned listener/lock FDs while bypassing normal unlink.
+No installed daemon crash or privileged kernel enforcement is claimed.
+
+Remaining blockers B6–B12 are unchanged: single-campaign guard, bounded stdout
+evidence, complete proof observables, operator rollback/recovery, install/client
+inventory, Linux PROBE contract and qualified real-kernel target/validation.
+Transport limits,180-second base/current grace/240-second hard cap, attribution,
+production integration and existing cleanup/resource policy are unchanged.
+
+Verification: seven focused B5/B3/privilege/complete-backend/B1/B4/B2 groups
+PASS (60.051s); final B5 table with private-file group/mode and atomic-persistence
+failure coverage PASS (9.988s). Final `bin/freeagent-test`:518 tests in304.197s,
+RESULT=PASS, EXIT_CODE=0. Final diff reviewed as B5-only. The initial active-case
+failure exposed constructor cleanup attempting pre-existing ownership; cleanup
+was restricted to resources bound by the current constructor. No installed
+service, privileged backend, model/provider call or Stage3.1D action occurred.

@@ -203,7 +203,10 @@ def serve(admin_path,permit_path):
         for sig in (signal.SIGTERM,signal.SIGINT):signal.signal(sig,lambda *_:stopped.set())
         stopped.wait()
     finally:
-        if server:server.close()
+        socket_failed=False
+        if server:
+            try:server.close()
+            except Exception:socket_failed=True  # preserve socket proof; still drain owned backend
         if backend:
             for h,r in list(backend.records.items()):
                 if r['state']!='RELEASED':
@@ -216,6 +219,7 @@ def serve(admin_path,permit_path):
         if source:source.close()
         roots.close()
         for fd in fds:os.close(fd)
+        if socket_failed:raise BoundaryError('SOCKET_RECOVERY_BLOCKED') from None
 
 
 def main():

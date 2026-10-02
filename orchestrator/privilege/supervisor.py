@@ -9,6 +9,7 @@ import time
 from . import protocol as p
 from .policy import execution_class, policy_hash, resource_limits
 from .security import directory_fd, peer_credentials
+from .socket_state import SocketState
 
 
 class Supervisor:
@@ -158,18 +159,39 @@ class LocalServer:
         self.path=Path(path);self.supervisor=supervisor
         self.clock=clock  # trusted monotonic clock; test injection, never RPC input
         if enrolled_group is not None and (not supervisor.linux or os.geteuid()!=0 or enrolled_group!=supervisor.enrollment.gid):raise p.BoundaryError('POLICY_REJECTED')
-        self.parent=directory_fd(self.path.parent,os.getuid(),0o750 if enrolled_group is not None else 0o700)
-        self.listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        self.socket_state=None;self.listener=None;self.closed=False;self.close_error=False
         self.channels=set();self.threads=[];self.lock=threading.Lock();self.stop_event=threading.Event()
         self.semaphore=threading.BoundedSemaphore(p.MAX_CLIENTS)
+        bound=False
         try:
-            # Never unlink an existing path to force socket creation.
-            self.listener.bind(str(self.path));os.chmod(self.path,0o660 if enrolled_group is not None else 0o600)
-            if enrolled_group is not None:os.chown(self.path,0,enrolled_group)
-            self.inode=self.path.lstat().st_ino
+            self.socket_state=SocketState(self.path,{'owner':supervisor.backend.owner,
+                'enrollment':supervisor.enrollment.enrollment_id},supervisor.journal.policy,group=enrolled_group)
+            self.socket_state.recover();self.socket_state.intent()
+            self.listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+            self.listener.bind(self.socket_state.address());bound=True
+            self.socket_state.capture('BOUND')
+            os.chmod(self.path.name,self.socket_state.mode,dir_fd=self.socket_state.fd,follow_symlinks=False)
+            self.socket_state.capture('BOUND')
+            if enrolled_group is not None:
+                os.chown(self.path.name,0,enrolled_group,dir_fd=self.socket_state.fd,follow_symlinks=False)
+                self.socket_state.capture('BOUND')
             self.listener.listen(p.MAX_CLIENTS);self.listener.settimeout(.1)
-        except BaseException:
-            self.listener.close();os.close(self.parent);raise
+            self.socket_state.capture('READY')
+        except BaseException as error:
+            failed=False
+            if self.listener is not None:
+                try:self.listener.close()
+                except Exception:failed=True
+            if self.socket_state is not None:
+                try:
+                    if bound and self.socket_state.record and self.socket_state.record['phase'] in ('BOUND','READY'):
+                        self.socket_state.remove()
+                except Exception:failed=True
+                try:self.socket_state.close()
+                except Exception:failed=True
+            if failed:raise p.BoundaryError('SOCKET_RECOVERY_BLOCKED') from None
+            if isinstance(error,p.BoundaryError) or not isinstance(error,Exception):raise
+            raise p.BoundaryError('SOCKET_RECOVERY_BLOCKED') from None
         self.thread=threading.Thread(target=self._accept,daemon=True)
 
     def start(self):self.thread.start();return self
@@ -229,17 +251,27 @@ class LocalServer:
             self.semaphore.release()
 
     def close(self):
-        self.stop_event.set();self.listener.close()
+        if self.closed:
+            if self.close_error:raise p.BoundaryError('SOCKET_RECOVERY_BLOCKED')
+            return
+        self.closed=True;failed=False;self.stop_event.set()
+        try:self.listener.close()
+        except Exception:failed=True
         with self.lock:
             for channel in self.channels:
                 try:channel.shutdown(socket.SHUT_RDWR)
                 except OSError:pass
             threads=list(self.threads)
-        if self.thread.ident:self.thread.join(timeout=2)
-        for thread in threads:thread.join(timeout=2)
-        # Only unlink the socket inode this fixture created.
         try:
-            info=os.stat(self.path.name,dir_fd=self.parent,follow_symlinks=False)
-            if info.st_ino==self.inode:os.unlink(self.path.name,dir_fd=self.parent)
-        except FileNotFoundError:pass
-        os.close(self.parent)
+            if self.thread.ident:self.thread.join(timeout=2)
+        except Exception:failed=True
+        for thread in threads:
+            try:thread.join(timeout=2)
+            except Exception:failed=True
+        if self.thread.is_alive() or any(t.is_alive() for t in threads):failed=True
+        try:self.socket_state.remove()
+        except Exception:failed=True
+        try:self.socket_state.close()
+        except Exception:failed=True
+        self.close_error=failed
+        if failed:raise p.BoundaryError('SOCKET_RECOVERY_BLOCKED') from None
