@@ -17,7 +17,7 @@ freeagent = "orchestrator.entrypoint:doctor_main"
 freeagent-run = "orchestrator.entrypoint:main"
 
 [tool.setuptools]
-packages = ["orchestrator", "orchestrator.roles", "freeagentos_data", "freeagentos_tools"]
+packages = ["orchestrator", "orchestrator.roles", "orchestrator.privilege", "freeagentos_data", "freeagentos_tools"]
 
 [tool.setuptools.package-dir]
 freeagentos_data = "data"

@@ -24,6 +24,9 @@ class FoundationTests(unittest.TestCase):
         from test_bootstrap import BootstrapCases
         with self.subTest(case="bootstrap"):
             BootstrapCases().cases()
+        from test_privilege import PrivilegeCases
+        with self.subTest(case="privilege"):
+            PrivilegeCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
