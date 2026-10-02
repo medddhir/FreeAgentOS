@@ -36,6 +36,7 @@ class LinuxBackend:
         self.owner=journal.owner;self.clock=clock;self.lock=threading.RLock()
         self.records={r['handle']:r for r in journal.load()};self.processes={};self.leases={};self.bindings={}
         self.stop=threading.Event();self.monitor=None
+        self.security_tasks={};self.security_reports={}
         self.recovery_required=any(r['state']!='RELEASED' for r in self.records.values())
 
     def _save(self):self.journal.save(list(self.records.values()))
@@ -47,6 +48,7 @@ class LinuxBackend:
 
     def cleanup_proof(self,handle,owner):
         r=self.records.get(handle)
+        if handle in self.security_tasks:return 'UNPROVEN'
         if owner!=self.owner or r is None or r['owner']!=owner or r['state']!='RELEASED' or r['cleanup'] not in ('CONFIRMED','NEVER_ALLOCATED'):return 'UNPROVEN'
         if not self.driver.absent(r):return 'UNPROVEN'
         return 'NEVER_ALLOCATED' if r['cleanup']=='NEVER_ALLOCATED' else 'OWNED_CLEANED'
@@ -66,7 +68,7 @@ class LinuxBackend:
             entry=self.registry.bind(slot,execution,role);policy=resource_limits(execution,role,limits)
             r={'handle':handle,'run_id':run_id,'owner':self.owner,'state':'CREATING','class':execution,'role':role,
                'policy':self.journal.policy,'boot_id':self.driver.boot_id,'scope_inode':0,'scope_device':0,
-               'root_inode':0,'root_device':0,'started_ns':0,'cleanup':'PENDING'}
+               'root_inode':0,'root_device':0,'started_ns':0,'cleanup':'PENDING','collection':'NONE'}
             self.records[handle]=r;self._save()  # intent BEFORE every resource allocation
             try:
                 self.driver.qualify()
@@ -119,13 +121,21 @@ class LinuxBackend:
     def enforce(self):
         with self.lock:
             now=self.clock()
+            from .security_proof import MAX_CAPTURE_NS
+            for h,(x,report) in list(self.security_reports.items()):
+                if now>x.started_ns+MAX_CAPTURE_NS:self.security_reports.pop(h)
             for handle,lease in list(self.leases.items()):
                 r=self._record(handle)
+                task=self.security_tasks.get(handle)
+                if task is not None and (task.close_failed or now>task.x.started_ns+MAX_CAPTURE_NS and not task.done.is_set()):
+                    self._dirty(r)
                 if self.driver.collection_failed(handle):self._dirty(r)
                 if r['state']=='FAILED_DIRTY' and handle in self.processes:
                     # Keep attempting only the owned scope after transient kill
                     # failures. Admission stays fenced; dirty never implies clean.
-                    self.driver.terminate(r,self.processes.get(handle));continue
+                    try:self._finish_security(r)
+                    finally:self.driver.terminate(r,self.processes.get(handle))
+                    continue
                 if r['state']!='RUNNING':continue
                 if not self.driver.running(r,self.processes[handle]):
                     # Exit of namespace init is insufficient: kill/drain leftovers.
@@ -159,6 +169,70 @@ class LinuxBackend:
             if entry is not None and not entry.validation:raise p.BoundaryError('POLICY_REJECTED')
             return self.driver.collect(r)
 
+    def begin_security_capture(self,handle,expectation):
+        """Controller-internal validation seam, NOT a transport operation.
+
+        It only observes an existing approved synthetic execution. Neither this
+        method nor retrieval starts a worker, stress mode or production adapter.
+        """
+        from .security_collection import CaptureTask
+        from .security_proof import ProofExpectation, MAX_CAPTURE_NS
+        from .evidence import binding
+        with self.lock:
+            r=self._record(handle);entry,limits=self.bindings[handle]
+            if (self.recovery_required or r['state']!='RUNNING' or not entry.validation
+                    or r.get('collection','NONE')!='NONE' or type(expectation) is not ProofExpectation
+                    or expectation.binding!=binding(r,entry) or (expectation.uid,expectation.gid)!=(entry.uid,entry.gid)
+                    or dict(expectation.limits)!=limits or expectation.scope!=(r['scope_device'],r['scope_inode'])
+                    or not expectation.started_ns<=self.clock()<=expectation.started_ns+MAX_CAPTURE_NS):
+                raise p.BoundaryError('POLICY_REJECTED')
+            if len(self.security_tasks)>=p.MAX_ACTIVE:raise p.BoundaryError('BOUNDS_EXCEEDED')
+            task=CaptureTask(expectation,lambda:self.driver.security_reader(r,entry,expectation),clock=self.clock)
+            self.security_tasks[handle]=task  # reservation BEFORE durable intent/factory/thread
+            r['collection']='PENDING'
+            try:self._save();task.start()
+            except Exception:
+                self._dirty(r)
+                try:task.close()
+                except Exception:r['collection']='UNPROVEN'
+                raise p.BoundaryError('BACKEND_FAILURE') from None
+
+    def security_evidence(self,handle):
+        from .evidence import binding
+        from .security_proof import MAX_CAPTURE_NS
+        with self.lock:
+            r=self._record(handle)
+            if r['state']=='RELEASED':raise p.BoundaryError('INVALID_STATE')
+            entry=self.bindings[handle][0]
+            if not entry.validation:raise p.BoundaryError('POLICY_REJECTED')
+            task=self.security_tasks.get(handle)
+            value=(task.x,task.snapshot()) if task is not None else self.security_reports.get(handle)
+            if value is None:raise p.BoundaryError('INVALID_STATE')
+            x,report=value
+            if (x.binding!=binding(r,entry) or x.scope!=(r['scope_device'],r['scope_inode'])
+                    or (x.uid,x.gid)!=(entry.uid,entry.gid) or dict(x.limits)!=self.bindings[handle][1]):
+                raise p.BoundaryError('POLICY_REJECTED')
+            if not x.started_ns<=self.clock()<=x.started_ns+MAX_CAPTURE_NS:raise p.BoundaryError('INVALID_STATE')
+            return x,report
+
+    def _finish_security(self,r):
+        handle=r['handle'];task=self.security_tasks.get(handle)
+        if task is None:
+            if r.get('collection') in ('PENDING','UNPROVEN'):raise p.BoundaryError('CLEANUP_INCOMPLETE')
+            return
+        try:
+            task.close()
+            if handle in getattr(self.driver,'close_errors',set()):
+                task.close_failed=True;task._fail('CLEANUP_INCOMPLETE')
+                with task.lock:task.report['collector_closed']=False
+                raise p.BoundaryError('CLEANUP_INCOMPLETE')
+            self.security_reports[handle]=(task.x,task.snapshot())
+            r['collection']='CLOSED';self._save()
+            self.security_tasks.pop(handle)
+        except Exception:
+            r['collection']='UNPROVEN';self._dirty(r)
+            raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
+
     def terminate(self,handle):
         with self.lock:
             r=self._record(handle)
@@ -166,6 +240,8 @@ class LinuxBackend:
             if r['state']=='TERMINATED':return
             r['state']='TERMINATING';failed=False
             try:self._save()
+            except Exception:failed=True
+            try:self._finish_security(r)
             except Exception:failed=True
             try:self.driver.terminate(r,self.processes.get(handle))
             except Exception:failed=True
@@ -187,6 +263,7 @@ class LinuxBackend:
                 if not self.driver.absent(r):raise p.BoundaryError('CLEANUP_INCOMPLETE')
                 r['state']='RELEASED';r['cleanup']='CONFIRMED';self._save()
                 self.processes.pop(handle,None);self.bindings.pop(handle,None);self.leases.pop(handle,None)
+                self.security_reports.pop(handle,None)
             except Exception:
                 self._dirty(r)
                 raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
@@ -204,6 +281,7 @@ class LinuxBackend:
             for old in records:
                 if old['owner']!=self.owner:raise p.BoundaryError('JOURNAL_INVALID')
                 if old['handle'] in self.records:continue
+                if old['handle'] in self.security_tasks:raise p.BoundaryError('CLEANUP_INCOMPLETE')
                 if not self.driver.absent(old):raise p.BoundaryError('CLEANUP_INCOMPLETE')
                 self.records[old['handle']]={'handle':old['handle'],'run_id':old['run_id'],'owner':self.owner,
                     'state':'RELEASED','class':old['class'],'role':old['role'],'policy':self.journal.policy,
@@ -216,7 +294,9 @@ class LinuxBackend:
             pending=[r for r in self.records.values() if r['state']!='RELEASED']
             plans=[]
             try:
-                for r in pending:plans.append((r,recovery_actions(r,self.journal.policy,self.owner,self.driver.prove(r))))
+                for r in pending:
+                    self._finish_security(r)
+                    plans.append((r,recovery_actions(r,self.journal.policy,self.owner,self.driver.prove(r))))
                 for r,actions in plans:
                     never_allocated=self.driver.absent(r) and not any(r[k] for k in ('root_inode','scope_inode','started_ns'))
                     self.driver.recover(r,actions)
@@ -238,5 +318,11 @@ class LinuxBackend:
     def close(self):
         self.stop.set()
         if self.monitor:self.monitor.join(timeout=2)
+        failed=False
+        with self.lock:
+            for handle in list(self.security_tasks):
+                try:self._finish_security(self._record(handle))
+                except Exception:failed=True
+        if failed:raise p.BoundaryError('CLEANUP_INCOMPLETE')
 
     def probe(self):return p.probe_record('LINUX')

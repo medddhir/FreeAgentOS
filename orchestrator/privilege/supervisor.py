@@ -23,6 +23,8 @@ class Supervisor:
         self.enrollment=enrollment;self.roots=roots;self.backend=backend;self.journal=journal
         if journal.policy!=policy_hash():raise p.BoundaryError('POLICY_REJECTED')
         self.lock=threading.RLock();self.records={r['handle']:r for r in journal.load()}
+        from .security_collection import SnapshotPages
+        self.security_pages=SnapshotPages()
         self.log=deque(maxlen=256)
         self.recovery_required=any(r['state']!='RELEASED' for r in self.records.values())
 
@@ -40,6 +42,7 @@ class Supervisor:
                 'cleanup':('CONFIRMED' if self.linux else 'SIMULATED') if r['state']=='RELEASED' and self.backend.cleanup_proof(r['handle'],r['owner']) in ('NEVER_ALLOCATED','OWNED_CLEANED') else 'UNPROVEN'}
 
     def _release(self,r):
+        self.security_pages.discard(handle=r['handle'])
         try:
             if r['state']=='RELEASED' and self.backend.cleanup_proof(r['handle'],r['owner']) in ('NEVER_ALLOCATED','OWNED_CLEANED'):return
             if self.backend.owns(r['handle'],r['owner']):self.backend.cleanup(r['handle'])
@@ -86,6 +89,19 @@ class Supervisor:
                     result=p.validate_probe(self.backend.probe(),'LINUX' if self.linux else 'SIMULATED')
                 else:
                     r=self._owned(handle,connection,peer)
+                    if op in ('SECURITY_OPEN','SECURITY_PAGE'):
+                        if not self.linux:raise p.BoundaryError('POLICY_REJECTED')
+                        if r['state']=='RELEASED':raise p.BoundaryError('INVALID_STATE')
+                        from .security_collection import MAX_PAGES
+                        x,report=self.backend.security_evidence(handle)
+                        from .evidence import BINDING
+                        if any(x.binding[k]!=r[k] for k in BINDING if k!='executable_sha256'):
+                            raise p.BoundaryError('POLICY_REJECTED')
+                        if op=='SECURITY_OPEN':
+                            if request['seq']+MAX_PAGES>p.MAX_REQUESTS:raise p.BoundaryError('BOUNDS_EXCEEDED')
+                            result=self.security_pages.open(connection,peer,report,x)
+                        else:result=self.security_pages.page(connection,peer,handle,args['snapshot'],args['cursor'])
+                        self.log.append((op,handle,'OK'));return result
                     if op=='COLLECT':
                         if not self.linux:raise p.BoundaryError('POLICY_REJECTED')
                         result=self.backend.collect(handle)
@@ -138,6 +154,7 @@ class Supervisor:
 
     def disconnect(self, connection):
         with self.lock:
+            self.security_pages.discard(connection=connection)
             for r in self.records.values():
                 if r['connection']==connection and r['state']!='RELEASED':
                     try:self._release(r)
@@ -207,6 +224,7 @@ class LocalServer:
 
     def _accept(self):
         while not self.stop_event.is_set():
+            with self.supervisor.lock:self.supervisor.security_pages.expire()
             try:channel,_=self.listener.accept()
             except socket.timeout:continue
             except OSError:break

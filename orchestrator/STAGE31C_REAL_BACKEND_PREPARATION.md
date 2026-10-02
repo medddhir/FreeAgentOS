@@ -1223,3 +1223,154 @@ passed independently in0.325s. One unchanged-suite retry passed all518 tests in
 that pass. Final diff and whitespace checks passed. These results validate the
 reader ownership repair and existing regressions, not completion of the five
 remaining B8 integration gaps above or real-kernel enforcement.
+
+### B8 authenticated retrieval and asynchronous ownership
+
+Baseline: 9b720b7f5f66e245f4d10673845040319377cd58, main, initially clean,
+no HEAD tag. This milestone completes preparation of the authenticated retrieval
+and task-ownership paths only. B8 as a whole remains PARTIAL. Active isolation
+and enforcement remain UNPROVEN; Stage3.1D is NOT AUTHORIZED.
+
+#### Typed retrieval and binding
+
+ControllerClient.collect_security(Sandbox, ProofExpectation) retrieves existing
+bounded evidence only. SECURITY_OPEN {handle} freezes a report; SECURITY_PAGE
+{handle,snapshot,cursor} advances its one-use cursor. Both operations pass the
+unchanged Unix peer/token/enrollment/profile, protocol/policy agreement, request
+sequence/rate and connection-owned handle checks. Neither operation invokes
+begin_security_capture, a reader, a worker, stress, or host file inspection.
+Ordinary simulation clients/backends reject these Linux-validation operations.
+There is no public capture/stress activation RPC or arbitrary cursor/path/PID read
+API. LinuxDriver.security_reader is an internal fixed factory for the existing
+owned read recipe, guarded by the prior InstallationPermit and reader checks.
+
+The controller must supply its trusted ProofExpectation; it is not inferred from
+an untrusted child or a returned identity. Client checks its generated run ID,
+handle/class/role, current policy and the full expected owner/executable binding.
+Backend independently checks its resource record, immutable approved registry
+entry, UID/GID, scope device/inode, resource limits and original capture window.
+Supervisor additionally checks control-journal ownership and rejects cross-peer
+or cross-connection access. Every record checks binding, sample, subject, scope,
+version, source, timestamp and exact field shapes. Stale evidence, altered
+executables/policies, mixed snapshots, repeated cursor/index, partial bytes,
+contradictory claims, overflow and unexpected fields fail closed.
+
+#### Snapshot and transport limits
+
+Collection envelope version1 wraps either existing B8 proof records (unaltered
+schema1) or the existing fixed read-only capture summaries. No B7/B8 bound is
+expanded: <=24 observations, <=8192 bytes per tagged observation and <=65536 bytes
+for the entire encoded envelope (including metadata). Tag overhead reduces usable
+capacity rather than bypassing limits. ISOLATION contains the five existing
+identity/capability/FD/namespace/filesystem summaries; RESOURCES contains only
+fixed counter readbacks; CONTAINMENT contains the existing membership/cleanup
+summary. It does not invent paired demand, exit or enforcement facts. PROOF_RECORD
+retains CONFIGURED/CHILD_REPORTED/INDEPENDENT_RECORDING. Fixed capture summaries
+retain OWNED_KERNEL_READ or explicitly labeled INDEPENDENT_RECORDING; child claims
+never become independent observations. All envelopes require enforcement=UNPROVEN.
+CAPTURED means only completion of the three fixed capture reads and reader close,
+not successful executable completion, resource enforcement, or runtime readiness.
+PENDING/INCOMPLETE/REJECTED remain explicitly unproven; malformed reports are not
+served as valid reports. Cleanup failures use existing fixed BoundaryError codes.
+
+Each page contains <=6144 decoded bytes, base64 encoded in <=32 strings of <=256
+ASCII bytes. It fits the unchanged16384-byte frame, depth/string/list limits and
+strict JSON framing. There are <=11 pages, so one retrieval uses <=12 RPCs.
+Client/server reserve sufficient budget before OPEN; the existing128-request and
+32-request/second limits are unchanged. No retries, status polling or lease renewal
+are introduced. Client checks exact indexes, stable metadata, total bytes and
+SHA256 after assembly; that checksum is transport consistency, not a signature
+or independent provenance certificate. Duplicate snapshot identities are rejected
+within the bounded connection lifetime/request budget.
+
+The supervisor holds at most one immutable view per connection and <=8 views
+(<=512KiB encoded payload total). New OPEN replaces only that connection's view;
+old cursors become invalid. Cursors are random128-bit helper IDs bound to peer,
+connection, handle and snapshot, advanced exactly once. Absolute validity is
+<=10 seconds and never beyond the original capture window. The existing accept
+loop expires views even when authenticated clients are quiet. Disconnect and
+release invalidate views before cleanup; dirty ownership may still retrieve
+fresh diagnostic evidence, without changing admission fencing. A concurrently
+published capture cannot change frozen bytes. Release or expiry during paging
+fails rather than returning a mixed/partial assembly. No indefinite cursor cache
+or request-budget bypass exists.
+
+#### Asynchronous ownership and recovery
+
+LinuxBackend.begin_security_capture is a controller-internal seam, not an RPC or
+production integration. It requires an already RUNNING, approved validation entry,
+a current matching ProofExpectation, and no previous collection for that run.
+Its fixed task reads isolation, resource counters and containment sequentially.
+No worker/stress executable or observer subprocess is launched. Tests inject
+recording readers through the private driver factory; real backend activation
+remains forbidden in Stage3.1C.
+
+An inert CaptureTask reservation is stored before durable collection=PENDING is
+saved, before Thread.start, and before the reader factory can allocate. The prior
+reader reservation still precedes any scope/proc/pidfd allocation. At most16 tasks
+are tracked. Captures retain the original10-second monotonic window. Finished
+snapshots are bounded by owned sandbox entries; expired retained reports are
+removed by the independent monitor. Collection can occur only once per owned run.
+
+Cancellation sets a cooperative event and is not termination proof. Close joins
+for at most1 second and independently attempts reader close even when joining
+fails. Reader close waits at most0.5 second for the capture lock; if the reader
+is still active it closes no descriptors underneath it, retains the exact reader
+and close_errors fence, and returns CLEANUP_INCOMPLETE so owned scope/child
+termination can still proceed. This bounds software lock waiting, not an assertion
+that every kernel syscall is interruptible or real-kernel timing is qualified.
+Completion requires an exited thread and successful descriptor cleanup;
+ambiguous joins/closes stay sticky and preserve the task, UNPROVEN journal intent,
+FAILED_DIRTY and admission fencing. The prior per-reader capture/close lock and
+no-numeric-FD-retry behavior remain intact. Backend terminate still attempts owned
+scope/child cleanup even if task close fails. Release, disconnect, child exit,
+expiry, launch-failure/dirty supervision, shutdown and recovery use that ownership
+path. A live/unresolved task makes cleanup_proof UNPROVEN even if core resources
+appear absent; it cannot be reclassified NEVER_ALLOCATED.
+
+The private bounded resource-journal version2 gains one strictly validated
+optional field: collection=NONE|PENDING|CLOSED|UNPROVEN. New records emit NONE;
+PENDING is durable before activation, CLOSED only after successful join/closure
+and journal persistence. PENDING/UNPROVEN cannot coexist with RELEASED, and any
+collection allocation state is incompatible with NEVER_ALLOCATED. No prompts,
+responses, tokens, environments, raw proc data or observation payloads enter the
+journal. Existing no-collection records may omit the field under the exact current
+policy; old-policy journals remain rejected without migration/relabeling. Required
+source identity now explicitly includes security_collection.py, packaged normally
+with the existing Python privilege package.
+
+On restart, missing task ownership with durable PENDING/UNPROVEN fails closed
+before any driver recovery/host action. It remains dirty and requires separately
+reviewed operator evidence; timeout/cancellation, empty cgroup, helper restart or
+lost reader references alone are insufficient absence proof. Recovery only uses
+recorded owned handles and existing resource proofs; no host scanning, arbitrary
+PID/path cleanup or general rollback executor was added.
+
+#### Deterministic verification and remaining scope
+
+The integrated table uses actual typed client/supervisor Unix IPC with temporary
+socket/enrollment fixtures, mocked root-profile checks and RecordingDriver only.
+It exercises >16KiB report assembly; bindings/access; forged/reused/stale cursors;
+immutable publication/release; budget and frame bounds; malformed/contradictory/
+partial/oversized responses; missing evidence; registration/journal/thread/factory
+failure; pending capture; cancellation/completion, release/disconnect/expiry and
+child exit; failed join/close; recovery with lost ownership; and admission fencing.
+Previous actual descriptor-close fault tests remain affected regressions. None
+of these tests establish real peer privilege, real isolation or real resource
+enforcement. No stress mode, kernel qualification, privilege backend activation,
+service/enrollment installation, model/provider, benchmark or production integration
+is performed. Production180s/current grace/240s policy is unchanged.
+
+Remaining B8: approved fixture/digest/policy/run/role stress gate and launch binding;
+paired demand/counter/execution-outcome/final-cleanup assembly into enforcement
+criteria; later authorized real-kernel observations and corresponding live proof.
+The future coordinator must consume these authenticated summaries without turning
+CAPTURED, configured limits or recording PASS into enforcement. B6/B9/B10/B12 remain
+unresolved. No Stage3.1D readiness/authorization or verified tag is claimed.
+
+Verification for this focused milestone: the 15-case integrated collection table
+and affected regressions passed (10 regression groups, 112.189s). The final
+`bin/freeagent-test` run passed all 518 tests in 338.637s with `RESULT=PASS` and
+exit code 0. Final source/test diff and whitespace checks were inspected. These
+are deterministic/unprivileged preparation results, not real-kernel enforcement
+qualification. B8 remains PARTIAL.

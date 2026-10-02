@@ -42,6 +42,7 @@ class RecordingDriver:
         return process.active
     def collection_failed(self,handle):return False
     def collect(self,r):raise BoundaryError('INVALID_STATE')  # recording intentions are not pipe evidence
+    def security_reader(self,r,entry,expectation):raise BoundaryError('INVALID_STATE')  # test must explicitly inject recordings
     def terminate(self,r,process=None):
         self._step(r['handle'],'CGROUP_KILL_OWNED')
         if process:

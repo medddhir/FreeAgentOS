@@ -265,6 +265,10 @@ class LinuxDriver:
         if r['handle'] in self.observers:raise BoundaryError('INVALID_STATE')
         self.observers[r['handle']]=observer
 
+    def security_reader(self,r,entry,expectation):
+        from .security_capture import OwnedSecurityCapture
+        return OwnedSecurityCapture._from_owned_driver(self,r,entry,expectation)
+
     def _forget_observer(self,r,observer):
         if getattr(self,'observers',{}).get(r['handle']) is not observer:
             raise BoundaryError('CLEANUP_INCOMPLETE')

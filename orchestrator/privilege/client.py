@@ -92,6 +92,49 @@ class ControllerClient:
         if any(identity[k]!=v for k,v in expected.items()):raise p.BoundaryError('POLICY_REJECTED')
         return validate(result,identity)
 
+    def collect_security(self,sandbox,expectation):
+        """Retrieve one frozen B8 capture; never activate a collector/worker.
+
+        The trusted controller supplies its expected registry/ownership binding.
+        No raw cursor/file/path/PID API and no automatic retries or polling.
+        """
+        import hashlib
+        import json
+        import time
+        from . import security_collection as c, security_proof as s
+        if self.mode!='LINUX' or type(expectation) is not s.ProofExpectation:raise p.BoundaryError('POLICY_REJECTED')
+        handle=self._handle(sandbox)
+        expected={'handle':handle,'policy':policy_hash(),**self._bindings[handle]}
+        if any(expectation.binding[k]!=v for k,v in expected.items()):raise p.BoundaryError('POLICY_REJECTED')
+        if self.seq+1+c.MAX_PAGES>p.MAX_REQUESTS:raise p.BoundaryError('BOUNDS_EXCEEDED')
+        started=time.monotonic_ns();meta=self._rpc('SECURITY_OPEN',{'handle':handle})
+        p.keys(meta,c.META_FIELDS)
+        if (type(meta['schema_version']) is not int or meta['schema_version']!=c.VERSION or meta['enforcement']!='UNPROVEN'
+                or meta['binding']!=dict(expectation.binding) or not p.identifier(meta['snapshot'])
+                or not p.identifier(meta['cursor']) or not p.identifier(meta['sha256'],64)
+                or type(meta['pages']) is not int or not 1<=meta['pages']<=c.MAX_PAGES
+                or type(meta['total_bytes']) is not int or not 1<=meta['total_bytes']<=s.MAX_BUFFER_BYTES
+                or meta['pages']!=(meta['total_bytes']+c.PAGE_BYTES-1)//c.PAGE_BYTES):raise p.BoundaryError('INVALID_REQUEST')
+        seen=getattr(self,'_security_seen',set())
+        if meta['snapshot'] in seen:raise p.BoundaryError('INVALID_REQUEST')
+        seen.add(meta['snapshot']);self._security_seen=seen  # <=128 bounded connection requests
+        raw=bytearray();cursor=meta['cursor'];cursors={cursor}
+        for index in range(meta['pages']):
+            if time.monotonic_ns()-started>c.VIEW_NS:raise p.BoundaryError('TRANSPORT_FAILURE')
+            page=self._rpc('SECURITY_PAGE',{'handle':handle,'snapshot':meta['snapshot'],'cursor':cursor})
+            raw.extend(c.decode_page(page,meta,index,dict(expectation.binding)))
+            if len(raw)>s.MAX_BUFFER_BYTES:raise p.BoundaryError('BOUNDS_EXCEEDED')
+            cursor=page['next_cursor']
+            if cursor is not None:
+                if cursor in cursors:raise p.BoundaryError('INVALID_REQUEST')
+                cursors.add(cursor)
+        if time.monotonic_ns()-started>c.VIEW_NS or len(raw)!=meta['total_bytes'] or hashlib.sha256(raw).hexdigest()!=meta['sha256']:
+            raise p.BoundaryError('INVALID_REQUEST')
+        try:value=json.loads(raw,object_pairs_hook=p._pairs)
+        except (ValueError,TypeError,UnicodeError,RecursionError):raise p.BoundaryError('INVALID_REQUEST') from None
+        return c.validate_report(value,expectation)
+
     def close(self):
         if self.channel is not None:self.channel.close();self.channel=None
         self._handles.clear();self._bindings.clear()
+        if hasattr(self,'_security_seen'):self._security_seen.clear()

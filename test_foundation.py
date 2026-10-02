@@ -58,6 +58,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege_security_proof import SecurityProofCases
         with self.subTest(case="security_observables"):
             SecurityProofCases().cases()
+        from test_privilege_security_collection import SecurityCollectionCases
+        with self.subTest(case="security_collection"):
+            SecurityCollectionCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

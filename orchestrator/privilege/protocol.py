@@ -20,7 +20,7 @@ TIMEOUT = 1.0
 # Allows preparation + one 240s worker + observation/release without polling.
 AUTHENTICATED_LIFETIME = 600.0
 IDLE_POLL = 0.1
-OPERATIONS = ('HELLO', 'CREATE', 'START', 'STATUS', 'TERMINATE', 'RELEASE', 'PROBE', 'COLLECT')
+OPERATIONS = ('HELLO', 'CREATE', 'START', 'STATUS', 'TERMINATE', 'RELEASE', 'PROBE', 'COLLECT', 'SECURITY_OPEN', 'SECURITY_PAGE')
 CODES = frozenset(('OK', 'PROTOCOL_MISMATCH', 'AUTH_FAILED', 'PEER_NOT_ALLOWED',
     'INVALID_REQUEST', 'INVALID_STATE', 'UNKNOWN_HANDLE', 'POLICY_REJECTED',
     'RESOURCE_LIMIT_INVALID', 'PATH_REJECTED', 'EXECUTION_CLASS_REJECTED',
@@ -103,9 +103,10 @@ def validate_request(value):
     args = value['args']
     fields = {'HELLO':('enrollment','token','challenge','build','policy'),
               'CREATE':('run_id','slot','class','role','limits'), 'START':('handle',),
-              'STATUS':('handle',), 'TERMINATE':('handle',), 'RELEASE':('handle',), 'PROBE':('probe',), 'COLLECT':('handle',)}
+              'STATUS':('handle',), 'TERMINATE':('handle',), 'RELEASE':('handle',), 'PROBE':('probe',), 'COLLECT':('handle',),
+              'SECURITY_OPEN':('handle',),'SECURITY_PAGE':('handle','snapshot','cursor')}
     keys(args, fields[op])
-    for key in ('handle','run_id','enrollment','challenge'):
+    for key in ('handle','run_id','enrollment','challenge','snapshot','cursor'):
         if key in args and not identifier(args[key]):raise BoundaryError('INVALID_REQUEST')
     if op == 'HELLO' and (not identifier(args['token'],64) or not identifier(args['policy'],64)
                           or type(args['build']) is not str):raise BoundaryError('INVALID_REQUEST')

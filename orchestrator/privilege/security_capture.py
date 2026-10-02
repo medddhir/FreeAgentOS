@@ -71,8 +71,18 @@ class OwnedSecurityCapture:
 
     def close(self):
         lock=getattr(self,'_lock',None)
-        with lock if lock is not None else contextlib.nullcontext():
-            self._close()
+        if lock is None:
+            self._close();return
+        try:acquired=lock.acquire(timeout=READ_NS/1_000_000_000)
+        except Exception:acquired=False
+        if not acquired:
+            # Joining/cancelling a task does not prove that its active reader
+            # stopped. Retain the exact reader and fence; do not block remaining
+            # owned termination forever on its lock or close FDs underneath it.
+            self.cleanup_unproven=True;self.driver.close_errors.add(self.record['handle'])
+            raise p.BoundaryError('CLEANUP_INCOMPLETE')
+        try:self._close()
+        finally:lock.release()
 
     def _close(self):
         if self.closed:return
