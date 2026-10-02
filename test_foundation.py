@@ -47,6 +47,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege_socket import SocketRecoveryCases
         with self.subTest(case="socket_recovery"):
             SocketRecoveryCases().cases()
+        from test_privilege_probe import ProbeContractCases
+        with self.subTest(case="probe_contract"):
+            ProbeContractCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

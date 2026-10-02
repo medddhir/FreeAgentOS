@@ -182,3 +182,19 @@ def validate_response(value, seq):
         if value['data']:raise BoundaryError('INVALID_REQUEST')
         raise BoundaryError(value['code'])
     return value['data']
+
+
+def probe_record(mode):
+    """Backend identity only. No qualification or observed enforcement claim."""
+    if type(mode) is not str or mode not in ('SIMULATED','LINUX'):
+        raise BoundaryError('INVALID_REQUEST')
+    return {'schema_version':1,'mode':mode,'readiness':'UNPROVEN','enforcement':'UNPROVEN'}
+
+
+def validate_probe(value, mode):
+    keys(value,('schema_version','mode','readiness','enforcement'))
+    if (type(value['schema_version']) is not int or value['schema_version']!=1
+            or any(type(value[k]) is not str for k in ('mode','readiness','enforcement'))
+            or value!=probe_record(mode)):
+        raise BoundaryError('INVALID_REQUEST')
+    return value

@@ -231,4 +231,4 @@ class LinuxBackend:
         self.stop.set()
         if self.monitor:self.monitor.join(timeout=2)
 
-    def probe(self):return {'mode':'LINUX','enforcement':'UNPROVEN'}
+    def probe(self):return p.probe_record('LINUX')

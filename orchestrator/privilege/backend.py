@@ -6,7 +6,7 @@ import secrets
 import subprocess
 import sys
 from .policy import worker_environment, RECIPES
-from .protocol import BoundaryError, MAX_ENTRIES, identifier
+from .protocol import BoundaryError, MAX_ENTRIES, identifier, probe_record
 
 
 @dataclass
@@ -97,7 +97,7 @@ class FakeBackend:
         self.completed.add(handle)
 
     def probe(self):
-        return {'mode':'SIMULATED','enforcement':'UNPROVEN'}
+        return probe_record('SIMULATED')
 
 
 class SyntheticProcessBackend(FakeBackend):

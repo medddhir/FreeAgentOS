@@ -744,3 +744,87 @@ RESULT=PASS, EXIT_CODE=0. Final diff reviewed as B5-only. The initial active-cas
 failure exposed constructor cleanup attempting pre-existing ownership; cleanup
 was restricted to resources bound by the current constructor. No installed
 service, privileged backend, model/provider call or Stage3.1D action occurred.
+
+## Focused B11 repair — explicit Linux validation PROBE compatibility
+
+IMPLEMENTED / DETERMINISTIC CONTRACT VALIDATION only. Stage3.1D remains
+NOT AUTHORIZED. No service configuration/activation, provisioning or production
+worker integration changed. B1–B5 remain intact.
+
+### Exact contract
+
+Request remains protocol1 PROBE with exactly `{"probe":"BOUNDARY_V1"}`.
+No new operation, parameter, executable, path or kernel probe is exposed.
+The successful response envelope still uses protocol1, matching sequence and
+code OK. Its data must have exactly these four fields:
+
+```json
+{"schema_version":1,"mode":"SIMULATED","readiness":"UNPROVEN","enforcement":"UNPROVEN"}
+```
+
+An explicitly opted-in Linux-validation client instead requires exactly:
+
+```json
+{"schema_version":1,"mode":"LINUX","readiness":"UNPROVEN","enforcement":"UNPROVEN"}
+```
+
+Schema version is an actual integer1 (boolean/float/string versions rejected).
+Other values are exact strings; unknown/missing fields, unsupported schema,
+unexpected mode or any READY/VERIFIED/CONFIRMED/observed-kernel claim are rejected
+with INVALID_REQUEST. The old unversioned two-field record is rejected rather
+than ambiguously accepted. No compatibility fallback broadens acceptance.
+
+Mode denotes backend class only. Readiness and observed enforcement are separate
+fields and remain UNPROVEN in both modes. This endpoint performs no qualification,
+resource allocation, synthetic launch, cgroup/mount mutation or model/provider
+work. Configured or read-only prerequisite state cannot change these fields.
+PROBE cannot certify real-kernel isolation; future live evidence requires a
+separate reviewed contract, not relabeling this record.
+
+`protocol.probe_record` constructs the fixed values; `validate_probe` enforces
+exact shape/types/values. Fake/synthetic backend and LinuxBackend both use the
+same builder. Supervisor validates against its independently selected mode
+before returning a record; ControllerClient validates against its authenticated
+expected mode again. This catches contradictory backend records and later
+response substitution, independently of HELLO mode matching.
+
+### Opt-in, trust and compatibility
+
+`linux_validation` must be an actual boolean. Only explicit True selects Linux
+client mode; nonboolean substitutes reject before connecting. The existing
+root-server UID requirement,0750/0660 socket profile, SO_PEERCRED, enrollment/token,
+challenge, policy agreement and connection-owned handles are unchanged. Ordinary
+simulation clients require SIMULATED at HELLO and PROBE. Opted-in Linux clients
+require LINUX at both; simulation cannot masquerade as Linux. Future service
+configuration already chooses LinuxBackend with `linux_validation=True`; that
+service and its installation path were not changed or executed.
+
+B2 already hashes every changed contract source. Client/helper policy identity
+changes together; old bound enrollment/socket/control/resource records reject
+under their existing checks, with no rewriting, deletion, relabeling or migration.
+Frame/transport/client/request/rate/resource bounds and180-second base/current
+grace/240-second hard cap are unchanged. Doctor active isolation stays UNPROVEN.
+
+### Tests and limitations
+
+`test_privilege_probe.py` adds seven compact cases: valid simulation and opted-in
+Linux records; bidirectional HELLO/PROBE mode mismatch; missing/extra/malformed/
+contradictory fields and schema/wire version; backend-level rejection of false
+readiness/enforcement; invalid opt-in; authentication/policy rejection; configured
+backend state not becoming enforcement proof. Existing B1–B5 and doctor regressions
+are retained. Tests use temporary IPC, fake/RecordingDriver objects and pure
+projection fixtures. The Linux client fixture mocks root peer/socket profile
+while separately checking requested0750/0660 values and the actual temporary
+0700/0600 socket; this is NOT a real root service/authentication certification.
+No driver qualification or privileged execution is used to obtain PROBE results.
+
+Remaining consolidated blockers: B6 single-campaign guard; B7 bounded stdout
+evidence; B8 complete proof observables; B9 standalone operator rollback/recovery;
+B10 install/client inventory; B12 qualified disposable real-kernel target and
+validation. B5's documented ambiguous crash windows still require operator
+intervention. No Stage3.1D execution or readiness authorization is implied.
+
+Verification: focused seven-case PROBE table PASS (8.156s); nine affected
+PROBE/B1–B5/doctor regression groups PASS (41.722s). Final `bin/freeagent-test`:
+518 tests in328.062s, RESULT=PASS, EXIT_CODE=0. Final diff inspected as B11-only.
+No privileged backend, installed service, model/provider or benchmark executed.

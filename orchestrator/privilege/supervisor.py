@@ -82,7 +82,8 @@ class Supervisor:
                         r['state']='FAILED_DIRTY';self._save()
                         raise p.BoundaryError('BACKEND_FAILURE') from None
                     result=self._snapshot(r)
-                elif op=='PROBE':result=self.backend.probe()
+                elif op=='PROBE':
+                    result=p.validate_probe(self.backend.probe(),'LINUX' if self.linux else 'SIMULATED')
                 else:
                     r=self._owned(handle,connection,peer)
                     if op=='START':

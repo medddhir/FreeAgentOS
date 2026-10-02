@@ -14,6 +14,7 @@ class Sandbox:
 
 class ControllerClient:
     def __init__(self, path, enrollment, server_uid, server_gid, *, linux_validation=False):
+        if type(linux_validation) is not bool:raise p.BoundaryError('POLICY_REJECTED')
         self.mode='LINUX' if linux_validation is True else 'SIMULATED'
         if self.mode=='LINUX' and server_uid!=0:raise p.BoundaryError('PEER_NOT_ALLOWED')
         self.enrollment=enrollment
@@ -74,8 +75,7 @@ class ControllerClient:
     def release(self, sandbox):return self._operation('RELEASE',sandbox)
     def probe(self):
         result=self._rpc('PROBE',{'probe':'BOUNDARY_V1'})
-        if result!={'mode':'SIMULATED','enforcement':'UNPROVEN'}:raise p.BoundaryError('INVALID_REQUEST')
-        return result
+        return p.validate_probe(result,self.mode)
 
     def close(self):
         if self.channel is not None:self.channel.close();self.channel=None
