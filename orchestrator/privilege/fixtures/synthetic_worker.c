@@ -12,14 +12,16 @@ static unsigned long long cap(const char *key) {
     fclose(f); return v;
 }
 int main(int argc,char **argv) {
-    if(argc!=2 || strcmp(argv[1],"--synthetic")) return 125;
+    int complete=argc==2 && !strcmp(argv[1],"--synthetic-complete"); /* unprivileged test only; never RPC selected */
+    if(argc!=2 || (!complete && strcmp(argv[1],"--synthetic"))) return 125;
     struct stat p,m; int ns=stat("/proc/self/ns/pid",&p)==0 && stat("/proc/self/ns/mnt",&m)==0;
-    printf("{\"schema_version\":1,\"uid\":%u,\"gid\":%u,\"pid\":%u,\"pid_ns\":%llu,\"mount_ns\":%llu,\"capabilities_clear\":%s,\"no_new_privs\":%s,\"host_root_visible\":%s}\n",
+    printf("{\"schema_version\":2,\"fixture\":\"FREEAGENTOS_SYNTHETIC_V2\",\"event\":\"STARTED\",\"uid\":%u,\"gid\":%u,\"pid\":%u,\"pid_ns\":%llu,\"mount_ns\":%llu,\"capabilities_clear\":%s,\"no_new_privs\":%s,\"host_root_visible\":%s}\n",
            (unsigned)getuid(),(unsigned)getgid(),(unsigned)getpid(),ns?(unsigned long long)p.st_ino:0,
            ns?(unsigned long long)m.st_ino:0,
            cap("CapEff:")==0 && cap("CapPrm:")==0 && cap("CapInh:")==0 && cap("CapAmb:")==0 && cap("CapBnd:")==0?"true":"false",
            prctl(PR_GET_NO_NEW_PRIVS,0,0,0,0)==1?"true":"false",access("/root",F_OK)==0?"true":"false");
     fflush(stdout);
+    if(complete) { puts("{\"schema_version\":2,\"fixture\":\"FREEAGENTOS_SYNTHETIC_V2\",\"event\":\"COMPLETED\"}"); return 0; }
     if(fork()==0) { for(;;) sleep(300); }
     for(;;) sleep(300);
 }

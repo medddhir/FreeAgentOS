@@ -161,13 +161,19 @@ class LinuxChildCalls:
 
 def main():
     # Executed solely by a future explicitly authorized root-owned supervisor.
+    receipt=None
     try:
         raw=sys.stdin.buffer.read(16385)
         if len(raw)>16384:raise BoundaryError('BOUNDS_EXCEEDED')
         c=json.loads(raw,object_pairs_hook=_pairs)
+        validate_configuration(c)
+        if c['validation']:receipt=c['fds'][5]
         ChildRoutine(LinuxChildCalls()).run(c)
     except Exception:
         # No raw exceptions, configuration, credentials or worker data printed.
+        try:
+            if receipt is not None:os.write(receipt,b'EXEC_FAILED\n')
+        except Exception:pass  # abrupt exit/EOF alone is never successful exec proof
         os._exit(125)
 
 if __name__=='__main__':main()

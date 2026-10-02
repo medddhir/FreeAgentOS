@@ -46,7 +46,7 @@ AUTHORITATIVE = MappingProxyType({
 })
 # Explicit existing helper contract: no glob admitting arbitrary adjacent files.
 PRIVILEGE_SOURCES = tuple('privilege/'+name+'.py' for name in (
-    '__init__','backend','child','client','execution','isolation','journal','kernel',
+    '__init__','backend','child','client','evidence','execution','isolation','journal','kernel',
     'linux','policy','policy_sources','protocol','real_journal','recording','sealed',
     'security','service','socket_state','supervisor','validation'))
 NUMBERS = frozenset(('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS',

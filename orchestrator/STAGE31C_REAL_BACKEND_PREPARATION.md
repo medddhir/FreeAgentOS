@@ -828,3 +828,131 @@ Verification: focused seven-case PROBE table PASS (8.156s); nine affected
 PROBE/B1–B5/doctor regression groups PASS (41.722s). Final `bin/freeagent-test`:
 518 tests in328.062s, RESULT=PASS, EXIT_CODE=0. Final diff inspected as B11-only.
 No privileged backend, installed service, model/provider or benchmark executed.
+
+
+## B7 — Bounded synthetic proof collection (preparation only)
+
+Baseline `fbbea7b1f0d6a9ab25cb7a1b3aee4c50287c10ab`, branch main. No
+separate Engineering HQ handoff or repository AGENTS.md was present; this
+stage document and the owner's supplied instructions define the scope.
+B1–B5/B11 remain preserved. Stage3.1D is NOT AUTHORIZED. Nothing here installs,
+enrolls, qualifies or activates the privileged backend.
+
+### Implemented collection contract
+
+`evidence.py` owns bounded classification and asynchronous stdout/receipt draining.
+`LinuxDriver.launch` transfers the exact owned stdout stream and setup receipt
+read descriptor only for an approved registry entry with `validation=True`.
+The registered executable digest, helper handle, controller-generated run ID,
+backend owner, policy identity, execution class and role are controller/helper
+facts; the child cannot supply these bindings. `LinuxDriver.collect` validates
+against its immutable launch binding. Backend and Supervisor cross-check ledger
+identity; authenticated connection/peer handle ownership is checked before access.
+The client retains its generated run/class/role binding and revalidates the result.
+
+Protocol v1 adds one narrow `COLLECT {handle}` operation and the typed
+`ControllerClient.collect_synthetic(Sandbox)` method. It takes no paths, PIDs,
+commands, durations or raw requests. Only explicitly opted-in Linux-validation
+clients/supervisors accept it; ordinary simulation rejects it. RecordingDriver
+returns INVALID_STATE rather than manufacturing pipe observations. An unavailable
+or never-collected run stays unavailable; supervisor restart cannot recover an
+in-memory observation and does not invent it. This is a retrieval seam, not a
+campaign executor, installer or production worker cutover.
+
+Result schema_version1 is strict and additive to existing STATUS/PROBE contracts:
+identity fields `handle, run_id, owner, policy, class, role, executable_sha256`;
+fixed `status, reason`; booleans `launcher_ready, receipt_eof, output_eof,
+collector_closed`; fixed `executable_transition, completion, exit_status`;
+bounded `output_bytes, record_count`; `child_claims`; and `enforcement=UNPROVEN`.
+Statuses are PENDING, VALID, INCOMPLETE, REJECTED, UNAVAILABLE. Reasons are the
+fixed allowlist in evidence.py; malformed/contradictory success records reject.
+No raw pipe data, private output, environment, token or arbitrary exception is
+returned or journaled.
+
+Bounds: 2048 stdout bytes plus one overflow sentinel; two JSONL records,1024 bytes
+per record;64 receipt bytes plus one overflow sentinel;10 seconds absolute
+monotonic collection time after launcher readiness,50ms maximum select interval;
+1 second bounded collector join on cleanup. No caller selects these limits.
+Streams are nonblocking and drained together. Overflow/truncation/malformed data
+reject; full pipes cannot cause unbounded buffering. stdout/receipt are closed
+independently when collection stops. At most16 active sandbox collectors and128
+retained per-instance proof/binding entries are possible under existing admission
+limits. Wire frame16KiB/request128/rate32/clients8 and600s connection bounds remain.
+Collection retrieves a snapshot without waiting for exit or renewing any deadline.
+
+### Signals and their limits
+
+The fixed C fixture now emits schema_version2 `FREEAGENTOS_SYNTHETIC_V2` STARTED,
+with strictly typed bounded child claims. Its existing approved `--synthetic`
+mode still forks a harmless descendant and waits indefinitely for owned deadline
+termination. `--synthetic-complete` is a fixed unprivileged test-only mode emitting
+COMPLETED then exiting zero; it is NOT available through RPC/ApprovedExecution.
+No execution-class argv, privileged mount recipe or production lease is changed.
+
+The launcher writes EXEC_READY before exec. The parent consumes exactly that
+bounded record, allowing partial pipe reads, then transfers the close-on-exec
+receipt reader. A validated launcher error can append EXEC_FAILED; it never logs
+raw exceptions. EXEC_READY proves setup reached the exec attempt, not successful
+exec. Receipt EOF alone can mean successful CLOEXEC transition OR launcher death:
+it is NEVER sufficient positive exec evidence. Valid approved fixture STARTED
+output plus readiness and receipt EOF produces `FIXTURE_STARTED`; these are
+owned-channel observations, not an independent kernel executable attestation.
+SUCCESS requires both fixed records, both EOFs, observed zero exit of the owned
+Popen and closed collector. Transition without COMPLETED/zero exit remains
+UNPROVEN completion. EXEC_FAILED, malformed or conflicting data rejects claims.
+Fixture UID/GID, namespace IDs, capabilities/no_new_privs and host visibility
+remain CHILD CLAIMS. They cannot set enforcement READY/VERIFIED; B8 must supply
+independently observed security facts. B11 PROBE and doctor active isolation
+remain UNPROVEN. Production180s base/current grace/240s hard cap are unchanged;
+10s collection expiration is NOT a worker lease override.
+
+### Failure, ownership and compatibility
+
+Timeout, EOF, overflow, malformed output or collector stop produces an explicit
+bounded incomplete/rejected record; it never releases worker ownership. Existing
+owned scope/pidfd termination/reaping and durable resource intents remain required.
+Receipt/stdout close failures are retained in `close_errors`; absence/removal
+cannot certify clean with unresolved collectors. Independent supervision fences
+FAILED_DIRTY and attempts only owned termination. One collector/descriptor failure
+cannot skip other child/pipe/scope descriptor cleanup. Ambiguous numeric close is
+not retried after possible FD reuse. Real-resource journal cleanup stays UNPROVEN
+on unresolved cleanup; no simulation result is promoted to kernel proof.
+
+B2 binds the added evidence source plus changed contract modules. Client/helper
+must install matching code; old policy-bound journals/enrollment/socket records
+continue rejecting without rewriting, deletion or relabeling. Required Python
+sources and the fixed C fixture remain package artifacts under existing packaging.
+No credentials or runtime evidence are copied into Git.
+
+### Deterministic verification and remaining work
+
+Tests cover strict schemas/bindings, valid two-record completion, readiness then
+exec failure, transition without completion, missing/truncated/malformed/oversized/
+duplicate/contradictory output, full pipe drain/timeout/child exit, collector stop,
+independent descriptor close, dirty journal/fencing, retained evidence and swapped
+executable digest rejection; typed local IPC covers mode/connection ownership and
+policy/run mismatch. Fault injection mocks every privileged Linux operation.
+A compiler builds only the fixed fixture into a disposable temporary directory;
+finite execution/exec-error/pipe fixtures perform no isolation, identity change,
+cgroup/mount operation, provider/model or project work. Existing B1–B5/B11
+regressions remain required. Executable verification results are recorded below.
+
+These tests establish bounded parsing/draining, ownership projection, observed
+local fixture exit and simulated cleanup behavior. They do NOT establish real
+namespace/mount/cgroup enforcement, privileged child setup, real hard-cap timing,
+service crash cleanup or zero privileged residuals. Those require separately
+owner-authorized real-kernel validation. B7 collection preparation is implemented;
+remaining blockers are B6 campaign guard, B8 independent security observables,
+B9 standalone operator rollback/recovery, B10 installation/client inventory and
+B12 qualified disposable real-kernel target/validation. B5 ambiguous crash windows
+remain fail-closed operator cases. Stage3.1D readiness is NOT claimed.
+
+Verification: focused B7/B1–B5/B11 eight-group regression run PASS (EvidenceCases,
+CleanupProofCases, LauncherContainmentCases, LinuxCompleteCases, PolicyIdentityCases,
+TransportLifetimeCases, SocketRecoveryCases, ProbeContractCases). Final expanded
+B7 nine-case table PASS. Required `bin/freeagent-test`:518 tests in344.182s,
+RESULT=PASS, EXIT_CODE=0. `git diff --check` PASS; final source/test/document diff
+reviewed as B7-only. Static review found no shell execution, unsafe deserialization,
+arbitrary command/path/PID RPC or raw environment forwarding introduced. Tests
+used disposable local IPC and unprivileged finite fixtures, recording backends
+and mocked LinuxDriver primitives; the privileged backend was not activated.

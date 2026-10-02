@@ -51,6 +51,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="probe_contract"):
             ProbeContractCases().cases()
 
+        from test_privilege_evidence import EvidenceCases
+        with self.subTest(case="synthetic_evidence"):
+            EvidenceCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)

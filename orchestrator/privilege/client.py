@@ -18,7 +18,7 @@ class ControllerClient:
         self.mode='LINUX' if linux_validation is True else 'SIMULATED'
         if self.mode=='LINUX' and server_uid!=0:raise p.BoundaryError('PEER_NOT_ALLOWED')
         self.enrollment=enrollment
-        self.channel=None;self.seq=0;self._handles=set()
+        self.channel=None;self.seq=0;self._handles=set();self._bindings={}
         try:
             validate_socket(path,server_uid,server_gid,parent_mode=0o750 if self.mode=='LINUX' else 0o700,socket_mode=0o660 if self.mode=='LINUX' else 0o600)
             channel=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.channel=channel
@@ -60,9 +60,13 @@ class ControllerClient:
     def create_sandbox(self, slot, execution, role, *, limits=None):
         # Controller generates IDs; no task/model argument can supply run_id.
         resource_limits(execution,role,{} if limits is None else limits)
-        value=self._snapshot(self._rpc('CREATE',{'run_id':secrets.token_hex(16),'slot':slot,
+        run_id=secrets.token_hex(16)
+        value=self._snapshot(self._rpc('CREATE',{'run_id':run_id,'slot':slot,
                'class':execution,'role':role,'limits':{} if limits is None else limits}))
-        self._handles.add(value['handle']);return Sandbox(value['handle'])
+        if value['class']!=execution or value['role']!=role:raise p.BoundaryError('INVALID_REQUEST')
+        self._handles.add(value['handle'])
+        self._bindings[value['handle']]={'run_id':run_id,'class':execution,'role':role}
+        return Sandbox(value['handle'])
 
     def _operation(self, op, sandbox):
         value=self._snapshot(self._rpc(op,{'handle':self._handle(sandbox)}))
@@ -77,6 +81,17 @@ class ControllerClient:
         result=self._rpc('PROBE',{'probe':'BOUNDARY_V1'})
         return p.validate_probe(result,self.mode)
 
+    def collect_synthetic(self,sandbox):
+        if self.mode!='LINUX':raise p.BoundaryError('POLICY_REJECTED')
+        handle=self._handle(sandbox)
+        result=self._rpc('COLLECT',{'handle':handle})
+        from .evidence import validate, BINDING, empty
+        p.keys(result,tuple(empty({k:None for k in BINDING})))
+        identity={k:result[k] for k in BINDING}
+        expected={'handle':handle,'policy':policy_hash(),**self._bindings[handle]}
+        if any(identity[k]!=v for k,v in expected.items()):raise p.BoundaryError('POLICY_REJECTED')
+        return validate(result,identity)
+
     def close(self):
         if self.channel is not None:self.channel.close();self.channel=None
-        self._handles.clear()
+        self._handles.clear();self._bindings.clear()

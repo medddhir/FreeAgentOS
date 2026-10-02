@@ -86,6 +86,14 @@ class Supervisor:
                     result=p.validate_probe(self.backend.probe(),'LINUX' if self.linux else 'SIMULATED')
                 else:
                     r=self._owned(handle,connection,peer)
+                    if op=='COLLECT':
+                        if not self.linux:raise p.BoundaryError('POLICY_REJECTED')
+                        result=self.backend.collect(handle)
+                        from .evidence import validate, BINDING
+                        identity={k:result[k] for k in BINDING}
+                        if any(identity[k]!=r[k] for k in BINDING if k!='executable_sha256'):raise p.BoundaryError('POLICY_REJECTED')
+                        result=validate(result,identity)
+                        self.log.append((op,handle,'OK'));return result
                     if op=='START':
                         if r['state']!='CREATED':raise p.BoundaryError('INVALID_STATE')
                         try:self.backend.start(handle)

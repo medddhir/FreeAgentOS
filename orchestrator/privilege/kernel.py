@@ -15,6 +15,7 @@ from .linux import secure_open, OwnedPidfd, ChildSetup, platform_report
 from .protocol import BoundaryError, identifier
 from .security import private_file
 from .policy import resource_limits
+from .evidence import SyntheticCollector, binding, validate
 
 CGROUP2_MAGIC=0x63677270
 REQUIRED_CONTROLLERS=frozenset(('cpu','memory','pids'))
@@ -108,7 +109,7 @@ class LinuxDriver:
         if type(permit) is not InstallationPermit or os.geteuid()!=0 or not identifier(owner):
             raise BoundaryError('POLICY_REJECTED')
         self.permit=permit;self.root_fd=os.dup(root_fd);self.cgroup_fd=os.dup(cgroup_fd)
-        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set()
+        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set();self.collectors={};self.proofs={};self.proof_bindings={}
         with open('/proc/sys/kernel/random/boot_id') as stream:self.boot_id=stream.read(64).strip()
 
     def qualify(self):
@@ -198,8 +199,21 @@ class LinuxDriver:
             self._write(self.scopes[r['handle']],'cgroup.procs',child.pid)
             child.stdin.write(json.dumps(config,separators=(',',':')).encode());child.stdin.close()
             os.write(write_barrier,b'G')
-            ready=select.select([receipt_r],[],[],10)[0]
-            if not ready or os.read(receipt_r,16)!=b'EXEC_READY\n':raise BoundaryError('BACKEND_FAILURE')
+            receipt=bytearray();deadline=time.monotonic()+10
+            while len(receipt)<len(b'EXEC_READY\n'):
+                remaining=deadline-time.monotonic()
+                if remaining<=0 or not select.select([receipt_r],[],[],remaining)[0]:raise BoundaryError('BACKEND_FAILURE')
+                raw=os.read(receipt_r,len(b'EXEC_READY\n')-len(receipt))
+                if not raw:raise BoundaryError('BACKEND_FAILURE')
+                receipt.extend(raw)
+            if receipt!=b'EXEC_READY\n':raise BoundaryError('BACKEND_FAILURE')
+            if entry.validation:
+                identity=binding(r,entry)
+                self.proof_bindings[r['handle']]=identity
+                collector=SyntheticCollector(identity,child,receipt_r)
+                self.collectors[r['handle']]=collector
+                owned.remove(receipt_r)  # exact ownership transfer, not FD duplication
+                collector.start()
         except Exception:
             failed=True
         # FD closure is part of launch success, and each closure is independent.
@@ -223,11 +237,31 @@ class LinuxDriver:
 
     def running(self,r,process):return process.running(r['handle'])
 
+    def collection_failed(self,handle):
+        collector=self.collectors.get(handle)
+        return collector is not None and collector.close_failed
+
+    def collect(self,r):
+        if r['owner']!=self.owner:raise BoundaryError('UNKNOWN_HANDLE')
+        collector=self.collectors.get(r['handle'])
+        value=collector.snapshot() if collector is not None else self.proofs.get(r['handle'])
+        if value is None:raise BoundaryError('INVALID_STATE')  # no invented evidence
+        identity=self.proof_bindings[r['handle']]
+        if any(identity[k]!=r[k] for k in identity if k!='executable_sha256'):raise BoundaryError('POLICY_REJECTED')
+        return validate(value,identity)
+
     def terminate(self,r,process=None):
         if r['owner']!=self.owner:raise BoundaryError('UNKNOWN_HANDLE')
         owned=self.children.get(r['handle'])
         if process is not None and process is not owned:raise BoundaryError('UNKNOWN_HANDLE')
         process=owned;failed=False
+        collector=self.collectors.get(r['handle'])
+        if collector is not None:
+            try:
+                collector.close();self.proofs[r['handle']]=collector.snapshot()
+                self.collectors.pop(r['handle'])
+            except Exception:
+                failed=True;self.close_errors.add(r['handle'])
         # Failure draining the scope must not skip direct-child or FD cleanup.
         try:
             fd=self._scope(r)
@@ -290,7 +324,7 @@ class LinuxDriver:
         return fd
 
     def absent(self,r):
-        if r['owner']!=self.owner or r['handle'] in self.children or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
+        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
         name=scope_name(r)
         for fd in (self.root_fd,self.cgroup_fd):
             try:os.stat(name,dir_fd=fd,follow_symlinks=False)
@@ -312,7 +346,7 @@ class LinuxDriver:
         return {'scope':True,'root':True}  # verified matching inode or absence
 
     def remove(self,r):
-        if r['owner']!=self.owner or r['handle'] in self.children or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
+        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
         scope=self._scope(r)
         if scope is not None:
             if 'populated 0' not in read_at(scope,'cgroup.events').splitlines():raise BoundaryError('CLEANUP_INCOMPLETE')
@@ -327,7 +361,19 @@ class LinuxDriver:
         self.prove(r);self.terminate(r);self.remove(r)
 
     def close(self):
-        for fd in self.scopes.values():os.close(fd)
-        for fd in self.roots.values():os.close(fd)
-        for process in self.children.values():process.close()
-        self.children.clear();self.scopes.clear();self.roots.clear();os.close(self.root_fd);os.close(self.cgroup_fd)
+        failed=False
+        for handle,collector in self.collectors.items():
+            try:collector.close()
+            except Exception:self.close_errors.add(handle);failed=True
+        fds=(*self.scopes.values(),*self.roots.values(),self.root_fd,self.cgroup_fd)
+        self.scopes.clear();self.roots.clear();self.root_fd=None;self.cgroup_fd=None
+        # Retain failure evidence, never retry an ambiguous numeric FD after reuse.
+        for fd in fds:
+            if fd is None:continue
+            try:os.close(fd)
+            except Exception:failed=True
+        for process in self.children.values():
+            try:process.close()
+            except Exception:failed=True
+        if failed:raise BoundaryError('CLEANUP_INCOMPLETE')
+        self.children.clear();self.scopes.clear();self.roots.clear()

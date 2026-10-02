@@ -121,6 +121,7 @@ class LinuxBackend:
             now=self.clock()
             for handle,lease in list(self.leases.items()):
                 r=self._record(handle)
+                if self.driver.collection_failed(handle):self._dirty(r)
                 if r['state']=='FAILED_DIRTY' and handle in self.processes:
                     # Keep attempting only the owned scope after transient kill
                     # failures. Admission stays fenced; dirty never implies clean.
@@ -150,6 +151,13 @@ class LinuxBackend:
             r=self._record(handle)
             return {'handle':handle,'state':r['state'],'class':r['class'],'role':r['role'],
                     'mode':'LINUX','enforcement':'UNPROVEN','cleanup':'CONFIRMED' if self.cleaned(handle,self.owner) else 'UNPROVEN'}
+
+    def collect(self,handle):
+        with self.lock:
+            r=self._record(handle)
+            entry=self.bindings.get(handle,(None,None))[0]
+            if entry is not None and not entry.validation:raise p.BoundaryError('POLICY_REJECTED')
+            return self.driver.collect(r)
 
     def terminate(self,handle):
         with self.lock:

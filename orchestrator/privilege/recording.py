@@ -40,6 +40,8 @@ class RecordingDriver:
     def running(self,r,process):
         if process.handle!=r['handle']:raise BoundaryError('UNKNOWN_HANDLE')
         return process.active
+    def collection_failed(self,handle):return False
+    def collect(self,r):raise BoundaryError('INVALID_STATE')  # recording intentions are not pipe evidence
     def terminate(self,r,process=None):
         self._step(r['handle'],'CGROUP_KILL_OWNED')
         if process:

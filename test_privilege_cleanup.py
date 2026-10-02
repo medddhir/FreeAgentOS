@@ -1,5 +1,6 @@
 """B1/B4 fault injection; all Linux mutations and child creation are mocked."""
 import contextlib
+import os
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -123,13 +124,14 @@ class LauncherContainmentCases(unittest.TestCase):
     def fixture(self):
         d=LinuxDriver.__new__(LinuxDriver)
         d.owner='a'*32;d.qualified=True;d.sealed={H};d.roots={H:10};d.scopes={H:30}
-        d.children={};d.launch_fds={};d.close_errors=set();d.launch_settled=set();d.launcher=Mock(fd=40);d._write=Mock();d._scope=Mock(return_value=30)
-        entry=SimpleNamespace(verify=Mock(),runtime_fd=20,executable=SimpleNamespace(fd=21),execution='MODEL_WORKER',role='coder',uid=1234,gid=1234,job_id='e'*32,validation=True)
+        d.children={};d.launch_fds={};d.close_errors=set();d.launch_settled=set();d.collectors={};d.proofs={};d.proof_bindings={};d.launcher=Mock(fd=40);d._write=Mock();d._scope=Mock(return_value=30)
+        entry=SimpleNamespace(verify=Mock(),runtime_fd=20,executable=SimpleNamespace(fd=21,digest='f'*64),execution='MODEL_WORKER',role='coder',uid=1234,gid=1234,job_id='e'*32,validation=True)
         child=Mock(pid=321);child.poll.return_value=None;child.wait.return_value=0
-        r={'handle':H,'owner':d.owner}
+        r={'handle':H,'owner':d.owner,'run_id':'c'*32,'policy':'d'*64,'class':'MODEL_WORKER','role':'coder'}
         with contextlib.ExitStack() as stack:
             mocks={}
             for target,kwargs in [
+                ('orchestrator.privilege.kernel.SyntheticCollector',{'return_value':Mock(close_failed=False)}),
                 ('orchestrator.privilege.kernel.secure_open',{'return_value':11}),
                 ('orchestrator.privilege.kernel.read_at',{'return_value':'populated 0'}),
                 ('subprocess.Popen',{'return_value':child}),('os.dup',{'return_value':12}),
@@ -137,6 +139,7 @@ class LauncherContainmentCases(unittest.TestCase):
                 ('os.set_inheritable',{}),('signal.pidfd_send_signal',{}),('os.close',{}),('os.write',{'return_value':1}),
                 ('os.read',{'return_value':b'EXEC_READY\n'}),('select.select',{'return_value':([15],[],[])})]:
                 mocks[target]=stack.enter_context(patch(target,**kwargs))
+            mocks['orchestrator.privilege.kernel.SyntheticCollector'].return_value.close.side_effect=lambda:os.close(15)
             yield d,r,entry,child,mocks
 
     def case_failure_boundaries(self):
