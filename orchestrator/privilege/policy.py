@@ -1,28 +1,20 @@
 """Fixed classes and exact policy envelope; no runtime command from an RPC."""
 from dataclasses import dataclass
-import ast
 import hashlib
 import json
-from pathlib import Path
 from types import MappingProxyType
 from .protocol import BoundaryError
 from . import protocol as wire
+from .policy_sources import source_identity, _source_root, _read_source, _tree, _resource_literal
+import os
 
 
-# Parse only literal constant assignments; never import production execution.
+# Parse source literals only; never import production execution.
 def _literal(filename, name):
-    tree=ast.parse((Path(__file__).parents[1]/'roles'/filename).read_text())
-    for statement in tree.body:
-        if isinstance(statement,ast.Assign) and any(isinstance(t,ast.Name) and t.id==name for t in statement.targets):
-            # Current policies use only integer constants and multiplication by MIB.
-            def number(n):
-                if isinstance(n,ast.Constant) and type(n.value) is int:return n.value
-                if isinstance(n,ast.Name) and n.id=='MIB':return 1024*1024
-                if isinstance(n,ast.BinOp) and isinstance(n.op,ast.Mult):return number(n.left)*number(n.right)
-                raise BoundaryError('POLICY_REJECTED')
-            if not isinstance(statement.value,ast.Dict):raise BoundaryError('POLICY_REJECTED')
-            return {ast.literal_eval(k):number(v) for k,v in zip(statement.value.keys,statement.value.values)}
-    raise BoundaryError('POLICY_REJECTED')
+    try:fd=os.open(_source_root(),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
+    except OSError:raise BoundaryError('POLICY_REJECTED') from None
+    try:return _resource_literal(_tree(_read_source(fd,'roles/'+filename)),name)
+    finally:os.close(fd)
 
 
 @dataclass(frozen=True)
@@ -65,10 +57,7 @@ def policy_hash():
            'recipes':dict(RECIPES),'path_rules':('EXACT_RELATIVE','NO_SYMLINK','SINGLE_LINK','PINNED_REGISTERED_ROOT'),
            'protocol_bounds':{'frame':wire.MAX_FRAME,'clients':wire.MAX_CLIENTS,'active':wire.MAX_ACTIVE,
                               'per_uid':wire.MAX_PER_UID,'entries':wire.MAX_ENTRIES,'requests':wire.MAX_REQUESTS,'rate':wire.MAX_RATE,'journal_bytes':wire.MAX_JOURNAL,'transport_timeout_ms':int(wire.TIMEOUT*1000)},
-           'environment':dict(ENVIRONMENT),'lease':{'base':180,'grace':60,'hard':240,'recent':30},
-           'caps':{'read':8,'write':8,'planner_targets':4,'fixer_attempts':2},
-           'linux_contract_sources':{path.name:hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in sorted(Path(__file__).parent.glob('*.py'))}}
+           'environment':dict(ENVIRONMENT),'authoritative_contract':source_identity()}
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 

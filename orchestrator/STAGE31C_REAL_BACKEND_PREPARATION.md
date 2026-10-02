@@ -448,3 +448,114 @@ regressions PASS (5 contract groups, including 18 new fault cases).
 freeagent-test: 518 tests in 224.378s; RESULT=PASS; EXIT_CODE=0. Final diff
 review and git diff --check passed. These are deterministic preparation checks,
 not privileged kernel validation. Stage3.1D remains BLOCKED / NOT AUTHORIZED.
+
+## Focused B2 repair — authoritative policy identity binding
+
+B2 is repaired in preparation mode. B1/B4 remain preserved. Stage3.1D remains
+BLOCKED and NOT AUTHORIZED; no new privileged backend operation is exercised.
+
+### Policy contract and exact authorities
+
+The old copied lease/cap summary is removed. `policy_sources.source_identity()`
+adds binding version2 to `policy_hash()`. Its immutable allowlist names41 source
+files:22 authoritative application-policy files and19 existing/helper-contract
+files (including the binding implementation). No directory glob, configuration,
+workspace path, runtime journal, credential, or generated digest is an input.
+
+| Rule | Authoritative source and bound behavior |
+|---|---|
+| Base180s, grace60s, hard240s, recent30s | `roles/lease.py`: constants, `hard_cap_seconds`, complete `ActivityLease`; coder/fixer + model + streaming + base180 eligibility; trusted pre-deadline progress; once-only decision; hard deadline clamp. |
+| Progress eligibility inputs | Complete dedicated `roles/activity.py`, `broker_telemetry.py`, `broker_session.py`; selected `worker._read_worker_streams` and inner/outer resource/lease execution. |
+| Role and execution deadlines | Planner90, Coder180, Fixer180, Reviewer90, Tester130 assignments in their role files; `research_execution.py` action deadlines50/30/30/40; worker/research/test wall ceilings240/60/150; helper role-base/deadline behavior in `privilege/isolation.py`. These distinct role requests and resource ceilings are not conflated. |
+| Read/write/Planner/context/tool limits | Dedicated `read_policy.py`, `file_tools.py`, `coding_units.py`: shared eight-file read/write ceiling, Planner three units/four targets, eight context files/24KiB packet/8KiB per file,128 tool calls and256KiB session budget; enforcement, authorization narrowing and validation, not only numbers. |
+| Resource limits | `worker.py` MIB/WORKER_POLICY/RESEARCH_POLICY/POLICIES and enforcement functions; complete dedicated `sandbox.py`, including RESOURCE_POLICY, capture, copy, cgroup and child rlimit enforcement. Helper independently bounded selection remains in hashed `privilege/policy.py`. The integer multiplier is parsed from authoritative MIB source, not a copied multiplier. |
+| Fixer/repair | `graph.py` MAX_FIX_ATTEMPTS plus route_after_tester/tested_unit_node/route_after_fixer; Fixer timeout and complete fixer_node (including its separate literal attempt guard and accounting); complete dedicated intermediate_repair.py and bounded repair_context.py. Global two-attempt and intermediate checkpoint/permission rules are bound in all current enforcement locations. |
+| Permission dependencies | Selected inspector path/descriptor reader and filtering definitions; integrity protected-file/baseline/change/fingerprint rules; Tester test-file classification; selected workspace inventory, secret exclusions, manifest/controller identity and execution-contract validation; preflight required-capability definitions. |
+| Existing supervisor policy | Explicit19 privilege Python files: protocol/bounds, peer/token/connection authentication, socket validation, fixed classes/argv/environment, paths/sealing, mounts/devices/identity/capability drop, resources, leases, state/recovery/cleanup and B1/B4 fixes. |
+
+The complete fixed map and required definition names are in `policy_sources.py`.
+Dedicated policy modules use whole-source SHA256. Mixed application modules bind
+only allowlisted definitions plus module-level bindings/control flow, using
+position-free AST serialization; this also catches later deadline rebinding.
+Unrelated graph finalization/build functions, general CLI/UI/bootstrap, benchmarks,
+provider selection and attribution implementation are not added to this contract.
+Selected Fixer function bodies conservatively include their static prompt literals;
+changing those literals can invalidate identity, but no live prompt is read.
+New policy dependencies must be explicitly reviewed and added to the allowlist;
+this is a policy compatibility contract, not arbitrary transitive application
+attestation or a proof that changed code is safe.
+
+### Trust, bounds and packaging
+
+Root is the filesystem package containing `privilege/policy_sources.py`, resolved
+from that module's `__file__`; it is not cwd, HOME, environment, CLI or RPC input.
+The existing service package/ancestor ownership checks remain mandatory. A
+privileged installation must be root-owned/non-writable by enrolled users and
+immutable while active; development/client checkouts are not privileged authority.
+No production application module is imported/executed to derive this identity.
+
+Reads use pinned directory FDs, no-follow directories/final files, CLOEXEC,
+regular single-link file checks, maximum256KiB per source and4MiB total, and
+before/after file identity/size/time checks. Parsing requires valid UTF-8/Python,
+required non-duplicated definitions of the expected kind, supported bounded
+positive numeric assignments and bounded literal resource dictionaries. Missing,
+unreadable, malformed, oversized or symlinked sources raise POLICY_REJECTED;
+there is no fallback to copied literals or imported module values.
+
+The existing setuptools package declarations already include orchestrator,
+orchestrator.roles and orchestrator.privilege Python sources. Normal unpacked
+wheel installation is required; stripped-source/pyc-only or zip-only layouts fail
+closed. Controller and helper must use matching source/extraction contracts;
+Python AST representation differences across interpreter versions may reject
+compatibility rather than silently asserting equivalence. Use matching reviewed
+Python versions for a privileged installation.
+
+Hashing a binding implementation's static source does not read/execute its own
+result. No generated identity is embedded in any hashed source, so this is not a
+circular or self-referential digest computation.
+
+### Compatibility and old journals
+
+Both controller HELLO and supervisor policy validation use the same policy_hash.
+Different policy identities reject with POLICY_REJECTED. Existing enrollment,
+permit/registry and journal identity checks remain in force. Old policy-bound
+controller/resource journals reject JOURNAL_INVALID under the new identity; they
+are not rewritten, deleted, relabeled or automatically migrated. Preserve old
+matching code/policy and journals for separately reviewed, owner-authorized cleanup
+of their resources. Do not bypass mismatch by editing journal hashes. This
+milestone implements no migration or operator recovery/installation workflow.
+
+### Deterministic tests and package evidence
+
+`test_privilege_policy_identity.py` provides eight compact contract cases,
+including25 isolated source mutations of lease values, eligibility, once-only and
+pre-deadline behavior, worker deadline consumption, role/research deadlines,
+read/write/tool/Planner/resource caps and graph/Fixer/intermediate repair rules.
+Stable unchanged inputs and excluded application/runtime files are checked.
+Missing/invalid/duplicate/oversized/symlink/unreadable source fixtures fail closed.
+Temporary fake-backend client/supervisor agreement and mismatch rejection are
+checked. Both temporary journal formats remain byte-for-byte unchanged on mismatch.
+A source fixture containing a top-level exception is parsed but never executed;
+an isolated import confirms no production application module is loaded by hashing.
+The tables run through the existing foundation entry to preserve runner bounds.
+
+A real offline wheel was built from a disposable allowlisted source copy with
+existing pinned setuptools68.1.2/wheel0.42.0 (no dependency install, no global Python
+mutation). All41 required policy sources were present. Its unpacked installed
+package computed exactly the checkout identity, with zero production application
+module imports. Temporary build/package files were removed. The first attempt
+using the controller venv failed because that venv lacks setuptools; the successful
+build used the already-installed matching pinned build tools instead.
+
+Remaining consolidated blockers: B3 transport idle/request budget; B5 stale socket
+recovery; B6 executable single-campaign guard; B7 bounded synthetic stdout evidence;
+B8 complete security proof observables; B9 standalone operator rollback/recovery;
+B10 install/client credential/evidence inventory; B11 Linux PROBE contract; B12
+qualified disposable target/real kernel enforcement. No exported snapshot, service,
+production rule, lease/resource value, gateway or production integration changed.
+
+Final verification: six focused policy/privilege/Linux/B1/B4 regression groups
+passed (17.983s). The final code tree passed `bin/freeagent-test`:518 tests in
+299.463s, RESULT=PASS, EXIT_CODE=0. Final diff inspection found only the binding
+implementation, its focused tests/foundation wiring and this documentation.
+No new-backend privileged validation or model/provider generation was executed.

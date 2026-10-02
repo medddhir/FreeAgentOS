@@ -38,6 +38,9 @@ class FoundationTests(unittest.TestCase):
             CleanupProofCases().cases()
         with self.subTest(case="launcher_containment"):
             LauncherContainmentCases().cases()
+        from test_privilege_policy_identity import PolicyIdentityCases
+        with self.subTest(case="policy_identity"):
+            PolicyIdentityCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
