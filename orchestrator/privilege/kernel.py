@@ -110,6 +110,7 @@ class LinuxDriver:
             raise BoundaryError('POLICY_REJECTED')
         self.permit=permit;self.root_fd=os.dup(root_fd);self.cgroup_fd=os.dup(cgroup_fd)
         self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set();self.collectors={};self.proofs={};self.proof_bindings={}
+        self.observers={}
         with open('/proc/sys/kernel/random/boot_id') as stream:self.boot_id=stream.read(64).strip()
 
     def qualify(self):
@@ -239,7 +240,14 @@ class LinuxDriver:
 
     def collection_failed(self,handle):
         collector=self.collectors.get(handle)
-        return collector is not None and collector.close_failed
+        observer=getattr(self,'observers',{}).get(handle)
+        if observer is not None:
+            from .security_proof import MAX_CAPTURE_NS
+            if time.monotonic_ns()>observer.expectation.started_ns+MAX_CAPTURE_NS:
+                try:observer.close()
+                except Exception:pass  # retain owned reader and dirty evidence
+                self.close_errors.add(handle)
+        return handle in self.close_errors or collector is not None and collector.close_failed
 
     def collect(self,r):
         if r['owner']!=self.owner:raise BoundaryError('UNKNOWN_HANDLE')
@@ -250,11 +258,34 @@ class LinuxDriver:
         if any(identity[k]!=r[k] for k in identity if k!='executable_sha256'):raise BoundaryError('POLICY_REJECTED')
         return validate(value,identity)
 
+    def _register_observer(self,r,observer):
+        if r['owner']!=self.owner or r['state']!='RUNNING' or r['handle'] not in self.children:
+            raise BoundaryError('POLICY_REJECTED')
+        if not hasattr(self,'observers'):self.observers={}
+        if r['handle'] in self.observers:raise BoundaryError('INVALID_STATE')
+        self.observers[r['handle']]=observer
+
+    def _forget_observer(self,r,observer):
+        if getattr(self,'observers',{}).get(r['handle']) is not observer:
+            raise BoundaryError('CLEANUP_INCOMPLETE')
+        self.observers.pop(r['handle'])
+
+    def _close_observers(self,r):
+        observer=getattr(self,'observers',{}).get(r['handle'])
+        if observer is None:return
+        try:observer.close()
+        except Exception:
+            self.close_errors.add(r['handle']);raise BoundaryError('CLEANUP_INCOMPLETE') from None
+        if r['handle'] in self.observers:
+            self.close_errors.add(r['handle']);raise BoundaryError('CLEANUP_INCOMPLETE')
+
     def terminate(self,r,process=None):
         if r['owner']!=self.owner:raise BoundaryError('UNKNOWN_HANDLE')
         owned=self.children.get(r['handle'])
         if process is not None and process is not owned:raise BoundaryError('UNKNOWN_HANDLE')
         process=owned;failed=False
+        try:self._close_observers(r)
+        except Exception:failed=True  # never skip scope/child/pipe cleanup
         collector=self.collectors.get(r['handle'])
         if collector is not None:
             try:
@@ -324,7 +355,7 @@ class LinuxDriver:
         return fd
 
     def absent(self,r):
-        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
+        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or r['handle'] in getattr(self,'observers',{}) or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
         name=scope_name(r)
         for fd in (self.root_fd,self.cgroup_fd):
             try:os.stat(name,dir_fd=fd,follow_symlinks=False)
@@ -346,7 +377,7 @@ class LinuxDriver:
         return {'scope':True,'root':True}  # verified matching inode or absence
 
     def remove(self,r):
-        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
+        if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or r['handle'] in getattr(self,'observers',{}) or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
         scope=self._scope(r)
         if scope is not None:
             if 'populated 0' not in read_at(scope,'cgroup.events').splitlines():raise BoundaryError('CLEANUP_INCOMPLETE')
@@ -362,6 +393,10 @@ class LinuxDriver:
 
     def close(self):
         failed=False
+        for handle,observer in list(getattr(self,'observers',{}).items()):
+            try:observer.close()
+            except Exception:self.close_errors.add(handle);failed=True
+            if handle in self.observers:self.close_errors.add(handle);failed=True
         for handle,collector in self.collectors.items():
             try:collector.close()
             except Exception:self.close_errors.add(handle);failed=True

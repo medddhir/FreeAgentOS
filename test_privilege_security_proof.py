@@ -5,8 +5,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
+import hashlib
+from types import SimpleNamespace
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 from orchestrator.privilege import protocol as p, security_proof as s, security_observe as o
@@ -223,7 +227,7 @@ class SecurityProofCases(unittest.TestCase):
         driver=LinuxDriver.__new__(LinuxDriver);driver.permit=InstallationPermit('a'*64,IDENTITY['policy']);driver.qualified=True
         driver.owner=IDENTITY['owner'];driver.boot_id='test';driver.close_errors=set()
         driver.children={IDENTITY['handle']:Mock(fd=20,handle=IDENTITY['handle'])};driver.prove=Mock();driver._scope=Mock(return_value=10)
-        record={**IDENTITY,'boot_id':'test','scope_device':4,'scope_inode':5}
+        record={**IDENTITY,'boot_id':'test','scope_device':4,'scope_inode':5,'state':'RUNNING'}
         entry=Mock(validation=True,executable=Mock(digest=IDENTITY['executable_sha256']))
         with patch('os.dup',return_value=21),patch('os.set_inheritable'),patch('os.open',side_effect=OSError('private')),patch('os.close') as closed:
             with self.assertRaisesRegex(p.BoundaryError,'BACKEND_FAILURE'):OwnedSecurityCapture._from_owned_driver(driver,record,entry,self.expectation())
@@ -231,6 +235,156 @@ class SecurityProofCases(unittest.TestCase):
         with patch('os.dup',return_value=21),patch('os.set_inheritable'),patch('os.open',side_effect=OSError('private')),patch('os.close',side_effect=OSError('private')):
             with self.assertRaises(p.BoundaryError):OwnedSecurityCapture._from_owned_driver(driver,record,entry,self.expectation())
         self.assertIn(IDENTITY['handle'],driver.close_errors)
+
+    def case_observer_owned_cleanup_integration(self):
+        from orchestrator.privilege.kernel import LinuxDriver
+        driver=LinuxDriver.__new__(LinuxDriver)
+        handle=IDENTITY['handle'];r={**IDENTITY,'state':'RUNNING'}
+        driver.owner=IDENTITY['owner'];driver.children={handle:None}
+        driver.observers={};driver.close_errors=set();driver.collectors={}
+        driver.launch_fds={};driver.launch_settled=set()
+        reader=object.__new__(OwnedSecurityCapture)
+        reader.driver=driver;reader.record=r;reader.closed=False
+        reader.cleanup_unproven=False;reader.scope=10;reader.host=11
+        reader.private_proc=12;reader.descendant_fds={123:13}
+        driver._register_observer(r,reader)
+        driver.children.clear()
+        # Absence and release refuse even when no child remains.
+        self.assertFalse(driver.absent(r))
+        with self.assertRaises(p.BoundaryError):driver.remove(r)
+        # A failed observer close cannot skip owned scope or launch-pipe cleanup.
+        driver._scope=Mock(return_value=None)
+        driver._close_launch_fds=Mock(return_value=True)
+        with patch('os.close',side_effect=[OSError('private'),None,None,None]) as closed:
+            with self.assertRaisesRegex(p.BoundaryError,'CLEANUP_INCOMPLETE'):driver.terminate(r)
+            self.assertEqual(closed.call_count,4)
+        driver._scope.assert_called_once_with(r)
+        driver._close_launch_fds.assert_called_once_with(handle)
+        self.assertIn(handle,driver.observers);self.assertIn(handle,driver.close_errors)
+        self.assertFalse(driver.absent(r))
+        # Idempotence must not turn an ambiguous close into positive proof.
+        with patch('os.close') as closed:
+            with self.assertRaises(p.BoundaryError):driver._close_observers(r)
+            closed.assert_not_called()
+        # Successful cleanup unregisters exactly its reader, never another.
+        driver.observers.clear();driver.close_errors.clear();driver.children[handle]=None
+        reader.closed=False;driver._register_observer(r,reader)
+        with self.assertRaises(p.BoundaryError):driver._register_observer(r,reader)
+        with patch('os.close') as closed:
+            reader.close();reader.close();self.assertEqual(closed.call_count,4)
+        self.assertNotIn(handle,driver.observers)
+        with self.assertRaises(p.BoundaryError):driver._forget_observer(r,reader)
+        foreign={**r,'owner':'0'*32}
+        with self.assertRaises(p.BoundaryError):driver._register_observer(foreign,reader)
+
+    def case_observer_acquisition_registered_before_allocation(self):
+        from orchestrator.privilege.kernel import LinuxDriver, InstallationPermit
+        driver=LinuxDriver.__new__(LinuxDriver)
+        driver.permit=InstallationPermit('a'*64,IDENTITY['policy']);driver.qualified=True
+        driver.owner=IDENTITY['owner'];driver.boot_id='test';driver.close_errors=set()
+        handle=IDENTITY['handle'];driver.children={handle:Mock(fd=20,handle=handle)}
+        driver.prove=Mock();driver._scope=Mock(return_value=10)
+        r={**IDENTITY,'boot_id':'test','scope_device':4,'scope_inode':5,'state':'RUNNING'}
+        entry=Mock(validation=True,executable=Mock(digest=IDENTITY['executable_sha256']))
+        def duplicate(fd):
+            self.assertIn(handle,driver.observers)
+            return 21
+        with patch('os.dup',side_effect=duplicate),patch('os.set_inheritable'),patch('os.open',return_value=22),patch('os.close') as close:
+            reader=OwnedSecurityCapture._from_owned_driver(driver,r,entry,self.expectation())
+            self.assertIs(driver.observers[handle],reader)
+            reader.close();self.assertEqual(close.call_count,2)
+            self.assertNotIn(handle,driver.observers)
+        with patch('os.dup',side_effect=OSError('private')):
+            with self.assertRaises(p.BoundaryError):OwnedSecurityCapture._from_owned_driver(driver,r,entry,self.expectation())
+        self.assertNotIn(handle,driver.observers)
+
+    def case_observer_timeout_supervision(self):
+        from orchestrator.privilege.kernel import LinuxDriver
+        driver=LinuxDriver.__new__(LinuxDriver);handle=IDENTITY['handle']
+        driver.collectors={};driver.observers={};driver.close_errors=set()
+        reader=Mock(expectation=self.expectation())
+        reader.close.side_effect=lambda:driver.observers.pop(handle)
+        driver.observers[handle]=reader
+        with patch('time.monotonic_ns',return_value=s.MAX_CAPTURE_NS):
+            self.assertFalse(driver.collection_failed(handle));reader.close.assert_not_called()
+        with patch('time.monotonic_ns',return_value=s.MAX_CAPTURE_NS+1):
+            self.assertTrue(driver.collection_failed(handle));reader.close.assert_called_once()
+        self.assertIn(handle,driver.close_errors)
+        self.assertNotIn(handle,driver.observers)
+        # Expiry never changes a production worker lease, and failed closure
+        # retains the exact reader rather than pretending it was unallocated.
+        driver.close_errors.clear();driver.observers[handle]=reader
+        reader.close.side_effect=OSError('private')
+        with patch('time.monotonic_ns',return_value=s.MAX_CAPTURE_NS+1):
+            self.assertTrue(driver.collection_failed(handle))
+        self.assertIs(driver.observers[handle],reader)
+
+    def case_observer_release_serializes_capture(self):
+        from orchestrator.privilege.kernel import LinuxDriver
+        driver=LinuxDriver.__new__(LinuxDriver);handle=IDENTITY['handle']
+        driver.owner=IDENTITY['owner'];driver.children={handle:None}
+        driver.observers={};driver.close_errors=set()
+        reader=object.__new__(OwnedSecurityCapture)
+        reader.driver=driver;reader.record={**IDENTITY,'state':'RUNNING'}
+        reader.closed=False;reader.cleanup_unproven=False;reader.scope=10;reader.host=11
+        reader.private_proc=None;reader.descendant_fds={};reader._lock=threading.RLock()
+        driver._register_observer(reader.record,reader)
+        entered=threading.Event();finish=threading.Event();done=threading.Event();errors=[]
+        def sampling():
+            entered.set()
+            if not finish.wait(2):raise AssertionError('recorded sampling stalled')
+            self.assertFalse(reader.closed)
+            return {'enforcement':'UNPROVEN'}
+        def capture():
+            try:reader._capture(sampling)
+            except Exception as error:errors.append(type(error).__name__)
+        def release():
+            try:driver._close_observers(reader.record)
+            except Exception as error:errors.append(type(error).__name__)
+            finally:done.set()
+        with patch('os.close') as closed:
+            a=threading.Thread(target=capture);b=threading.Thread(target=release)
+            a.start();self.assertTrue(entered.wait(2));b.start()
+            try:self.assertFalse(done.wait(.02))
+            finally:finish.set();a.join(2);b.join(2)
+            self.assertFalse(a.is_alive());self.assertFalse(b.is_alive())
+            self.assertEqual(closed.call_count,2)
+        self.assertFalse(errors);self.assertTrue(done.is_set());self.assertTrue(reader.closed)
+        self.assertNotIn(handle,driver.observers)
+
+    def case_full_isolation_capture_recording(self):
+        reader=object.__new__(OwnedSecurityCapture);reader.expectation=self.expectation()
+        reader.closed=False;reader.cleanup_unproven=False;reader.subject_start=None
+        reader.descendant_fds={};reader.private_proc=None;reader.worker_ns=None
+        reader.record={**IDENTITY,'scope_device':4,'scope_inode':5}
+        reader.driver=Mock(close_errors=set());reader.scope=12;reader.host=13
+        reader.entry=Mock(runtime_fd=14,executable=Mock(device=7,inode=8,digest=hashlib.sha256(b'test').hexdigest()))
+        reader._check=Mock();reader._deadline=Mock();reader._members=Mock(return_value=[111])
+        reader._directory=Mock(side_effect=range(100,200));reader._absent=Mock(return_value=True)
+        reader._names=Mock(side_effect=[['0','1','2'],list(o.DEVICES)])
+        host=dict(zip(s.NAMESPACES,(1,2,3,4)));worker=dict(zip(s.NAMESPACES,(5,6,7,4)))
+        reader._namespace=Mock(side_effect=[host,worker])
+        suffix=b'S '+b'0 '*18+b'123\n'
+        reader._read=Mock(side_effect=lambda fd,name:b'111 (recorded) '+suffix if name=='stat' else b'recorded\n')
+        def info(name,**kw):
+            if name in ('0','1'):return SimpleNamespace(st_mode=stat.S_IFIFO,st_rdev=0)
+            if name=='2':return SimpleNamespace(st_mode=stat.S_IFCHR,st_rdev=os.makedev(1,3))
+            major,minor=o.DEVICES[name]
+            return SimpleNamespace(st_mode=stat.S_IFCHR|0o666,st_rdev=os.makedev(major,minor))
+        with patch('os.pidfd_open',return_value=50),patch('os.set_inheritable'),patch('select.select',return_value=([],[],[])),\
+             patch('os.open',side_effect=[40,41]),patch('os.fstat',return_value=SimpleNamespace(st_dev=7,st_ino=8,st_size=4)),\
+             patch('os.pread',return_value=b'test'),patch('os.stat',side_effect=info),patch('os.dup',return_value=60),\
+             patch('os.close') as closed,patch.object(o,'status',return_value=(self.data('identity'),self.data('capabilities'),1)),\
+             patch.object(o,'filesystem',return_value=self.data('filesystem')),patch('time.monotonic_ns',return_value=1):
+            result=reader.isolation()
+            self.assertEqual(result['data']['identity'],self.data('identity'))
+            self.assertEqual(result['source'],'OWNED_KERNEL_READ');self.assertEqual(result['enforcement'],'UNPROVEN')
+            self.assertEqual(reader.subject_start,123);self.assertEqual(reader.private_proc,60)
+            # Temporary FDs close at capture completion; retained private-proc
+            # descriptor remains owned until explicit reader cleanup.
+            self.assertNotIn(60,[call.args[0] for call in closed.call_args_list])
+            reader.close()
+            self.assertIn(60,[call.args[0] for call in closed.call_args_list])
 
     def case_total_buffer_bounds_and_import(self):
         x=self.expectation();buffer=s.RecordBuffer(x)

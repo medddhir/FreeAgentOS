@@ -1137,3 +1137,89 @@ in322.280s, RESULT=PASS, EXIT_CODE=0. Python compilation and git diff --check PA
 Final diff reviewed as B8-only. These are executable checks of the preparation
 portion, not real-kernel qualification or completion of the integration gaps.
 No verified tag, Stage3.1D readiness claim or execution authorization.
+
+### B8 follow-up: observer ownership integration (still PARTIAL)
+
+Baseline: 9bf1e6c44dc54a2b2ee61d49e4e9ca9644dd99f4, main, initially clean;
+no tag at baseline. This follow-up implements the reader-lifetime safety repair,
+not the complete requested B8 integration. B8 remains PARTIAL. Real enforcement
+and doctor active isolation remain UNPROVEN; Stage3.1D is NOT AUTHORIZED.
+
+The private owned-reader factory now registers a pending reader in LinuxDriver
+before allocating its scope or host-proc descriptors. Admission requires the
+existing exact driver/permit, policy/run/owner/executable binding, owned pidfd,
+scope identity and RUNNING record. At most one reader is registered per handle.
+The registration is internal, with no new model, tool or RPC API. Successful
+close removes only that exact reader. Failed/ambiguous close retains registration
+and close_errors; repeating close never retries possibly reused numeric FDs.
+Factory failure independently closes every acquired descriptor via ExitStack;
+only sufficient successful closure removes its reservation. This is not a
+NEVER_ALLOCATED resource proof and cannot clean the already allocated sandbox.
+
+Capture and close serialize through a reader-local lock. A release cannot close
+the pinned scope/private-proc/pidfd descriptors underneath an active bounded read.
+Existing fixed read deadlines and aggregate byte limits remain unchanged.
+LinuxDriver termination attempts reader close before scope/child cleanup, but a
+reader failure cannot skip scoped termination, child reaping or launch-pipe/FD
+cleanup. The existing release, disconnect, launch-failure and recovery paths all
+use that driver termination/removal sequence. Driver shutdown also attempts each
+reader independently. remove/absent refuse any live or ambiguous reader, including
+after worker exit. LinuxBackend's existing dirty state/admission fence applies
+when termination cannot prove cleanup. No ambiguous reader is relabeled clean.
+
+The existing independent supervisor monitor now notices a reader whose original
+10-second capture window expired, attempts closure, and reports collection failure.
+That failure enters the existing dirty/owned-termination path. Client activity
+cannot renew the capture window or worker lease. This is separate from unchanged
+180-second base/current grace/240-second hard-cap policy. A supervisor crash loses
+its own descriptors at process exit; recovery still requires the existing durable
+resource journal and ownership/absence proofs. No journal migration or scanner is
+introduced, and uncertain pre-attachment ownership remains dirty.
+
+Deterministic coverage adds acquisition-before-allocation checks; successful and
+failed close; exact-reader ownership; release refusing live/ambiguous observers;
+scope/launch-FD cleanup continuing after observer failure; bounded expiry;
+concurrent capture/release serialization; and a full recorded isolation read path
+through executable identity, UID/GID/capability, FD, namespace, device/rootfs and
+private-proc descriptor retention/closure. All syscall effects are mocked. The
+existing parser/evaluator tests continue to reject invalid bounds and evidence.
+This does not prove live kernel timing, process containment, resource enforcement,
+or the full integrated capture fault matrix.
+
+Required remaining B8 gaps, confirmed against current source:
+
+1. execution.ApprovedExecution.argv and child.ChildRoutine still select the B7
+   --synthetic fixture. security_proof.probe_plan remains a non-executable plan;
+   no approved digest/policy/role/run-bound stress gate delivery exists.
+2. client.ControllerClient.collect_synthetic, supervisor COLLECT and
+   LinuxBackend.collect expose B7 only. No authenticated B8 sidecar projection
+   exists; the 8192-byte B8 record cannot be blindly put through generic transport
+   string/list/depth bounds. A bounded compatible projection is still needed.
+3. security_capture returns OWNED_KERNEL_READ summaries, while security_proof
+   accepts CONFIGURED/CHILD_REPORTED/INDEPENDENT_RECORDING only. No coordinator
+   assembles paired counters, independently observed demand, executable outcomes
+   and final post-reader-closure release proof into evaluable B8 observations.
+   In particular a live reader itself prevents final positive absence; its
+   containment method must not manufacture a release proof while retaining FDs.
+4. No registered asynchronous B8 collection task or observer subprocess is
+   created yet. Future allocations need ownership registration before spawn and
+   durable uncertainty handling; this FD-reader repair is not that integration.
+5. Authenticated integrated fault tests for stress authorization, evidence
+   pagination/projection, assembly, overflow/partial observations, exit/disconnect
+   and uncertain recovery remain necessary after those paths exist.
+
+B6/B9/B10/B12 remain unresolved. B1–B5/B7/B11 are preserved. B7 and B8 schemas,
+byte/record/buffer/time limits are unchanged. Modified kernel/capture sources
+already participate in authoritative policy identity; old mismatched journals
+remain rejected without rewriting/deleting/relabeling. No stress mode, privileged
+backend, service, enrollment, cgroup/mount/chroot, current UID/GID/capability change,
+model/provider, benchmark, production integration, tag, push or deployment occurs.
+
+Follow-up verification: nine affected regression groups passed in43.729s;
+the final16-case B8 table passed in1.010s. The first required freeagent-test run
+hit its unchanged420s ceiling (RESULT=TIMEOUT, exit124); its stopping-point test
+passed independently in0.325s. One unchanged-suite retry passed all518 tests in
+321.157s (RESULT=PASS, EXIT_CODE=0). No timeout/lease limit was modified to obtain
+that pass. Final diff and whitespace checks passed. These results validate the
+reader ownership repair and existing regressions, not completion of the five
+remaining B8 integration gaps above or real-kernel enforcement.

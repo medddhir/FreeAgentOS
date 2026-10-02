@@ -1,8 +1,9 @@
 """B8 fixed read-only capture recipe, inert until explicitly called.
 
 Not installed, not RPC-exposed, not called by run_worker/service. Only an already
-owned LinuxDriver validation ledger may issue this reader. Tests use recording
-FD fixtures; Stage31C never instantiates it against a live backend.
+owned LinuxDriver validation ledger may issue this reader. Pending readers are
+registered before FD allocation and must close before positive cleanup proof.
+Tests use recording FD fixtures; Stage31C never activates a live backend.
 """
 import contextlib
 import hashlib
@@ -10,6 +11,7 @@ import os
 import select
 import stat
 import time
+import threading
 from . import protocol as p
 from . import security_observe as obs
 from . import security_proof as proof
@@ -35,6 +37,15 @@ class OwnedSecurityCapture:
         if process.fd is None or process.handle!=record['handle']:raise p.BoundaryError('UNKNOWN_HANDLE')
         driver.prove(record)  # descriptor/inode ownership; no mutations
         value=object.__new__(cls);value.driver=driver;value.record=record;value.entry=entry;value.expectation=expectation
+        value.closed=False;value.cleanup_unproven=False;value.subject_start=None
+        value.descendant_fds={};value.private_proc=None;value.worker_ns=None;value.namespace_match=None
+        value.scope=None;value.host=None;value._lock=threading.RLock()
+        # Register the pending acquisition before any descriptor is allocated.
+        # The driver refuses positive absence while this reservation exists.
+        value._lock.acquire()
+        try:driver._register_observer(record,value)
+        except Exception:
+            value._lock.release();raise
         def close_pending(fd):
             try:os.close(fd)
             except OSError:
@@ -45,23 +56,36 @@ class OwnedSecurityCapture:
                 os.set_inheritable(value.scope,False)
                 value.host=os.open('/proc',os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC);pending.callback(close_pending,value.host)
                 pending.pop_all()
-        except OSError:raise p.BoundaryError('BACKEND_FAILURE') from None
-        value.closed=False;value.cleanup_unproven=False;value.subject_start=None;value.descendant_fds={};value.private_proc=None;value.worker_ns=None;value.namespace_match=None
+        except Exception:
+            # ExitStack attempted every acquired FD. Do not retry numeric FDs
+            # whose close outcome is ambiguous; retain the ownership fence.
+            value.closed=True;value.scope=None;value.host=None
+            value.cleanup_unproven=record['handle'] in driver.close_errors
+            if not value.cleanup_unproven:driver._forget_observer(record,value)
+            raise p.BoundaryError('BACKEND_FAILURE') from None
+        finally:value._lock.release()
         return value
 
     def __enter__(self):return self
     def __exit__(self,*args):self.close()
 
     def close(self):
+        lock=getattr(self,'_lock',None)
+        with lock if lock is not None else contextlib.nullcontext():
+            self._close()
+
+    def _close(self):
         if self.closed:return
         self.closed=True;failed=False
         for fd in (self.scope,self.host,*self.descendant_fds.values(),self.private_proc):
             if fd is None:continue
             try:os.close(fd)
-            except OSError:failed=True
+            except Exception:failed=True
         if failed:
             self.cleanup_unproven=True;self.driver.close_errors.add(self.record['handle'])
             raise p.BoundaryError('CLEANUP_INCOMPLETE')
+        if hasattr(self.driver,'_forget_observer'):
+            self.driver._forget_observer(self.record,self)
 
     def _check(self):
         if self.closed:raise p.BoundaryError('INVALID_STATE')
@@ -267,6 +291,11 @@ class OwnedSecurityCapture:
             return False
 
     def _capture(self,method):
+        lock=getattr(self,'_lock',None)
+        with lock if lock is not None else contextlib.nullcontext():
+            return self._capture_locked(method)
+
+    def _capture_locked(self,method):
         try:return method()
         except p.BoundaryError:raise
         except Exception:
