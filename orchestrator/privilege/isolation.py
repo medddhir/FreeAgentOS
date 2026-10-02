@@ -43,7 +43,18 @@ class LinuxBackend:
         if handle not in self.records:raise p.BoundaryError('UNKNOWN_HANDLE')
         return self.records[handle]
     def owns(self,handle,owner):return owner==self.owner and handle in self.records and self.records[handle]['state']!='RELEASED'
-    def cleaned(self,handle,owner):return owner==self.owner and handle in self.records and self.records[handle]['state']=='RELEASED'
+    def cleaned(self,handle,owner):return self.cleanup_proof(handle,owner) in ('NEVER_ALLOCATED','OWNED_CLEANED')
+
+    def cleanup_proof(self,handle,owner):
+        r=self.records.get(handle)
+        if owner!=self.owner or r is None or r['owner']!=owner or r['state']!='RELEASED' or r['cleanup'] not in ('CONFIRMED','NEVER_ALLOCATED'):return 'UNPROVEN'
+        if not self.driver.absent(r):return 'UNPROVEN'
+        return 'NEVER_ALLOCATED' if r['cleanup']=='NEVER_ALLOCATED' else 'OWNED_CLEANED'
+
+    def _dirty(self,r):
+        r['state']='FAILED_DIRTY';r['cleanup']='UNPROVEN';self.recovery_required=True
+        try:self._save()
+        except Exception:pass  # durable intent remains; admission is fenced
 
     def create(self,handle,run_id,slot,execution,role,limits):
         with self.lock:
@@ -81,7 +92,11 @@ class LinuxBackend:
                 self.leases[handle]=ActivityLease(base,r['role'],'model' if r['class']=='MODEL_WORKER' else 'research',True,policy['wall_timeout_seconds'],started)
                 r['state']='RUNNING';self._save()
             except Exception:
-                r['state']='FAILED_DIRTY';self.recovery_required=True;self._save()
+                # Even failure to persist RUNNING must not leave the launcher live.
+                self._dirty(r)
+                try:self.driver.terminate(r,self.processes.get(handle))
+                except Exception:pass  # driver keeps unresolved owned child/FDs
+                self._dirty(r)
                 raise p.BoundaryError('BACKEND_FAILURE') from None
             self._start_monitor()
 
@@ -134,19 +149,24 @@ class LinuxBackend:
         with self.lock:
             r=self._record(handle)
             return {'handle':handle,'state':r['state'],'class':r['class'],'role':r['role'],
-                    'mode':'LINUX','enforcement':'UNPROVEN','cleanup':r['cleanup']}
+                    'mode':'LINUX','enforcement':'UNPROVEN','cleanup':'CONFIRMED' if self.cleaned(handle,self.owner) else 'UNPROVEN'}
 
     def terminate(self,handle):
         with self.lock:
             r=self._record(handle)
             if r['state'] not in ('CREATED','RUNNING','TERMINATING','TERMINATED'):raise p.BoundaryError('INVALID_STATE')
             if r['state']=='TERMINATED':return
-            r['state']='TERMINATING';self._save()
-            try:
-                self.driver.terminate(r,self.processes.get(handle));r['state']='TERMINATED';self._save()
+            r['state']='TERMINATING';failed=False
+            try:self._save()
+            except Exception:failed=True
+            try:self.driver.terminate(r,self.processes.get(handle))
+            except Exception:failed=True
+            if failed:
+                self._dirty(r);raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
+            r['state']='TERMINATED'
+            try:self._save()
             except Exception:
-                r['state']='FAILED_DIRTY';self.recovery_required=True;self._save()
-                raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
+                self._dirty(r);raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
 
     def cleanup(self,handle):
         with self.lock:
@@ -155,10 +175,12 @@ class LinuxBackend:
             if r['state']=='FAILED_DIRTY':raise p.BoundaryError('RECOVERY_REQUIRED')
             self.terminate(handle)
             try:
-                self.driver.remove(r);r['state']='RELEASED';r['cleanup']='CONFIRMED';self._save()
+                self.driver.remove(r)
+                if not self.driver.absent(r):raise p.BoundaryError('CLEANUP_INCOMPLETE')
+                r['state']='RELEASED';r['cleanup']='CONFIRMED';self._save()
                 self.processes.pop(handle,None);self.bindings.pop(handle,None);self.leases.pop(handle,None)
             except Exception:
-                r['state']='FAILED_DIRTY';r['cleanup']='UNPROVEN';self.recovery_required=True;self._save()
+                self._dirty(r)
                 raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
 
     def disconnect(self,handles):
@@ -178,7 +200,7 @@ class LinuxBackend:
                 self.records[old['handle']]={'handle':old['handle'],'run_id':old['run_id'],'owner':self.owner,
                     'state':'RELEASED','class':old['class'],'role':old['role'],'policy':self.journal.policy,
                     'boot_id':self.driver.boot_id,'scope_inode':0,'scope_device':0,'root_inode':0,'root_device':0,
-                    'started_ns':0,'cleanup':'CONFIRMED'}
+                    'started_ns':0,'cleanup':'NEVER_ALLOCATED'}
             self._save()
 
     def recover(self):
@@ -188,14 +210,22 @@ class LinuxBackend:
             try:
                 for r in pending:plans.append((r,recovery_actions(r,self.journal.policy,self.owner,self.driver.prove(r))))
                 for r,actions in plans:
-                    self.driver.recover(r,actions);r['state']='RELEASED';r['cleanup']='CONFIRMED';self._save()
+                    never_allocated=self.driver.absent(r) and not any(r[k] for k in ('root_inode','scope_inode','started_ns'))
+                    self.driver.recover(r,actions)
+                    if not self.driver.absent(r):raise p.BoundaryError('CLEANUP_INCOMPLETE')
+                    r['state']='RELEASED';r['cleanup']='NEVER_ALLOCATED' if never_allocated else 'CONFIRMED'
+                    try:self._save()
+                    except Exception:
+                        self._dirty(r);raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
                     self.processes.pop(r['handle'],None);self.leases.pop(r['handle'],None);self.bindings.pop(r['handle'],None)
                 self.recovery_required=False
             except Exception:
                 self.recovery_required=True
                 for r in pending:
                     if r['state']!='RELEASED':r['state']='FAILED_DIRTY';r['cleanup']='UNPROVEN'
-                self._save();raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
+                try:self._save()
+                except Exception:pass
+                raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
 
     def close(self):
         self.stop.set()

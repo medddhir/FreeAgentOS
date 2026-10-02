@@ -16,10 +16,12 @@ def validate(record,policy,owner):
     if (any(not identifier(record[k]) for k in ('handle','run_id','owner')) or record['owner']!=owner
             or record['policy']!=policy or type(record['state']) is not str or record['state'] not in STATES
             or type(record['boot_id']) is not str or not 1<=len(record['boot_id'])<=64
-            or type(record['cleanup']) is not str or record['cleanup'] not in ('PENDING','CONFIRMED','UNPROVEN')):
+            or type(record['cleanup']) is not str or record['cleanup'] not in ('PENDING','CONFIRMED','NEVER_ALLOCATED','UNPROVEN')):
         raise BoundaryError('JOURNAL_INVALID')
+    if record['state']=='RELEASED' and record['cleanup'] not in ('CONFIRMED','NEVER_ALLOCATED'):raise BoundaryError('JOURNAL_INVALID')
     for field in ('scope_inode','scope_device','root_inode','root_device','started_ns'):
         if type(record[field]) is not int or not 0<=record[field]<2**63:raise BoundaryError('JOURNAL_INVALID')
+    if record['cleanup']=='NEVER_ALLOCATED' and (record['state']!='RELEASED' or any(record[k] for k in ('root_inode','scope_inode','started_ns'))):raise BoundaryError('JOURNAL_INVALID')
     try:execution_class(record['class'],record['role'])
     except (BoundaryError,TypeError):raise BoundaryError('JOURNAL_INVALID') from None
 

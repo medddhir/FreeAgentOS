@@ -1,7 +1,9 @@
 # Stage 3.1C — completed real Linux backend preparation
 
 Preparation is implemented and deterministically testable. **No real backend
-operation has been executed privileged.** Production isolation is not verified;
+operation has been executed privileged.** Stage3.1D remains **BLOCKED and NOT
+AUTHORIZED**; the focused B1/B4 repair below does not resolve the other readiness
+blockers. Production isolation is not verified;
 `run_worker()`, attribution, bootstrap, doctor, permissions and numerical
 resource/lease policies remain unchanged. No verified tag is created.
 
@@ -361,3 +363,88 @@ linux.OwnedCgroup._write. Journal/enrollment writes are private atomic local
 files. FD-based exec is approved ELF only. The C fixture reads bounded operational
 proc metadata and forks a single harmless descendant; it has only been compiled,
 never run. No mount/cgroup/model/provider RPC fields were added.
+
+## Focused B1/B4 repair: cleanup proof and launcher containment
+
+This repair changes only cleanup proof and failed-launch containment. Stage3.1D
+remains BLOCKED, NOT AUTHORIZED. No privileged backend operation was executed;
+production worker integration, leases, attribution, and installation are unchanged.
+
+### B1 — explicit ownership-bound cleanup evidence
+
+`cleanup_proof(handle, owner)` returns `NEVER_ALLOCATED`, `OWNED_CLEANED`, or
+`UNPROVEN`. `CREATING` is no longer an exception permitting release. Simulation
+absence requires the same backend owner and a complete instance allocation ledger;
+a lost allocation record does not establish absence. Simulation results remain
+`SIMULATED`, never real enforcement evidence.
+
+Linux release requires a confirmed resource-journal outcome plus exact owned
+root/scope absence and no retained launcher/descriptor uncertainty. The version-2
+private resource journal additionally records `NEVER_ALLOCATED` as a cleanup
+outcome; public cleanup remains `CONFIRMED`/`UNPROVEN`. Released records with
+unconfirmed journal cleanup are invalid. A missing resource intent is reconciled
+only after checking the exact owned names. Partial allocations are cleaned by
+owned recovery, then checked absent. Release is idempotent only with positive
+proof. Failed/ambiguous cleanup stays `FAILED_DIRTY`/`UNPROVEN`, fences admission,
+and preserves durable intent even when updating the journal fails.
+
+### B4 — ownership before pidfd and independent cleanup steps
+
+The driver reserves an opaque ownership entry before Popen, then retains its
+helper-created direct child before acquiring pidfd or attaching to the owned
+cgroup. Parent-only launch descriptors are tracked from their first allocation.
+Preparation, spawn, pidfd acquisition, attachment, configuration/barrier/receipt,
+FD closure, and post-launch controller/resource-journal failures all enter bounded
+owned cleanup. No external PID/path/command interface was added.
+
+Scope kill/drain, pidfd/direct-child kill/reap, each pipe closure, pidfd closure and each
+parent launch-FD closure are attempted independently. A wait error cannot skip
+other cleanup. Unreaped children and failed pipe closures retain their ownership
+entry. A numeric FD is never blindly retried after an ambiguous Linux close error:
+the descriptor may already have been released/reused. That uncertainty remains
+sticky dirty evidence, blocks remove/absence proof, and requires independently
+established recovery rather than claiming success. Exception details are not
+returned. Resource-journal start intent predates launch; registration/persistence
+failure attempts containment and retains `FAILED_DIRTY`/`UNPROVEN` plus admission
+fencing.
+
+A restarted driver cannot infer disappearance of a possibly unattached launcher
+from an empty cgroup. Unsettled start intent in CREATED/FAILED_DIRTY without an
+owned process reference or same-instance termination proof fails recovery closed.
+No host PID scan is used. This may require later operator-owned quiescence proof;
+that separate recovery/operator work is not implemented by this milestone.
+
+### Deterministic evidence and limits
+
+`test_privilege_cleanup.py` fault-injects missing cleanup proof, genuine
+never-allocation, partial allocation, cleanup/persistence failures, idempotent
+release, FD preparation, registration before spawn, pidfd/inherit/attach/config/
+receipt failures, wait failure, scope/pipe/pidfd/FD closure failure, ownership
+mismatch, and restarted ambiguous launch intent. Linux operations and Popen are
+mocked; recording-driver recovery is not real-kernel enforcement certification.
+Focused privilege regressions and the repository-required freeagent-test results
+are recorded in the completion report. Initial socket regressions were blocked
+by the tool sandbox and rerun with temporary sockets outside that restriction.
+The full existing suite includes its historical production isolation fixtures;
+it does not activate the new Linux backend or authorize Stage3.1D.
+
+Remaining consolidated blockers: B2 authoritative external policy binding;
+B3 transport idle/request budget; B5 stale socket recovery; B6 executable
+single-campaign guard; B7 bounded synthetic stdout evidence; B8 complete security
+proof observables; B9 standalone operator rollback/recovery; B10 install/client
+credential/evidence inventory; B11 Linux PROBE contract; B12 disposable target and
+real kernel enforcement qualification. No exported reviewer snapshot was changed.
+
+The 18 new fault cases use two compact unittest contract tables, matching the
+existing suite pattern and preserving the runner's 64 KiB capture bound. An initial
+full run passed unittest (533 tests) but was correctly rejected by freeagent-test
+for output overflow. Two standalone table discovery entries (520 tests) also
+exceeded the bound. The final tables run through the existing foundation entry
+(unchanged discovery count), just like the other privilege tables; no assertions
+or cases were removed. The final runner result is the authoritative check.
+
+Final verification: focused cleanup/launcher plus existing privilege/Linux
+regressions PASS (5 contract groups, including 18 new fault cases).
+freeagent-test: 518 tests in 224.378s; RESULT=PASS; EXIT_CODE=0. Final diff
+review and git diff --check passed. These are deterministic preparation checks,
+not privileged kernel validation. Stage3.1D remains BLOCKED / NOT AUTHORIZED.

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import json
 import os
 import select
+import signal
 import stat
 import subprocess
 import time
@@ -107,7 +108,7 @@ class LinuxDriver:
         if type(permit) is not InstallationPermit or os.geteuid()!=0 or not identifier(owner):
             raise BoundaryError('POLICY_REJECTED')
         self.permit=permit;self.root_fd=os.dup(root_fd);self.cgroup_fd=os.dup(cgroup_fd)
-        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.validation_files={};self.qualified=False;self.sealed=set()
+        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set()
         with open('/proc/sys/kernel/random/boot_id') as stream:self.boot_id=stream.read(64).strip()
 
     def qualify(self):
@@ -174,52 +175,94 @@ class LinuxDriver:
         if not self.qualified or r['owner']!=self.owner or r['handle'] not in self.sealed:raise BoundaryError('POLICY_REJECTED')
         entry.verify();self.launcher.verify()
         root=self.roots[r['handle']]
-        workspace=secure_open(root,'workspace',os.O_RDONLY|os.O_DIRECTORY)
-        rootfs=os.dup(root)
-        read_barrier,write_barrier=os.pipe2(os.O_CLOEXEC)
-        receipt_r,receipt_w=os.pipe2(os.O_CLOEXEC)
-        fds=(workspace,rootfs,entry.runtime_fd,entry.executable.fd,read_barrier,receipt_w)
-        config={'version':1,'class':entry.execution,'role':entry.role,'uid':entry.uid,'gid':entry.gid,
-                'job_id':entry.job_id,'validation':entry.validation,'fds':list(fds),'limits':limits}
-        # No prompts/tokens/env in config. Child input is bounded trusted policy.
-        child=None;process=None
+        owned=[];self.launch_fds[r['handle']]=owned
+        process=None;failed=False
         try:
+            workspace=secure_open(root,'workspace',os.O_RDONLY|os.O_DIRECTORY);owned.append(workspace)
+            rootfs=os.dup(root);owned.append(rootfs)
+            read_barrier,write_barrier=os.pipe2(os.O_CLOEXEC);owned.extend((read_barrier,write_barrier))
+            receipt_r,receipt_w=os.pipe2(os.O_CLOEXEC);owned.extend((receipt_r,receipt_w))
+            fds=(workspace,rootfs,entry.runtime_fd,entry.executable.fd,read_barrier,receipt_w)
+            config={'version':1,'class':entry.execution,'role':entry.role,'uid':entry.uid,'gid':entry.gid,
+                    'job_id':entry.job_id,'validation':entry.validation,'fds':list(fds),'limits':limits}
+            # Reserve the ownership slot before creating any process. Failure to
+            # register cannot strand a child outside the supervisor ledger.
+            process=OwnedPidfd.pending(r['handle'],None)
+            self.children[r['handle']]=process
             child=subprocess.Popen(['freeagentos-launcher','-I','-m','orchestrator.privilege.child'],
                 executable='/proc/self/fd/'+str(self.launcher.fd),pass_fds=(*fds,self.launcher.fd),
                 stdin=subprocess.PIPE,stdout=subprocess.PIPE if entry.validation else subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                 env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},close_fds=True)
-            process=OwnedPidfd(r['handle'],child);self.children[r['handle']]=process
+            process.child=child
+            process.acquire()
             self._write(self.scopes[r['handle']],'cgroup.procs',child.pid)
             child.stdin.write(json.dumps(config,separators=(',',':')).encode());child.stdin.close()
             os.write(write_barrier,b'G')
-            # Setup receipt is fixed category, never worker stdout.
             ready=select.select([receipt_r],[],[],10)[0]
             if not ready or os.read(receipt_r,16)!=b'EXEC_READY\n':raise BoundaryError('BACKEND_FAILURE')
-            return process
         except Exception:
-            self._write(self.scopes[r['handle']],'cgroup.kill',1)
-            if child is not None:child.wait(timeout=2)
-            if process is not None:process.close()
-            self.children.pop(r['handle'],None)
+            failed=True
+        # FD closure is part of launch success, and each closure is independent.
+        if not self._close_launch_fds(r['handle']):failed=True
+        if failed:
+            try:self.terminate(r,process)
+            except Exception:pass  # retained child/FD ownership + durable start intent
             raise BoundaryError('BACKEND_FAILURE') from None
-        finally:
-            for fd in (workspace,rootfs,read_barrier,write_barrier,receipt_r,receipt_w):os.close(fd)
+        return process
+
+    def _close_launch_fds(self,handle):
+        pending=self.launch_fds.get(handle,[])
+        for fd in tuple(pending):
+            pending.remove(fd)
+            try:os.close(fd)
+            except Exception:self.close_errors.add(handle)
+        self.launch_fds.pop(handle,None)
+        # Ambiguous close is retained as dirty evidence, never a numeric FD to
+        # retry after possible kernel release/reuse. Other closes still run.
+        return handle not in self.close_errors
 
     def running(self,r,process):return process.running(r['handle'])
 
     def terminate(self,r,process=None):
-        if process is None:process=self.children.get(r['handle'])
-        fd=self._scope(r)
-        if fd is not None:
-            self._write(fd,'cgroup.kill',1)
-            deadline=time.monotonic()+2
-            while 'populated 0' not in read_at(fd,'cgroup.events').splitlines():
-                if time.monotonic()>=deadline:raise BoundaryError('CLEANUP_INCOMPLETE')
-                time.sleep(.01)
-        if process and process.fd is not None:
-            process.child.wait(timeout=2);process.close()
-            if process.child.stdout:process.child.stdout.close()
-            self.children.pop(r['handle'],None)
+        if r['owner']!=self.owner:raise BoundaryError('UNKNOWN_HANDLE')
+        owned=self.children.get(r['handle'])
+        if process is not None and process is not owned:raise BoundaryError('UNKNOWN_HANDLE')
+        process=owned;failed=False
+        # Failure draining the scope must not skip direct-child or FD cleanup.
+        try:
+            fd=self._scope(r)
+            if fd is not None:
+                self._write(fd,'cgroup.kill',1)
+                deadline=time.monotonic()+2
+                while 'populated 0' not in read_at(fd,'cgroup.events').splitlines():
+                    if time.monotonic()>=deadline:raise BoundaryError('CLEANUP_INCOMPLETE')
+                    time.sleep(.01)
+        except Exception:failed=True
+        if process is not None and process.child is None:
+            self.children.pop(r['handle'],None)  # reservation; Popen never succeeded
+        elif process is not None:
+            reaped=False;closed=True
+            try:
+                # Popen owns the unreaped direct child even before attachment or
+                # pidfd acquisition. Its kill method checks child exit/reaping;
+                # no external PID or process-group interface is accepted here.
+                if process.child.poll() is None:
+                    if process.fd is not None:signal.pidfd_send_signal(process.fd,signal.SIGKILL)
+                    else:process.child.kill()
+            except Exception:failed=True
+            try:process.child.wait(timeout=2);reaped=True
+            except Exception:failed=True
+            for pipe in (process.child.stdin,process.child.stdout,process.child.stderr):
+                if pipe is not None:
+                    try:pipe.close()
+                    except Exception:closed=False;failed=True
+            try:process.close()
+            except Exception:closed=False;failed=True
+            if process.close_failed:closed=False;failed=True
+            if reaped and closed:self.children.pop(r['handle'],None)
+        if not self._close_launch_fds(r['handle']):failed=True
+        if failed:raise BoundaryError('CLEANUP_INCOMPLETE') from None
+        self.launch_settled.add(r['handle'])
 
     def _owned_fd(self,parent,r,kind):
         name=scope_name(r)
@@ -247,6 +290,7 @@ class LinuxDriver:
         return fd
 
     def absent(self,r):
+        if r['owner']!=self.owner or r['handle'] in self.children or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
         name=scope_name(r)
         for fd in (self.root_fd,self.cgroup_fd):
             try:os.stat(name,dir_fd=fd,follow_symlinks=False)
@@ -255,12 +299,20 @@ class LinuxDriver:
         return True
 
     def prove(self,r):
+        if r['owner']!=self.owner:raise BoundaryError('CLEANUP_INCOMPLETE')
+        # A restart loses an unattached child's Popen/pidfd reference. Empty
+        # scope/root alone cannot disprove that orphan. Retain dirty admission
+        # until independently owned cleanup is established; never scan PIDs.
+        if (r.get('started_ns',0)>0 and r['state'] in ('CREATED','FAILED_DIRTY')
+                and r['handle'] not in self.children and r['handle'] not in self.launch_settled):
+            raise BoundaryError('CLEANUP_INCOMPLETE')
         scope=self._scope(r)
         root=self._owned_fd(self.root_fd,r,'root')
         if root is not None:os.close(root)
         return {'scope':True,'root':True}  # verified matching inode or absence
 
     def remove(self,r):
+        if r['owner']!=self.owner or r['handle'] in self.children or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
         scope=self._scope(r)
         if scope is not None:
             if 'populated 0' not in read_at(scope,'cgroup.events').splitlines():raise BoundaryError('CLEANUP_INCOMPLETE')

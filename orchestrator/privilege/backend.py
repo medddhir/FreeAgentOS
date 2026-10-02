@@ -37,6 +37,7 @@ class FakeBackend:
         self.owner=secrets.token_hex(16)
         self.resources={}
         self.completed=set()
+        self.allocations=set()
         self.events=deque(maxlen=256)
         self.fail_at=None
 
@@ -50,10 +51,18 @@ class FakeBackend:
     def cleaned(self, handle, owner):
         return owner==self.owner and handle in self.completed
 
+    def cleanup_proof(self, handle, owner):
+        # A complete same-instance simulation ledger, never real-kernel proof.
+        if owner!=self.owner:return 'UNPROVEN'
+        if self.cleaned(handle,owner) and handle not in self.resources:return 'OWNED_CLEANED'
+        if handle not in self.allocations and handle not in self.resources:return 'NEVER_ALLOCATED'
+        return 'UNPROVEN'
+
     def prepare(self, handle, recipe, limits):
         if not identifier(handle) or recipe not in RECIPES:raise BoundaryError('INVALID_REQUEST')
         if handle in self.resources or handle in self.completed:raise BoundaryError('INVALID_STATE')
         if len(self.resources)+len(self.completed)>=MAX_ENTRIES:raise BoundaryError('BOUNDS_EXCEEDED')
+        self.allocations.add(handle)
         self.resources[handle]={'owner':self.owner,'recipe':recipe,'limits':dict(limits),'process':None}
         for step in ('namespace','rootfs','mount_recipe','cgroup_create','cgroup_limits','identity_prepare'):
             self._step(step,handle)

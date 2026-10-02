@@ -36,16 +36,17 @@ class Supervisor:
     def _snapshot(self, r):
         return {'handle':r['handle'],'state':r['state'],'class':r['class'],'role':r['role'],
                 'mode':'LINUX' if self.linux else 'SIMULATED','enforcement':'UNPROVEN',
-                'cleanup':('CONFIRMED' if self.linux else 'SIMULATED') if r['state']=='RELEASED' else 'UNPROVEN'}
+                'cleanup':('CONFIRMED' if self.linux else 'SIMULATED') if r['state']=='RELEASED' and self.backend.cleanup_proof(r['handle'],r['owner']) in ('NEVER_ALLOCATED','OWNED_CLEANED') else 'UNPROVEN'}
 
     def _release(self,r):
-        if r['state']=='RELEASED':return
         try:
+            if r['state']=='RELEASED' and self.backend.cleanup_proof(r['handle'],r['owner']) in ('NEVER_ALLOCATED','OWNED_CLEANED'):return
             if self.backend.owns(r['handle'],r['owner']):self.backend.cleanup(r['handle'])
-            elif not self.backend.cleaned(r['handle'],r['owner']) and r['state']!='CREATING':raise p.BoundaryError('CLEANUP_INCOMPLETE')
+            if self.backend.cleanup_proof(r['handle'],r['owner']) not in ('NEVER_ALLOCATED','OWNED_CLEANED'):
+                raise p.BoundaryError('CLEANUP_INCOMPLETE')
             r['state']='RELEASED';self._save()
         except Exception:
-            r['state']='FAILED_DIRTY'
+            r['state']='FAILED_DIRTY';self.recovery_required=True
             try:self._save()
             except Exception:self.recovery_required=True
             raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
@@ -87,8 +88,21 @@ class Supervisor:
                         if r['state']!='CREATED':raise p.BoundaryError('INVALID_STATE')
                         try:self.backend.start(handle)
                         except Exception:
-                            r['state']='FAILED_DIRTY';self._save();raise p.BoundaryError('BACKEND_FAILURE') from None
-                        r['state']='RUNNING';self._save()
+                            r['state']='FAILED_DIRTY';self.recovery_required=True
+                            try:self.backend.terminate(handle)
+                            except Exception:pass  # keep unresolved backend ownership
+                            try:self._save()
+                            except Exception:pass
+                            raise p.BoundaryError('BACKEND_FAILURE') from None
+                        r['state']='RUNNING'
+                        try:self._save()
+                        except Exception:
+                            r['state']='FAILED_DIRTY';self.recovery_required=True
+                            try:self.backend.terminate(handle)
+                            except Exception:pass  # backend retains unresolved ownership
+                            try:self._save()
+                            except Exception:pass
+                            raise p.BoundaryError('BACKEND_FAILURE') from None
                     elif op=='STATUS':
                         if self.linux:r['state']=self.backend.status(handle)['state'];self._save()
                         if r['state']=='RUNNING' and not self.backend.running(handle):
@@ -123,10 +137,12 @@ class Supervisor:
         """Administrative startup simulation; never offered as a public RPC."""
         with self.lock:
             pending=[r for r in self.records.values() if r['state']!='RELEASED']
-            if self.linux:self.backend.reconcile_control(pending)
+            if self.linux:
+                self.backend.reconcile_control(pending)
+                self.backend.recover()
             # Validate every ownership claim before doing any cleanup.
             if any(r['owner']!=self.backend.owner or
-                   (not self.backend.owns(r['handle'],r['owner']) and not self.backend.cleaned(r['handle'],r['owner']) and r['state']!='CREATING') for r in pending):
+                   (not self.backend.owns(r['handle'],r['owner']) and self.backend.cleanup_proof(r['handle'],r['owner']) not in ('NEVER_ALLOCATED','OWNED_CLEANED')) for r in pending):
                 self.recovery_required=True;raise p.BoundaryError('JOURNAL_INVALID')
             for r in pending:self._release(r)
             self.recovery_required=False

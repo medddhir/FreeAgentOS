@@ -132,10 +132,27 @@ def execution_plan(execution,role,uid,gid,limits=None):
 class OwnedPidfd:
     """Only a helper-created child object, never a protocol PID."""
     def __init__(self, handle, child):
-        if not identifier(handle) or child.poll() is not None:raise BoundaryError('UNKNOWN_HANDLE')
+        self._bind(handle,child)
+        try:self.acquire()
+        except Exception:
+            self.close()
+            raise
+
+    def _bind(self,handle,child):
+        if not identifier(handle):raise BoundaryError('UNKNOWN_HANDLE')
+        self.handle=handle;self.child=child;self.fd=None;self.close_failed=False
+
+    @classmethod
+    def pending(cls,handle,child):
+        # Register direct-child ownership BEFORE pidfd acquisition can fail.
+        result=cls.__new__(cls);result._bind(handle,child);return result
+
+    def acquire(self):
+        if self.fd is not None:raise BoundaryError('INVALID_STATE')
+        if self.child.poll() is not None:raise BoundaryError('UNKNOWN_HANDLE')
         if not hasattr(os,'pidfd_open') or not hasattr(signal,'pidfd_send_signal'):
             raise BoundaryError('POLICY_REJECTED')
-        self.handle=handle;self.child=child;self.fd=os.pidfd_open(child.pid,0)
+        self.fd=os.pidfd_open(self.child.pid,0)
         os.set_inheritable(self.fd,False)
 
     def running(self,handle):
@@ -143,7 +160,13 @@ class OwnedPidfd:
         return not select.select([self.fd],[],[],0)[0]
 
     def close(self):
-        if self.fd is not None:os.close(self.fd);self.fd=None
+        if self.fd is not None:
+            fd=self.fd;self.fd=None
+            try:os.close(fd)
+            except Exception:
+                # Linux close errors can follow descriptor release. Never retry
+                # a numeric FD which may now refer to an unrelated resource.
+                self.close_failed=True;raise
 
 
 class Deadline:
