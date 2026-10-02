@@ -27,6 +27,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege import PrivilegeCases
         with self.subTest(case="privilege"):
             PrivilegeCases().cases()
+        from test_privilege_linux import LinuxPreparationCases
+        with self.subTest(case="linux_preparation"):
+            LinuxPreparationCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
