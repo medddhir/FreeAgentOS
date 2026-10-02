@@ -154,8 +154,9 @@ class LocalServer:
     Real peer credentials and token checks, synthetic enforcement only.
     No ancillary FD acceptance: FD provisioning waits for Stage 3.1C review.
     """
-    def __init__(self, path, supervisor, *, enrolled_group=None):
+    def __init__(self, path, supervisor, *, enrolled_group=None, clock=time.monotonic):
         self.path=Path(path);self.supervisor=supervisor
+        self.clock=clock  # trusted monotonic clock; test injection, never RPC input
         if enrolled_group is not None and (not supervisor.linux or os.geteuid()!=0 or enrolled_group!=supervisor.enrollment.gid):raise p.BoundaryError('POLICY_REJECTED')
         self.parent=directory_fd(self.path.parent,os.getuid(),0o750 if enrolled_group is not None else 0o700)
         self.listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
@@ -200,13 +201,15 @@ class LocalServer:
             e.authenticate(peer,a['token'])
             if a['build']!=p.BUILD or a['policy']!=self.supervisor.journal.policy:raise p.BoundaryError('POLICY_REJECTED')
             authenticated=True
+            idle_deadline=self.clock()+p.AUTHENTICATED_LIFETIME
             recent=deque(maxlen=p.MAX_RATE)
             p.send(channel,p.response(seq,'OK',{'build':p.BUILD,'policy':self.supervisor.journal.policy,'mode':'LINUX' if self.supervisor.linux else 'SIMULATED'}))
             while seq<p.MAX_REQUESTS:
-                request=p.validate_request(p.receive(channel))
+                request=p.validate_request(p.receive(channel,idle_deadline=idle_deadline,
+                                                     clock=self.clock,stop=self.stop_event))
                 if request['seq']!=seq+1:raise p.BoundaryError('INVALID_REQUEST')
                 seq=request['seq']
-                now=time.monotonic()
+                now=self.clock()
                 while recent and now-recent[0]>=1:recent.popleft()
                 if len(recent)>=p.MAX_RATE:raise p.BoundaryError('BOUNDS_EXCEEDED')
                 recent.append(now)

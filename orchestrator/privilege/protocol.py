@@ -16,6 +16,10 @@ MAX_JOURNAL = 256*1024
 MAX_ACTIVE = 16
 MAX_PER_UID = 2
 TIMEOUT = 1.0
+# Absolute authenticated connection ceiling; never renewed by RPC activity.
+# Allows preparation + one 240s worker + observation/release without polling.
+AUTHENTICATED_LIFETIME = 600.0
+IDLE_POLL = 0.1
 OPERATIONS = ('HELLO', 'CREATE', 'START', 'STATUS', 'TERMINATE', 'RELEASE', 'PROBE')
 CODES = frozenset(('OK', 'PROTOCOL_MISMATCH', 'AUTH_FAILED', 'PEER_NOT_ALLOWED',
     'INVALID_REQUEST', 'INVALID_STATE', 'UNKNOWN_HANDLE', 'POLICY_REJECTED',
@@ -125,10 +129,30 @@ def _read_exact(channel, count, deadline):
     return bytes(data)
 
 
-def receive(channel):
+def receive(channel, *, idle_deadline=None, clock=time.monotonic, stop=None):
     try:
-        deadline = time.monotonic()+TIMEOUT
-        size = struct.unpack('!I',_read_exact(channel,4,deadline))[0]
+        if idle_deadline is None:
+            deadline = time.monotonic()+TIMEOUT
+            header = _read_exact(channel,4,deadline)
+        else:
+            # Authenticated silence is not a partial frame. Poll only the local
+            # socket/stop flag, without generating RPCs or renewing any lease.
+            while True:
+                remaining = idle_deadline-clock()
+                if remaining <= 0 or stop is not None and stop.is_set():
+                    raise BoundaryError('TRANSPORT_FAILURE')
+                channel.settimeout(min(IDLE_POLL,remaining))
+                try:first = channel.recv(1)
+                except socket.timeout:continue
+                if not first:raise BoundaryError('TRANSPORT_FAILURE')
+                # Once any byte arrives, the entire header/body has one fixed
+                # deadline. Trickle traffic cannot reset it or extend lifetime.
+                remaining = idle_deadline-clock()
+                if remaining <= 0:raise BoundaryError('TRANSPORT_FAILURE')
+                deadline = time.monotonic()+min(TIMEOUT,remaining)
+                header = first+_read_exact(channel,3,deadline)
+                break
+        size = struct.unpack('!I',header)[0]
         if not 1 <= size <= MAX_FRAME:raise BoundaryError('BOUNDS_EXCEEDED')
         return decode(_read_exact(channel,size,deadline))
     except (OSError, struct.error):raise BoundaryError('TRANSPORT_FAILURE') from None

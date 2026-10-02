@@ -559,3 +559,87 @@ passed (17.983s). The final code tree passed `bin/freeagent-test`:518 tests in
 299.463s, RESULT=PASS, EXIT_CODE=0. Final diff inspection found only the binding
 implementation, its focused tests/foundation wiring and this documentation.
 No new-backend privileged validation or model/provider generation was executed.
+
+## Focused B3 repair — transport lifetime and independent supervision
+
+IMPLEMENTED / STATICALLY REVIEWED / DETERMINISTIC IPC VERIFIED only;
+NOT YET EXECUTED PRIVILEGED. Stage3.1D remains NOT AUTHORIZED. B1/B2/B4
+remain intact. Production worker integration is unchanged.
+
+### Timing contract and bounded design
+
+Previously every `receive()` began a one-second timer even before an
+authenticated idle client transmitted its first byte. Sub-second STATUS
+polling could exhaust the128-request connection budget before the240-second
+worker hard cap. Disconnect cleanup could then mask independent enforcement.
+
+`protocol.receive()` now has two explicit internal modes. Handshake/client
+response mode retains the one-second complete-frame deadline. Authenticated
+server mode waits for the first byte without consuming a request, checking
+shutdown and a fixed absolute connection deadline every100ms. EOF immediately
+fails transport. From the first received byte, header AND body share one
+one-second deadline, capped by remaining connection lifetime. Further packets
+never reset it. Size/schema/duplicate-field validation remain unchanged.
+
+Authenticated connections expire600 seconds after successful authentication,
+regardless of silence, STATUS, START or other traffic. This ten-minute ceiling
+allows bounded setup, a240-second worker, observation and release without
+keepalives, while at most eight clients occupy transport slots. It is a
+transport bound, not a worker lease, diagnostic lease override or renewable
+heartbeat. A worker started near connection expiry can be cleaned before its
+full lease; operators must begin early enough to fit the intended observation
+window. No automatic reconnect or ownership transfer exists.
+
+Unchanged bounds:16KiB frames,128 total requests (including HELLO),32
+post-authentication requests per rolling second, eight connected clients,
+16 active sandboxes/two per UID,128 journal entries. Rate, sequence/replay,
+peer/token/challenge authentication and handle ownership validation remain
+unchanged. Request/write/response waits remain bounded. Shutdown sets the stop
+event and shuts down accepted sockets, interrupting idle/frame receives; the
+existing connection-finally path performs owned cleanup. Socket recovery and
+operator rollback remain outside this repair.
+
+The existing `LinuxBackend._watch()` independently calls `enforce()` every50ms.
+It is neither driven nor renewed by socket reads/STATUS. Its authoritative
+ActivityLease remains180-second base, current trusted-progress grace eligibility
+and one-shot decision,240-second hard cap. Transport uses monotonic seconds;
+worker leases use monotonic nanoseconds. Injected test clocks are internal
+constructor arguments, never protocol/config input. No model/provider heartbeat.
+
+### Evidence and limits
+
+`test_privilege_transport.py` adds nine compact cases to the existing foundation
+table. Temporary authenticated AF_UNIX fixtures use the complete backend with
+RecordingDriver only. A quiet connection survives the former real one-second
+idle deadline and fake-clock base/grace/hard-cap window; independent monitor
+termination occurs with no TERMINATE/keepalive dispatch. Only six requests are
+needed through final STATUS/RELEASE. STATUS neither supplies progress nor renews
+the lease. Without trusted progress the worker ends at180 seconds.
+
+Other cases cover actual EOF cleanup, absolute lifetime expiry despite activity,
+responsive shutdown, pre-authentication silence, partial header/body stalls,
+shared non-resetting frame deadline, EOF framing, unchanged transport bounds
+and B2 identity sensitivity to the new lifetime source. Existing privilege
+regressions exercise request/client/rate/resource limits, replay, unauthorized
+handles and auth; B2 regressions exercise client agreement/mismatch and
+byte-preserving rejection of old policy-bound journals. Both modified contract
+sources are already in B2's fixed source allowlist; no old journal is migrated.
+
+These tests establish protocol behavior and recorded cleanup/deadline intent.
+Fake-clock/recording evidence does not prove kernel scheduling, real cgroup
+termination, namespace enforcement or privileged crash recovery. Active
+isolation remains UNPROVEN and needs separately authorized validation.
+
+Remaining consolidated blockers: B5 stale socket recovery; B6 executable
+single-campaign guard; B7 bounded synthetic stdout evidence; B8 complete security
+proof observables; B9 standalone operator rollback/recovery; B10 install/client
+credential/evidence inventory; B11 Linux PROBE contract; B12 qualified disposable
+target/real kernel enforcement. No Stage3.1D execution is authorized.
+
+Final checks: six focused transport/privilege/complete-backend/B1/B4/B2 groups
+PASS (31.905s); existing lease regressions40 tests PASS (3.176s).
+`bin/freeagent-test`:518 tests in304.474s, RESULT=PASS, EXIT_CODE=0.
+Final diff inspection found only protocol/server transport changes, the focused
+test table/foundation wiring and this document. Initial focused failures were
+fixture registration/time-unit errors corrected without altering production
+policy or weakening validation. No real new-backend kernel operations executed.
