@@ -1374,3 +1374,77 @@ and affected regressions passed (10 regression groups, 112.189s). The final
 exit code 0. Final source/test diff and whitespace checks were inspected. These
 are deterministic/unprivileged preparation results, not real-kernel enforcement
 qualification. B8 remains PARTIAL.
+
+### B8 fixed stress-gate preparation — recording only, still PARTIAL
+
+`stress_gate.py` and `LinuxBackend.prepare_stress_recording` implement an
+internal, non-RPC preparation seam. Only the exact RecordingDriver is accepted.
+No process/pipe/FD allocation or launch occurs, and neither START nor the child
+launcher accepts a selector. Existing Linux authentication/validation opt-in is
+not campaign authorization. Ordinary execution and real LinuxDriver cannot use
+this seam. Retrieval, asynchronous ownership and all production limits remain
+unchanged. Doctor active isolation remains UNPROVEN.
+
+The finite selectors are cpu, memory and pids, with exact argv
+`freeagentos-security-probe --<selector>`. Parameters are not caller selectable.
+The immutable canonical envelope binds handle/run/backend owner/class/role,
+current policy identity, enrolled pinned executable digest, controller seal,
+fixed fixture source digest, original PROBE_LIMITS, bounds and recording-only
+containment provenance. Envelope size is at most4096 bytes. It is checked twice
+before recording delivery; byte/digest equality prevents substituted argv or
+metadata. Pinned executable verification is repeated. Existing CREATE performs
+FD-rooted sealed ingestion before the CREATED state; preparation does not copy
+or resolve user-selected paths. The packaged fixed fixture source is checked
+using secure_open and its code-owned SHA256; missing/altered source fails closed.
+This check does NOT prove that an enrolled ELF was built from that source.
+
+A frozen RecordingApproval is a deterministic test input, not a credential,
+owner approval, live containment proof or configuration switch. It must match
+all binding fields, selector and seal. Required containment categories are owned
+cgroup, owned pidfd, identity/capability drop and private rootfs; this seam accepts
+only explicit INDEPENDENT_RECORDING provenance and never upgrades it. No real
+containment attestation is implemented. The actual child still closes FD3, so
+fixture stress modes remain inaccessible via the installed launch contract.
+
+Fixture bounds audited against security_probe.c:
+- CPU: two children, each finite billion-iteration/three-second monotonic loop;
+  three total processes. Scheduling/reaping overhead means three seconds is a
+  work-loop bound, not a guaranteed campaign wall deadline. Fixture alarm5s is
+  redundant, not a substitute for owned descendant cleanup.
+- Memory: one allocation at most96MiB, at most24576 4KiB page touches and a
+  four-second work deadline. Its fixed64MiB cgroup limit intentionally prevents
+  the full allocation demand; early OOM/abnormal termination is not completion.
+- PID: at most16 fork attempts, parent plus at most16 children, four-second work
+  deadline, finite child sleeps. Fixed pids.max8 intentionally restricts demand.
+- Existing fixed CPU quota50000us is used; production ceilings, 180s base,
+  existing grace and240s hard cap are unchanged. No probe was executed.
+
+Gate rejection leaves already allocated resources owned and release/recovery
+obligations intact. Uncertain ownership produces FAILED_DIRTY/admission fencing.
+Failure during second validation or delivery also fences, without silently
+removing existing observer tasks or descriptors. No new resource allocator,
+cleanup executor, RPC, raw path/PID or command interface was added. Recording
+failure is not proof of a real launcher failure or real cleanup.
+
+B6 dependency required before real execution: a trusted administrator/owner
+campaign verifier producing run/handle/policy/artifact/selector/seal-bound
+approval after durable one-attempt reservation, registered compiled-fixture
+provenance, and independently established containment. It must integrate a
+fixed child argv contract and protected FD3 gate delivery with the existing
+CLOEXEC execution-error/evidence channels. None exists in this milestone;
+RecordingApproval MUST NOT be substituted for that interface. No B6 campaign
+harness or attempt guard is implemented. Real stress launch remains disabled.
+
+Remaining B8 includes that live authorization/launcher dependency plus paired
+demand/counters/executable outcome/final-cleanup assembly and separately
+owner-authorized real-kernel enforcement observations. B6/B9/B10/B12 remain open;
+Stage3.1D remains NOT AUTHORIZED. This is preparation, not enforcement proof.
+
+Verification: seven new recording preparation cases passed; affected policy,
+complete Linux preparation/sealing, authenticated pagination/async collection,
+B7 and B11 regression tables passed. The first policy table attempt was blocked
+by sandbox Unix-socket restrictions; rerunning with local IPC permission passed.
+Final freeagent-test: 518 tests,325.762s, RESULT=PASS, exit0. Diff/whitespace and
+new-module static execution review passed. These tests establish immutable
+recording-plan delivery and fail-closed preparation, not real stress launch,
+compiled-fixture provenance, kernel containment or resource enforcement.

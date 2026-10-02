@@ -81,6 +81,28 @@ class LinuxBackend:
                 raise p.BoundaryError('BACKEND_FAILURE') from None
             return self.status(handle)
 
+    def prepare_stress_recording(self,handle,expectation,selector,approval,preconditions):
+        """Internal preparation seam only; never exposed by RPC or production START."""
+        from .stress_gate import prepare, deliver
+        with self.lock:
+            r=self._record(handle)
+            if self.recovery_required or r['state']!='CREATED':raise p.BoundaryError('INVALID_STATE')
+            entry,_=self.bindings[handle]
+            slot=next((k for k,v in self.registry.entries.items() if v is entry),None)
+            if slot is None:raise p.BoundaryError('POLICY_REJECTED')
+            try:checked=prepare(r,entry,self.sources[slot],expectation,selector,approval,preconditions,self.driver)
+            except p.BoundaryError as error:
+                if error.code=='CLEANUP_INCOMPLETE':self._dirty(r)
+                raise
+            try:
+                # Recheck immediately before delivery; substitution, seal or
+                # ownership changes cannot replace the checked envelope.
+                current=prepare(r,entry,self.sources[slot],expectation,selector,approval,preconditions,self.driver)
+                return deliver(current,checked,self.driver)
+            except Exception:
+                self._dirty(r)  # allocated resources remain cleanup obligations
+                raise p.BoundaryError('BACKEND_FAILURE') from None
+
     def start(self,handle):
         with self.lock:
             r=self._record(handle)
