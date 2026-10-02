@@ -78,6 +78,7 @@ class I(unittest.TestCase):
         self.assertNotIn('FAKE_SECRET',output.getvalue())
         self.assertEqual(profiles.selected_profile('coder').profile_id,'claude-free-default')
         self.session_binding()
+        self.lifecycle_diagnostics()
 
     def session_binding(self):
         import os,socket,tempfile,threading,subprocess
@@ -167,3 +168,115 @@ class I(unittest.TestCase):
         parser_env={**os.environ,'ANTHROPIC_CUSTOM_HEADERS':attribution.transport_environment(transport)['ANTHROPIC_CUSTOM_HEADERS'],'TEST_SESSION':sid,'TEST_TOKEN':'c'*64}
         checked=subprocess.run(['/usr/bin/node','-e',script],env=parser_env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=5)
         self.assertEqual(checked.returncode,0);self.assertEqual(checked.stdout,b'')
+
+
+    def lifecycle_diagnostics(self):
+        """Pure simulations: no gateway/client/provider is contacted."""
+        import cli
+        import copy
+        def reply(sid, status='COMPLETE', multiple=False):
+            return {'status':status, 'version':1, 'session_id':sid, 'request_count':1,
+                    'requests':[{'ordinal':1, 'closed':True, 'attempts':[
+                        {'ordinal':1,'provider_id':'groq','model_id':'openai/gpt-oss-120b','outcome':'COMPLETED'},
+                        *([{'ordinal':2,'provider_id':'nvidia','model_id':'openai/gpt-oss-20b','outcome':'FAILED'}] if multiple else [])]}]}
+        # Cases A / D and normal, base timeout, grace completion and hard-cap paths.
+        for code, phase, multiple in ((0,'NORMAL_COMPLETE',False), (124,'BASE_TIMEOUT',False),
+                                      (0,'GRACE_COMPLETE',False), (124,'HARD_CAP_TIMEOUT',True),
+                                      (1,'PROCESS_EXITED_NO_RESULT',False)):
+            session=attribution.GatewaySession(); events=[]
+            def exchange(op):
+                events.append(op)
+                if op=='register': return {'status':'REGISTERED','token':'c'*64}
+                self.assertEqual(events[-2],'cleanup')
+                return reply(session.session_id, multiple=multiple)
+            def execute(*args,**kwargs):
+                self.assertTrue(attribution.valid_transport(attribution.current_transport()))
+                events.append('cleanup')
+                return worker.WorkerResult(code,'',{'cleanup_status':'CONFIRMED',
+                    'attribution_headers_configured':True,'worker_phase':phase})
+            with patch.object(attribution,'GatewaySession',return_value=session), patch.object(session,'_exchange',side_effect=exchange), patch.object(worker,'_run_worker_impl',side_effect=execute):
+                result=worker.run_worker(['claude-free'],timeout=180,stream_activity=True)
+            self.assertEqual(events,['register','cleanup','finish'])
+            self.assertEqual(result.returncode,code)
+            route=result.evidence['gateway_attribution']; diag=result.evidence['attribution_diagnostics']
+            self.assertEqual(route['route_status'],'MULTIPLE_ROUTES' if multiple else 'SINGLE_ROUTE')
+            self.assertEqual(diag['registration_status'],'REGISTERED')
+            self.assertTrue(diag['registration_attempted']); self.assertTrue(diag['finish_attempted'])
+            self.assertTrue(diag['custom_headers_configured'])
+            self.assertEqual(diag['finish_ipc_status'],'SUCCESS')
+            self.assertEqual(diag['gateway_record_status'],'COMPLETE')
+            self.assertEqual(diag['projection_reason'],'ACCEPTED')
+            self.assertEqual(diag['settled_count'],1);self.assertEqual(diag['unsettled_count'],0)
+            self.assertEqual(diag['route_count'],2 if multiple else 1)
+            self.assertEqual(diag['overflow'],'UNAVAILABLE')
+            self.assertNotIn('served_model_id',route)
+            self.assertIsNone(session.token)
+            self.assertNotIn(session.session_id,json.dumps(result.evidence))
+            self.assertNotIn('c'*64,json.dumps(result.evidence))
+        # B: incomplete settled state is explained but never accepted.
+        session=attribution.GatewaySession(); sid=session.session_id
+        incomplete=reply(sid,'INCOMPLETE');incomplete['requests'][0]['closed']=False
+        incomplete['requests'][0]['attempts'][0]['outcome']='DISPATCHED'
+        for payload, reason, record in ((incomplete,'INCOMPLETE','INCOMPLETE'),
+            ({'status':'INCOMPLETE','version':1,'session_id':sid,'requests':[],'request_count':0},'NO_ROUTE_OBSERVED','INCOMPLETE'),
+            ({'status':'UNAVAILABLE'},'SESSION_UNAVAILABLE','SESSION_UNAVAILABLE'),
+            ({**reply(sid),'session_id':'b'*32},'INVALID_EVIDENCE','INVALID_EVIDENCE'),
+            ({**reply(sid),'request_count':999999},'BOUNDS_REJECTED','COMPLETE')):
+            session=attribution.GatewaySession();session.session_id=sid
+            with patch.object(session,'_exchange',side_effect=[{'status':'REGISTERED','token':'c'*64},payload]):
+                session.begin();observed=session.finish()
+            self.assertEqual(observed['routed_evidence'],'UNAVAILABLE')
+            self.assertEqual(session.diagnostics['projection_reason'],reason)
+            self.assertEqual(session.diagnostics['gateway_record_status'],record)
+            if reason=='INCOMPLETE':
+                self.assertEqual(session.diagnostics['unsettled_count'],1)
+                self.assertEqual(session.diagnostics['settled_count'],0)
+        # C: registration failure never configures owned headers or blocks work.
+        for failure, expected in ((OSError('FAKE_SECRET'),'IPC_FAILURE'),
+                                  (ValueError('ATTRIBUTION_PEER_INVALID'),'PEER_INVALID'),
+                                  (ValueError('ATTRIBUTION_BOUNDS'),'IPC_BOUNDS')):
+            session=attribution.GatewaySession()
+            def execute(*args,**kwargs):
+                self.assertIsNone(attribution.current_transport())
+                return worker.WorkerResult(0,'',{})
+            with patch.object(attribution,'GatewaySession',return_value=session), patch.object(session,'_exchange',side_effect=[failure,{'status':'UNAVAILABLE'}]), patch.object(worker,'_run_worker_impl',side_effect=execute):
+                result=worker.run_worker(['claude-free'])
+            diag=result.evidence['attribution_diagnostics']
+            self.assertEqual(diag['registration_status'],expected)
+            self.assertFalse(diag['custom_headers_configured'])
+            self.assertEqual(diag['projection_reason'],'REGISTRATION_UNAVAILABLE')
+            self.assertNotIn('FAKE_SECRET',json.dumps(result.evidence))
+        # Finish transport failures distinct from gateway record failures.
+        session=attribution.GatewaySession()
+        with patch.object(session,'_exchange',side_effect=[{'status':'REGISTERED','token':'c'*64},OSError('FAKE_SECRET')]):
+            session.begin(); observed=session.finish()
+        self.assertEqual(observed['route_status'],'UNAVAILABLE')
+        self.assertEqual(session.diagnostics['finish_ipc_status'],'IPC_FAILURE')
+        self.assertEqual(session.diagnostics['projection_reason'],'IPC_FAILURE')
+        # Request overflow is proven by the saturated counter; no route acceptance.
+        overflow=reply(sid,'INCOMPLETE');overflow['request_count']=65
+        overflow['requests']=[{**copy.deepcopy(overflow['requests'][0]),'ordinal':i} for i in range(1,65)]
+        diag=attribution.record_diagnostics(overflow,sid,attribution.route_observation(overflow,sid))
+        self.assertTrue(diag['overflow']);self.assertEqual(diag['projection_reason'],'BOUNDS_REJECTED')
+        # Errors retain diagnostics after finish; execution still raises unchanged.
+        session=attribution.GatewaySession(); failure=worker.WorkerBoundaryError('WORKER_EVIDENCE_MISSING')
+        with patch.object(attribution,'GatewaySession',return_value=session), patch.object(session,'_exchange',side_effect=[{'status':'REGISTERED','token':'c'*64},reply(session.session_id)]), patch.object(worker,'_run_worker_impl',side_effect=failure):
+            with self.assertRaises(worker.WorkerBoundaryError):worker.run_worker(['claude-free'])
+        self.assertEqual(failure.evidence['attribution_diagnostics']['finish_ipc_status'],'SUCCESS')
+        # Instrumentation failure cannot change already accepted route evidence.
+        session=attribution.GatewaySession()
+        with patch.object(session,'_exchange',side_effect=[{'status':'REGISTERED','token':'c'*64},reply(session.session_id)]), patch.object(attribution,'record_diagnostics',side_effect=OSError('FAKE_SECRET')):
+            session.begin(); observed=session.finish()
+        self.assertEqual(observed['routed_evidence'],'ROUTER_DISPATCH')
+        self.assertEqual(session.diagnostics['projection_reason'],'DIAGNOSTIC_FAILURE')
+        self.assertNotIn('FAKE_SECRET',json.dumps(session.diagnostics))
+        # Old payload works without new gateway fields; malicious diagnostics discarded.
+        route=attribution.route_observation(reply(sid),sid)
+        projected=cli._evidence({'gateway_attribution':route,'attribution_diagnostics':{
+            'projection_reason':'FAKE_SECRET','request_count':999999,'token':'FAKE_SECRET',
+            'headers':'FAKE_SECRET','prompt':'FAKE_SECRET','raw':'FAKE_SECRET','overflow':[]}})
+        self.assertEqual(projected['gateway_attribution'],route)
+        self.assertNotIn('FAKE_SECRET',json.dumps(projected))
+        self.assertEqual(projected['attribution_diagnostics']['request_count'],'UNAVAILABLE')
+        self.assertEqual(projected['attribution_diagnostics']['projection_reason'],'UNAVAILABLE')
+        self.assertEqual(attribution.safe_attribution_diagnostics(None),attribution.diagnostic_defaults())

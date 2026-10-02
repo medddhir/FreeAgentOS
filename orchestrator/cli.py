@@ -125,9 +125,11 @@ def _evidence(value):
     from roles.model_profiles import safe_model_selection
     if "model_selection" in value:
         result["model_selection"] = safe_model_selection(value["model_selection"])
-    from roles.model_attribution import safe_gateway_observation
+    from roles.model_attribution import safe_gateway_observation, safe_attribution_diagnostics
     if "gateway_attribution" in value:
         result["gateway_attribution"] = safe_gateway_observation(value["gateway_attribution"])
+    if "attribution_diagnostics" in value:
+        result["attribution_diagnostics"] = safe_attribution_diagnostics(value["attribution_diagnostics"])
     from roles.lease import safe_lease
     if "lease" in value:
         result["lease"] = safe_lease(value["lease"])

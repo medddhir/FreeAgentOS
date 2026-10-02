@@ -102,10 +102,111 @@ def route_observation(payload, session_id):
             'route_status':'SINGLE_ROUTE' if single else 'MULTIPLE_ROUTES','routes':pairs}
 
 
+# Diagnostics describe lifecycle only: they never participate in route acceptance.
+_DIAGNOSTIC_ENUMS = {
+    'registration_status': ('UNAVAILABLE', 'REGISTERED', 'GATEWAY_UNAVAILABLE', 'INVALID_EVIDENCE', 'IPC_FAILURE', 'PEER_INVALID', 'IPC_BOUNDS'),
+    'finish_ipc_status': ('UNAVAILABLE', 'SUCCESS', 'IPC_FAILURE', 'PEER_INVALID', 'IPC_BOUNDS', 'INVALID_EVIDENCE'),
+    'gateway_record_status': ('UNAVAILABLE', 'COMPLETE', 'INCOMPLETE', 'SESSION_UNAVAILABLE', 'INVALID_EVIDENCE'),
+    'projection_status': ('UNAVAILABLE', 'ACCEPTED', 'REJECTED'),
+    'projection_reason': ('UNAVAILABLE', 'ACCEPTED', 'REGISTRATION_UNAVAILABLE', 'IPC_FAILURE', 'SESSION_UNAVAILABLE', 'NO_ROUTE_OBSERVED', 'INCOMPLETE', 'INVALID_EVIDENCE', 'BOUNDS_REJECTED', 'DIAGNOSTIC_FAILURE'),
+}
+_DIAGNOSTIC_COUNTS = {'request_count': 65, 'settled_count': 64, 'unsettled_count': 64,
+                      'route_count': 32, 'attempt_count': 1024}
+_DIAGNOSTIC_FLAGS = ('registration_attempted', 'finish_attempted', 'custom_headers_configured', 'overflow')
+
+
+def diagnostic_defaults():
+    return {**{key: 'UNAVAILABLE' for key in _DIAGNOSTIC_ENUMS},
+            **{key: 'UNAVAILABLE' for key in _DIAGNOSTIC_COUNTS},
+            **{key: 'UNAVAILABLE' for key in _DIAGNOSTIC_FLAGS},
+            'registration_attempted': False, 'finish_attempted': False}
+
+
+def safe_attribution_diagnostics(value):
+    """Fixed vocabulary only; discard unknown keys and all raw transport data."""
+    result = diagnostic_defaults()
+    if not isinstance(value, dict): return result
+    for key, choices in _DIAGNOSTIC_ENUMS.items():
+        if isinstance(value.get(key), str) and value[key] in choices: result[key] = value[key]
+    for key, maximum in _DIAGNOSTIC_COUNTS.items():
+        if type(value.get(key)) is int and 0 <= value[key] <= maximum: result[key] = value[key]
+    for key in _DIAGNOSTIC_FLAGS:
+        if type(value.get(key)) is bool: result[key] = value[key]
+    return result
+
+
+def _ipc_failure(exc):
+    # Only internal fixed errors are distinguished; never serialize exceptions.
+    if type(exc) is ValueError and exc.args == ('ATTRIBUTION_PEER_INVALID',): return 'PEER_INVALID'
+    if type(exc) is ValueError and exc.args == ('ATTRIBUTION_BOUNDS',): return 'IPC_BOUNDS'
+    if isinstance(exc, (ValueError, TypeError)): return 'INVALID_EVIDENCE'
+    return 'IPC_FAILURE'
+
+
+def record_diagnostics(payload, session_id, observation):
+    """Summarize verified-peer state without retaining identifiers or payloads.
+
+    The old gateway exposes no general overflow flag or unavailable-session cause.
+    Only its saturated request counter proves request overflow. Other causes stay
+    unavailable, including whether custom headers reached individual HTTP calls.
+    """
+    result = {'gateway_record_status': 'INVALID_EVIDENCE',
+              'projection_status': 'REJECTED', 'projection_reason': 'INVALID_EVIDENCE'}
+    if not isinstance(payload, dict): return result
+    if payload.get('status') == 'UNAVAILABLE':
+        return {**result, 'gateway_record_status': 'SESSION_UNAVAILABLE',
+                'projection_reason': 'SESSION_UNAVAILABLE'}
+    status = payload.get('status')
+    if (status not in ('COMPLETE', 'INCOMPLETE') or type(payload.get('version')) is not int
+            or payload['version'] != 1 or payload.get('session_id') != session_id): return result
+    result['gateway_record_status'] = status
+    requests = payload.get('requests'); count = payload.get('request_count')
+    if (not isinstance(requests, list) or type(count) is not int or not 0 <= count <= 65
+            or len(requests) > 64 or len(requests) != min(count,64)):
+        return {**result, 'projection_reason': 'BOUNDS_REJECTED'}
+    settled = attempts = 0; routes = set()
+    for ordinal, request in enumerate(requests, 1):
+        if (not isinstance(request, dict) or type(request.get('ordinal')) is not int
+                or request['ordinal'] != ordinal or type(request.get('closed')) is not bool
+                or not isinstance(request.get('attempts'), list)):
+            return result
+        items = request['attempts']
+        if len(items) > 16: return {**result, 'projection_reason': 'BOUNDS_REJECTED'}
+        previous = 0; terminal = bool(items)
+        for attempt in items:
+            if (not isinstance(attempt, dict) or type(attempt.get('ordinal')) is not int
+                    or not previous < attempt['ordinal'] <= 65535
+                    or attempt.get('outcome') not in ('DISPATCHED','COMPLETED','COMMITTED','FAILED','CANCELED')
+                    or not _identifier(attempt.get('provider_id')) or not _identifier(attempt.get('model_id'))): return result
+            previous = attempt['ordinal']
+            routes.add((attempt['provider_id'],attempt['model_id']))
+            terminal = terminal and attempt['outcome'] != 'DISPATCHED'
+        if len(routes) > 32: return {**result, 'projection_reason': 'BOUNDS_REJECTED'}
+        attempts += len(items)
+        settled += int(request['closed'] and terminal)
+    result.update(request_count=count, settled_count=settled,
+                  unsettled_count=len(requests)-settled, attempt_count=attempts, route_count=len(routes))
+    if count > 64: result['overflow'] = True
+    if observation.get('routed_evidence') == 'ROUTER_DISPATCH':
+        result.update(projection_status='ACCEPTED', projection_reason='ACCEPTED')
+    else:
+        result['projection_reason'] = ('BOUNDS_REJECTED' if count > 64 else
+                                       'NO_ROUTE_OBSERVED' if count == 0 else
+                                       'INCOMPLETE' if status == 'INCOMPLETE' else 'INVALID_EVIDENCE')
+    return result
+
+
+def valid_transport(transport):
+    return (isinstance(transport,dict) and isinstance(transport.get('session_id'),str)
+            and _ID.fullmatch(transport['session_id']) is not None
+            and isinstance(transport.get('token'),str) and _TAG.fullmatch(transport['token']) is not None)
+
+
 class GatewaySession:
     """No retry or execution dependency; private IPC failures only lose evidence."""
     def __init__(self,path=SOCKET,uid=GATEWAY_UID):
         self.path=Path(path);self.uid=uid;self.session_id=secrets.token_hex(16);self.token=None
+        self.diagnostics = diagnostic_defaults()
 
     def _exchange(self,op):
         parent=self.path.parent.lstat();info=self.path.lstat()
@@ -126,17 +227,35 @@ class GatewaySession:
             return json.loads(raw)
 
     def begin(self):
+        self.diagnostics['registration_attempted'] = True
         try:
             result=self._exchange('register')
-            if result.get('status')=='REGISTERED' and isinstance(result.get('token'),str) and _TAG.fullmatch(result['token']):
+            if isinstance(result,dict) and result.get('status')=='REGISTERED' and isinstance(result.get('token'),str) and _TAG.fullmatch(result['token']):
                 self.token=result['token']
-        except Exception: pass
+                self.diagnostics['registration_status'] = 'REGISTERED'
+            else:
+                self.diagnostics['registration_status'] = ('GATEWAY_UNAVAILABLE' if isinstance(result,dict) and result.get('status')=='UNAVAILABLE' else 'INVALID_EVIDENCE')
+        except Exception as exc:
+            self.diagnostics['registration_status'] = _ipc_failure(exc)
 
     def finish(self):
+        self.diagnostics['finish_attempted'] = True
         try:
             payload=self._exchange('finish')
-            return route_observation(payload if self.token else None,self.session_id)
-        except Exception: return route_observation(None,self.session_id)
+            self.diagnostics['finish_ipc_status'] = 'SUCCESS'
+            observation = route_observation(payload if self.token else None,self.session_id)
+            try:
+                self.diagnostics.update(record_diagnostics(payload,self.session_id,observation))
+            except Exception:
+                # Diagnostic instrumentation must never invalidate route proof.
+                self.diagnostics.update(projection_status='UNAVAILABLE', projection_reason='DIAGNOSTIC_FAILURE')
+            if not self.token:
+                self.diagnostics.update(projection_status='REJECTED', projection_reason='REGISTRATION_UNAVAILABLE')
+            return observation
+        except Exception as exc:
+            self.diagnostics.update(finish_ipc_status=_ipc_failure(exc),
+                                    projection_status='UNAVAILABLE', projection_reason='IPC_FAILURE')
+            return route_observation(None,self.session_id)
         finally: self.token=None
 
     @contextmanager
@@ -154,9 +273,7 @@ def current_transport():
 def transport_environment(transport):
     """Reserved transport headers override inherited aliases, never prompts."""
     environment=dict(os.environ)
-    if (not isinstance(transport,dict) or not isinstance(transport.get('session_id'),str)
-            or not _ID.fullmatch(transport['session_id']) or not isinstance(transport.get('token'),str)
-            or not _TAG.fullmatch(transport['token'])):
+    if not valid_transport(transport):
         return environment
     headers=[]
     for line in environment.get('ANTHROPIC_CUSTOM_HEADERS','').splitlines():

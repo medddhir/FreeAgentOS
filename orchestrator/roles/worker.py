@@ -264,7 +264,7 @@ def _run_inner(area, request):
         command = ["/usr/bin/setpriv", "--bounding-set=-all", "--no-new-privs", "--", *broker_command]
         spawn_started_ns = time.monotonic_ns()
         try:
-            from roles.model_attribution import transport_environment
+            from roles.model_attribution import transport_environment, valid_transport
             process = subprocess.Popen(command, cwd=request["cwd"],
                                        env=transport_environment(request.get("attribution_transport")),
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -303,7 +303,8 @@ def _run_inner(area, request):
         code = 124 if timed_out else (1 if truncated or any(hits.values()) else process.returncode)
         if activity is not None and not timed_out and code == 0 and activity["activity_status"] != "COMPLETE":
             code = 65
-        evidence = {**cleanup, "completion": completion, "lease": lease.evidence(ended_ns, success=code == 0),
+        evidence = {**cleanup, "attribution_headers_configured": bool(valid_transport(request.get("attribution_transport"))),
+                    "completion": completion, "lease": lease.evidence(ended_ns, success=code == 0),
                     **({"broker": broker_evidence} if broker_evidence is not None else {}),
                     **({"activity": activity} if activity is not None else {}),
                     "role": request["role"], "timeout_triggered": timed_out,
@@ -463,21 +464,36 @@ def _cleanup_outer_scope(scope_name):
 def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
                policy_profile="model", stream_activity=False):
     try:
-        from roles.model_attribution import GatewaySession
+        from roles.model_attribution import GatewaySession, safe_attribution_diagnostics, diagnostic_defaults, _ipc_failure
+        setup_diagnostics = diagnostic_defaults()
         try:
             session = GatewaySession() if cmd and cmd[0] == "claude-free" else None
-        except Exception:
+        except Exception as exc:
             session = None
+            setup_diagnostics['registration_status'] = _ipc_failure(exc)
         if session is None:
-            return _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
+            result = _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
                                     policy_profile=policy_profile, stream_activity=stream_activity)
+            if cmd and cmd[0] == "claude-free":
+                result.evidence["attribution_diagnostics"] = safe_attribution_diagnostics(setup_diagnostics)
+            return result
         session.begin()
+        failure = None
+        result = None
         try:
             with session.scope():
                 result = _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
                                           policy_profile=policy_profile, stream_activity=stream_activity)
+        except WorkerBoundaryError as exc:
+            failure = exc
+            raise
         finally:
             observation = session.finish()
+            evidence = failure.evidence if failure is not None else (result.evidence if result is not None else None)
+            if evidence is not None:
+                session.diagnostics['custom_headers_configured'] = evidence.pop('attribution_headers_configured',
+                    False if session.diagnostics['registration_status'] != 'REGISTERED' else 'UNAVAILABLE')
+                evidence['attribution_diagnostics'] = safe_attribution_diagnostics(session.diagnostics)
         result.evidence["gateway_attribution"] = observation
         return result
     except WorkerBoundaryError:
