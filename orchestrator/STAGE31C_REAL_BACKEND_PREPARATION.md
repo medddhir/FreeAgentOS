@@ -956,3 +956,184 @@ reviewed as B7-only. Static review found no shell execution, unsafe deserializat
 arbitrary command/path/PID RPC or raw environment forwarding introduced. Tests
 used disposable local IPC and unprivileged finite fixtures, recording backends
 and mocked LinuxDriver primitives; the privileged backend was not activated.
+
+## B8 — Security observables and resource proof preparation
+
+Baseline `05a2f4b7c73e650da3c5c346eaf2af18d9bb1c7b`, main, initially clean;
+no newer implementation, separate Engineering HQ handoff or repository AGENTS.md
+was found. This section and the owner's supplied instructions are authoritative.
+This is source preparation and deterministic/unprivileged testing ONLY.
+Stage3.1D remains BLOCKED and NOT AUTHORIZED. No kernel qualification, privileged
+backend activation, stress execution, service/enrollment or production integration.
+
+### Status and exact remaining B8 gap
+
+IMPLEMENTED: bounded security-record schema, strict pure raw-observation parsers,
+owned read-only capture recipe, fixed finite C probes, immutable probe plans,
+isolation/resource/termination evaluators and fault-injection recordings.
+STATICALLY VERIFIED / DETERMINISTICALLY TESTED: the predicates and fail-closed
+recording behavior described below. REAL ENFORCEMENT remains UNPROVEN.
+
+B8 is PARTIAL rather than resolved: the current approved launcher still uses
+`--synthetic`, closes all non-standard FDs on exec, and accepts B7's original
+fixture schema. It does NOT deliver the new private stress authorization gate
+or execute security-probe modes. No authenticated B8 sidecar retrieval adapter
+or live-origin certification is connected to Supervisor/COLLECT. CPU runnable
+work/affinity and completed-work observations still need the trusted runtime
+assembler alongside these fixed kernel counters. These are explicit preparation
+integration gaps; no owner may treat this code as an end-to-end validation path.
+A follow-up B8-only change must bind a fixed registered probe selector, gate,
+owned completion/exit observations and strict authenticated sidecar projection
+without implementing a campaign or widening arbitrary command/path/PID APIs.
+B6, B9, B10 and B12 are unchanged. Stage3.1D readiness is NOT claimed.
+
+### Modules and trust separation
+
+`security_proof.py` defines version1 expectations/records, a bounded fail-closed
+buffer, pure evaluators and fixed plans. Every record binds B7's handle/run/owner/
+policy/class/role/executable digest, plus a fresh sample ID, helper-owned opaque
+subject ID, scope device/inode and monotonic sample window. Required sources are
+explicitly hashed by B2, included automatically as Python package files; the
+new C fixture uses the existing fixtures/*.c package-data rule. Old policy-bound
+journals/enrollment/socket records remain rejected, never rewritten/relabelled.
+No production policy value, lease, grace behavior or transport limit changed.
+
+Levels CONFIGURED, CHILD_REPORTED and INDEPENDENT_RECORDING cannot imply live
+provenance. PASS means the supplied recording satisfies the proof predicate,
+NOT that this machine is isolated. Evaluator `enforcement` is always UNPROVEN;
+its `level=RECORDED` cannot become ENFORCEMENT_PROVEN. Configured-only and
+child-only evidence is INCONCLUSIVE. KERNEL/VERIFIED labels supplied to the
+record buffer are rejected. A future trusted authenticated live-capture adapter
+must establish provenance before any real certification is possible.
+
+`security_observe.py` projects only fixed proc/status, namespace, descriptor,
+mount/device and cgroup data into bounded summaries. Parsers do not establish
+provenance. Raw proc text, paths, environment, credentials or IPC are not kept.
+`security_capture.py` is inert on import and never called against a live backend
+here. Its private factory requires an exact qualified LinuxDriver, installation
+permit/policy, boot identity, owned launcher pidfd, approved validation artifact,
+matching run identity and owned scope inode/device. The normal constructor refuses.
+It accepts no RPC PID/path/command/FD, installs nothing, writes nothing and kills
+nothing. Future use must be separately authorized and scoped to a registered run.
+
+The reader pins /proc and the owned scope with CLOEXEC FDs. Candidate host PIDs
+come only from bounded owned cgroup membership. Proc directory, start ticks and
+pidfd are checked before/after capture; immutable executable inode/device/hash
+select the actual approved PID-namespace init, not the trusted outer Python
+launcher. Host namespace reference is the supervisor's pre-child namespace,
+not a fabricated native-host/WSL equivalence. Fixed proc exe/root/ns/fd links
+are deliberately followed only beneath a pinned owned process; generic path
+traversal/symlink following is not exposed. Root is compared to the approved
+runtime FD; forbidden paths use pinned no-follow directory walks. Devices are
+stat-only, never opened/created. Descriptor and membership races fail closed.
+
+Scope/process/observer ownership remains live across collection. PIDfd acquisition
+and cleanup use descriptor references, never protocol PIDs. ExitStack attempts all
+closes after failures; ambiguous close sets driver.close_errors and retains dirty
+cleanup obligations. No ambiguous numeric FD is retried. Resource reads return
+UNPROVEN summaries, not configured-limit enforcement claims. Missing cgroup files
+(e.g. pids.peak) or permissions/exit races cannot be replaced by guessed values.
+
+### Required independent proof predicates
+
+| Proof | Required independent observations / evaluation | Inconclusive or failure |
+|---|---|---|
+| Identity | Owned executable proc/status: real/effective/saved/filesystem UID and GID all equal enrolled dropped identities; supplementary groups empty | Missing/stale/mismatched record inconclusive; wrong identity/group FAIL |
+| Capabilities/NNP | CapInh,CapPrm,CapEff,CapBnd,CapAmb all0 and NoNewPrivs1 from owned proc/status | Child aggregate boolean insufficient; nonzero capability or NNP0 FAIL |
+| FD closure | Bounded owned proc/fd inventory exactly0,1,2; stdin/stdout pipes and stderr the minimal null device; no privileged directory/socket/file descriptor | Numbers alone insufficient; extra/missing/unsafe descriptors FAIL |
+| Namespaces | Pinned host/worker inode comparison: mount/PID/network different, user namespace same as the current fixed recipe; independently read inner PID1 | Identifier alone insufficient; wrong comparison/PID FAIL |
+| Filesystem | Root inode/device matches registered runtime; root ro/nosuid; no shared/master propagation; exact fixed mount targets; private proc device/PID namespace; exact four character devices; forbidden root/config/state/Docker paths absent | Missing field inconclusive; wrong mount/root/device/exposure FAIL |
+| Descendants | Compare private PID-namespace proc membership against owned scope membership, not just scope population. Pin seen members' pidfds; observe descendants before termination; afterwards scope empty, pidfds exited, owned launcher reaped, RELEASED/confirmed absence | Unchecked namespace membership inconclusive; observed escape FAIL; incomplete release/reap/absence inconclusive and cleanup remains due |
+| CPU | Same owned scope's cpu.max readback; paired cpu.stat deltas; independent >=2 runnable tasks/available CPUs and >=2s bounded work; >=10 periods, positive nr_throttled/throttled_usec; usage positive and <=quota-time budget plus explicit accounting tolerance | Readback or usage bound mismatch FAIL; counter reset, weak demand, absent throttling or time mismatch inconclusive |
+| Memory | Same owned scope memory.max/swap.max/peak and paired memory.events; max,oom,oom_kill increase; owned resource-terminated execution with no prior termination request; peak within limit+4MiB accounting margin | Readback/peak mismatch FAIL; SIGKILL/exit alone, requested termination, absent OOM counters or wrong outcome inconclusive |
+| PIDs | Same owned scope pids.max, independently observed peak and paired pids.events.max increase; bounded fork fixture completion and observed children | Readback/peak mismatch FAIL; child EAGAIN claim alone or no denial event inconclusive |
+
+Every proof's valid/missing/malformed/contradictory/source-only cases are tested.
+Contradictory child/independent records remain INCONCLUSIVE rather than picking a
+favorable version. Negative/reset counters, old timestamps, subject/scope/run/
+policy/executable mismatch, duplicates or invalid schemas invalidate the bounded
+record set; no partial valid subset can qualify it. Resource intent is distinguished
+from unexpected execution: RESOURCE_TERMINATED is acceptable for the memory
+predicate only with independent OOM counters and no requested kill. TIMEOUT,
+ABNORMAL and MISSING never pass; each retains cleanup obligations. Fixture output
+and observed exit must be bound together by the still-missing runtime assembler.
+
+### Explicit evidence bounds and B7 compatibility
+
+B7 remains schema1 / fixture schema2,2048 stdout bytes,1024 per record,two records,
+64 receipt bytes,10s collection. Its COLLECT/PROBE interfaces are untouched.
+Full B8 independent observations do not fit that child channel; this stage adds
+an EXPLICIT separate prepared sidecar schema1:8192 bytes per JSONL record,24
+records,65536 aggregate bytes,10s absolute monotonic sample window. Required
+independent raw reads are capped at65536 bytes per capture and500ms; status<=128
+lines, mounts<=32, supplementary groups<=16, FDs<=256, tracked processes<=64.
+Executable verification reads<=32MiB under the same deadline; no arbitrary asset
+or host scan. Capture-owned descriptors remain CLOEXEC and explicitly closed.
+The sidecar is NOT currently an RPC response or a bypass around B7; future
+transport must retain16KiB frames and bounded per-record retrieval, with strict
+live provenance. A child cannot populate the independent sidecar through stdout.
+
+### Fixed probe recipes and authorization gap
+
+`security_probe.c` accepts only --observe/--cpu/--memory/--pids. No free numeric,
+path, executable or environment parameters. `probe_plan` emits these exact argv
+values only, with binding and AUTHORIZATION_REQUIRED_NOT_GRANTED. Plans select
+existing allowed lower validation limits: CPU50000/100000, memory64MiB/swap0,
+PIDs8; production defaults and180s/current grace/240s hard cap are unchanged.
+This lower test envelope must be separately authorized with the future fixture
+and owned execution, and MUST NOT become production defaults.
+
+| Fixture | Explicit bounds |
+|---|---|
+| observe | No stress, no fork/allocation; two tiny fixed records; completed immediately; only mode run unprivileged in tests |
+| cpu | Parent+at most2 children; each<=1,000,000,000 iterations and3s monotonic work; parent5s alarm; at most1s gate wait |
+| memory | One process, one<=96MiB buffer,<=24576 page touches and4s work;5s alarm; expected owned64MiB OOM outcome |
+| pids | At most16 fork attempts, parent+at most16 children (owned PIDs8 ceiling applies); each<=400 short sleeps/4s;5s alarm; reap every successfully created child |
+
+Output for every probe remains<=2048 bytes/two fixed records. Stress modes refuse
+without fixed FIFO gateFD3, one G byte after<=1s poll, non-root identity, namespace
+PID1 and NNP/no-effective-capability guard. This CHILD refusal guard is not a
+containment proof or authentication substitute; the trusted future launcher must
+independently validate the owned cgroup/readbacks before releasing the gate.
+Current launcher closes FD3 and offers no stress mode, so plans are NON-EXECUTABLE
+END TO END. No stress probe was launched in this milestone. Unexpected alarm,
+fork/allocation/setup/exec failure cannot be reclassified as enforcement success;
+owned scope cleanup is still mandatory. No automatic retries or campaign added.
+
+### Review and verification limits
+
+Tests use deterministic recorded observations, pure parsers, recording descriptor/
+cgroup/pidfd behavior, acquisition/closure failure injection and a disposable
+compiled --observe fixture only. Import guards prohibit kernel reads on import.
+No real supervisor/service, namespaces, mounts/chroot, UID/GID/capability mutation,
+cgroups, enrollment, kernel qualification, model/provider or benchmark occurred
+through this preparation code. Existing production run_worker and Stage2 evidence
+remain unchanged. Doctor active isolation is UNPROVEN. B1–B5/B7/B11 regressions
+and repository-required freeagent-test remain mandatory; results follow below.
+
+Static review: new Python code uses no subprocess/shell/kill/mount/chroot/UID-drop
+operation. os.open/dup/stat/scandir/pread/read are fixed descriptor-owned read-only
+recipes; pidfd_open/select are observational, never kill APIs; os.close is scoped
+cleanup. The C stress fixture has finite fixed fork/malloc/CPU/clock/alarm/wait
+primitives behind the unactivated gate; no arbitrary command, PID/path interface,
+network or provider. Test subprocess calls compile fixed source and run --observe
+only. No privileged code was installed or given authority.
+
+Additional B8 integration gate: the capture context must be registered with the
+backend's release/absence checks before activation. The current private reader
+sets close_errors on ambiguous closure, but successful live observer lifetimes
+are not registered in LinuxDriver's resource ledger. In particular, its pinned
+private-proc mount and descendant pidfds must be closed before certifying final
+zero residuals. This code is NOT an authorization to bypass B1 cleanup proof;
+no live reader was issued here. Root/cgroup snapshot sampling and final lifecycle
+assembly need complete recording syscall coverage in that follow-up, not just
+isolated parser/projection tests. These gaps keep B8 and Stage3.1D blocked.
+
+Verification: final B8 eleven-case table PASS; nine affected regression groups
+(SecurityProofCases, EvidenceCases, CleanupProofCases, LauncherContainmentCases,
+LinuxCompleteCases, PolicyIdentityCases, TransportLifetimeCases, SocketRecoveryCases,
+ProbeContractCases) PASS in58.530s total. Required bin/freeagent-test:518 tests
+in322.280s, RESULT=PASS, EXIT_CODE=0. Python compilation and git diff --check PASS.
+Final diff reviewed as B8-only. These are executable checks of the preparation
+portion, not real-kernel qualification or completion of the integration gaps.
+No verified tag, Stage3.1D readiness claim or execution authorization.
