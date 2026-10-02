@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools==68.1.2", "wheel==0.42.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "freeagentos"
+version = "0.3.0.dev0"
+description = "Controller-owned agent orchestration and deterministic verification"
+requires-python = ">=3.12"
+dependencies = ["langgraph==1.2.12"]
+
+[project.optional-dependencies]
+dev = ["setuptools==68.1.2", "wheel==0.42.0"]
+
+[project.scripts]
+freeagent-run = "orchestrator.entrypoint:main"
+
+[tool.setuptools]
+packages = ["orchestrator", "orchestrator.roles", "freeagentos_data", "freeagentos_tools"]
+
+[tool.setuptools.package-dir]
+freeagentos_data = "data"
+freeagentos_tools = "bin"
+
+[tool.setuptools.package-data]
+freeagentos_data = ["*.json"]
+freeagentos_tools = ["dev-intel", "prompt-intel", "exa-intel", "freeagent-test", "freeagent-run", "freeagent-code"]

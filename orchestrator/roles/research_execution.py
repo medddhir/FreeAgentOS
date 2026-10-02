@@ -26,8 +26,9 @@ def _query(value):
 
 
 def _tool(name):
-    path = TOOL_BIN / name
-    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(TOOL_BIN):
+    from foundation import bundled_tool, bundled_tools_root
+    path = bundled_tool(name)
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(bundled_tools_root()):
         raise ResearchExecutionError("RESEARCH_TOOL_IDENTITY_INVALID")
     return str(path)
 

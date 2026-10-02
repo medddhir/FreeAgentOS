@@ -5,7 +5,14 @@ import json
 import re
 from pathlib import Path
 
-PATH = Path("/root/agent-stack/data/prompt_patterns.json")
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "orchestrator"))
+try:
+    from foundation import bundled_data
+except ModuleNotFoundError:
+    from orchestrator.foundation import bundled_data
+
+PATH = bundled_data("prompt_patterns.json")
 
 STOP = {
     "a", "an", "the", "and", "or", "to", "of", "for",

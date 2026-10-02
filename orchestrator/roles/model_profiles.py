@@ -92,7 +92,9 @@ def configured_selection(overrides=None):
     """Trusted API/CLI configuration only; never reads task or model state."""
     if overrides is not None and (not isinstance(overrides, (dict, MappingProxyType)) or len(overrides) > len(ROLES)):
         raise ModelProfileError("MODEL_SELECTION_INVALID")
+    from foundation import current_config
     result = dict(DEFAULTS)
+    result.update(dict(current_config().model_profiles))
     for role, profile_id in (overrides or {}).items():
         result[role] = resolve_profile(role, profile_id).profile_id
     for role, profile_id in result.items():
@@ -112,7 +114,10 @@ def profile_scope(overrides=None):
 
 def selected_profile(role):
     selection = _selection.get()
-    return resolve_profile(role, selection.get(role, "auto") if selection is not None else "auto")
+    if selection is None:
+        from foundation import current_config
+        selection = dict(current_config().model_profiles)
+    return resolve_profile(role, selection.get(role, "auto"))
 
 
 def requested_identity(role):
@@ -144,7 +149,8 @@ def model_command(role, tool_flags, prompt, *, schema=None):
     profile = selected_profile(role)
     if role not in MODEL_ROLES:
         raise ModelProfileError("MODEL_ROLE_INVALID")
-    cmd = ["claude-free"]
+    from foundation import current_config
+    cmd = [current_config().launcher]
     if profile.model_id is not None:
         cmd += ["--model", profile.model_id]
     if role in ("coder", "fixer"):

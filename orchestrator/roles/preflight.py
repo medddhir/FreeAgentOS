@@ -9,6 +9,7 @@ import stat
 import sys
 import tempfile
 from pathlib import Path
+from foundation import bundled_tool
 
 from state import AgentState
 from roles.sandbox import REQUIRED_CONTROLS, run_isolated
@@ -50,7 +51,7 @@ def _probe_sandbox():
             "class Boundary(unittest.TestCase):\n"
             " def test_unprivileged(self): self.assertEqual(os.geteuid(), 65534)\n")
         runner = controller / "freeagent-test"
-        shutil.copyfile(ROOT / "bin/freeagent-test", runner)
+        shutil.copyfile(bundled_tool("freeagent-test"), runner)
         digest = hashlib.sha256(runner.read_bytes()).hexdigest()
         return run_isolated(workspace, run_dir, digest, timeout=8)
 

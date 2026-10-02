@@ -204,7 +204,10 @@ def valid_transport(transport):
 
 class GatewaySession:
     """No retry or execution dependency; private IPC failures only lose evidence."""
-    def __init__(self,path=SOCKET,uid=GATEWAY_UID):
+    def __init__(self,path=None,uid=GATEWAY_UID):
+        if path is None:
+            from foundation import current_config
+            path = current_config().attribution_socket
         self.path=Path(path);self.uid=uid;self.session_id=secrets.token_hex(16);self.token=None
         self.diagnostics = diagnostic_defaults()
 

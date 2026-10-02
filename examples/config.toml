@@ -1,0 +1,18 @@
+# Optional user configuration. No credentials belong in this file.
+config_version = 1
+
+[adapter]
+# Compatibility default; a portable launcher must honor ANTHROPIC_BASE_URL.
+launcher = "claude-free"
+endpoint = "http://127.0.0.1:3001"
+# Optional: reference an environment VARIABLE NAME, never its value.
+# credential_env = "FREELLMAPI_API_KEY"
+
+[attribution]
+# Optional enhanced evidence. Missing gateway IPC does not stop execution.
+enabled = true
+socket = "/run/freeagentos-attribution/gateway.sock"
+
+[models]
+coder = "claude-free-default"
+fixer = "claude-free-default"

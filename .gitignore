@@ -18,3 +18,11 @@ __pycache__/
 /test-workspace/
 /sources/
 /orchestrator/roles/*.before-*
+
+# Packaging outputs and explicitly named private/local FreeAgentOS material
+/build/
+/dist/
+/*.egg-info/
+/freeagentos.local.toml
+/.freeagentos/
+/freeagentos-credentials.json

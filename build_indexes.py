@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path("/root/agent-stack")
+ROOT = Path(__file__).resolve().parent
 SOURCES = ROOT / "sources"
 DATA = ROOT / "data"
 

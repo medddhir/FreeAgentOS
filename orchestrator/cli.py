@@ -37,6 +37,7 @@ class _Parser(argparse.ArgumentParser):
 def _parser():
     parser = _Parser(prog="freeagent-run", description="Run a task through the complete FreeAgentOS production graph. "
                      "The source repository is not changed; VERIFIED runs return a promotion-ready patch.")
+    parser.add_argument("--config", help="Absolute path to version-1 user configuration.")
     parser.add_argument("--repo", required=True, help="Clean Git repository root to snapshot.")
     parser.add_argument("--task", required=True, help="Task text (treated only as data; maximum 12000 characters).")
     parser.add_argument("--allow-new-files", action="store_true", help="Trusted permission for new files.")
@@ -342,6 +343,23 @@ def _problem(status, code, json_mode, cleanup="NONE"):
 
 
 def main(argv=None):
+    from foundation import load_config, config_scope, ConfigError
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    try:
+        # argparse handles usage/help; configuration is read only after parsing.
+        args = _parser().parse_args(arguments)
+        config = load_config(args.config)
+        with config_scope(config):
+            return _main(arguments)
+    except ConfigError as exc:
+        _problem("INVALID_INPUT", str(exc), "--json" in arguments)
+        return 3
+    except UsageError:
+        _problem("INVALID_INPUT", "CLI_USAGE_ERROR", "--json" in arguments)
+        return 3
+
+
+def _main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     json_mode = "--json" in argv
     try:

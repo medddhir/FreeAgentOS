@@ -5,7 +5,12 @@ import json
 import re
 from pathlib import Path
 
-DATA = Path("/root/agent-stack/data")
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "orchestrator"))
+try:
+    from foundation import bundled_data
+except ModuleNotFoundError:
+    from orchestrator.foundation import bundled_data
 
 STOPWORDS = {
     "a", "an", "and", "the", "for", "to", "of", "with",
@@ -26,7 +31,7 @@ ALIASES = {
 
 
 def load(name):
-    with open(DATA / name, encoding="utf-8") as f:
+    with open(bundled_data(name), encoding="utf-8") as f:
         return json.load(f)["items"]
 
 

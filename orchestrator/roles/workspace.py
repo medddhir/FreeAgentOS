@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from contextvars import ContextVar
 from pathlib import Path, PurePosixPath
+from foundation import bundled_tool
 
 from state import AgentState
 from roles.sandbox import RESOURCE_POLICY
@@ -34,6 +35,8 @@ TEST_PATH = re.compile(r"(?:^|/)(?:tests?|__tests__)(?:/|$)|(?:^|/)(?:test_[^/]*
 VERIFY_CONFIG = {"agents.md", "claude.md", "freeagent-test", "freeagent-run", "freeagent-code",
                  "package.json", "pyproject.toml", "pytest.ini", "tox.ini", "setup.cfg", "conftest.py"}
 CONTROLLER_FILES = (
+    "orchestrator/foundation.py", "orchestrator/entrypoint.py",
+    "orchestrator/roles/model_profiles.py", "orchestrator/roles/model_attribution.py",
     "bin/freeagent-test", "orchestrator/graph.py", "orchestrator/state.py",
     "orchestrator/roles/coder.py", "orchestrator/roles/fixer.py",
     "orchestrator/roles/tester.py", "orchestrator/roles/integrity.py",
@@ -241,7 +244,7 @@ def _source_dirty(repo):
 def _controller_hashes():
     result = {}
     for name in CONTROLLER_FILES:
-        path = ROOT / name
+        path = bundled_tool(name.split("/", 1)[1]) if name.startswith("bin/") else ROOT / name
         if path.is_file() and not path.is_symlink():
             result[name] = _sha(path.read_bytes())
     return result
@@ -346,7 +349,7 @@ def prepare_workspace_node(state: AgentState):
         head_workspace = _git(repo, "rev-parse", "HEAD").stdout.decode().strip()
         git_pointer, _ = _read_regular(repo / ".git", max_bytes=4096)
         runner = control / "freeagent-test"
-        shutil.copyfile(ROOT / "bin/freeagent-test", runner, follow_symlinks=False)
+        shutil.copyfile(bundled_tool("freeagent-test"), runner, follow_symlinks=False)
         os.chmod(runner, 0o400)
         controller_hashes = _controller_hashes()
         source_inventory = {name: digest for name, digest in clean_hashes.items()}

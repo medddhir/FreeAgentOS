@@ -69,7 +69,11 @@ def _gateway_health():
     start = time.monotonic_ns()
     connection = None
     try:
-        connection = http.client.HTTPConnection(GATEWAY_HEALTH_HOST, GATEWAY_HEALTH_PORT, timeout=0.75)
+        from foundation import current_config
+        from urllib.parse import urlsplit
+        endpoint = urlsplit(current_config().endpoint)
+        client = http.client.HTTPSConnection if endpoint.scheme == "https" else http.client.HTTPConnection
+        connection = client(endpoint.hostname, endpoint.port, timeout=0.75)
         connection.request("GET", "/health")
         response = connection.getresponse()
         status = "HEALTHY" if response.status == 200 else "UNHEALTHY"
@@ -266,7 +270,7 @@ def _run_inner(area, request):
         try:
             from roles.model_attribution import transport_environment, valid_transport
             process = subprocess.Popen(command, cwd=request["cwd"],
-                                       env=transport_environment(request.get("attribution_transport")),
+                                       env=_worker_environment(request),
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        start_new_session=True,
                                        preexec_fn=lambda: _child_limits(scope, policy, timeout))
@@ -347,6 +351,20 @@ def _run_inner(area, request):
             evidence["worker_total_ms"] = _elapsed_ms(inner_started_ns)
 
 
+def _worker_environment(request):
+    from roles.model_attribution import transport_environment
+    env = transport_environment(request.get("attribution_transport"))
+    if "adapter_settings" in request:
+        from foundation import adapter_environment
+        env = adapter_environment(env, request["adapter_settings"])
+    return env
+
+
+def _model_command(cmd):
+    from foundation import current_config
+    return bool(cmd and cmd[0] == current_config().launcher)
+
+
 def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
                      policy_profile="model", stream_activity=False):
     """Run only the CLI tree in a cgroup; keep this controller outside it."""
@@ -365,6 +383,11 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
     transport = current_transport()
     if transport is not None:
         request["attribution_transport"] = transport
+    if _model_command(cmd):
+        from foundation import current_config, discover_launcher
+        config = current_config()
+        discover_launcher(config)
+        request["adapter_settings"] = {"endpoint": config.endpoint, "credential_env": config.credential_env}
     request["scope_name"] = scope_name
     request["stream_activity"] = stream_activity
     raw = json.dumps(request, separators=(",", ":")).encode()
@@ -375,18 +398,18 @@ def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
         raise WorkerBoundaryError("WORKER_REQUEST_TOO_LARGE")
     from roles.model_profiles import command_identity, requested_identity, ModelProfileError
     try:
-        model_selection = (command_identity(cmd, role) if cmd[0] == "claude-free" else
+        model_selection = (command_identity(cmd, role) if _model_command(cmd) else
                            requested_identity("researcher") if role.startswith("research:") else None)
     except ModelProfileError as exc:
         raise WorkerBoundaryError(str(exc)) from None
     resolution = {"worker_executable_resolved": shutil.which(cmd[0]) is not None,
                   "claude_free_resolved": shutil.which("claude-free") is not None
-                  if cmd[0] == "claude-free" else None,
+                  if _model_command(cmd) else None,
                   "claude_executable_available": shutil.which("claude") is not None
-                  if cmd[0] == "claude-free" else None}
+                  if _model_command(cmd) else None}
     if model_selection is not None:
         resolution["model_selection"] = model_selection
-    health = _gateway_health() if cmd[0] == "claude-free" and policy_profile == "model" else {
+    health = _gateway_health() if _model_command(cmd) and policy_profile == "model" else {
         "gateway_health_status": "NOT_CHECKED", "gateway_health_latency_ms": None,
         "gateway_request_observed": "UNAVAILABLE"}
     with tempfile.TemporaryDirectory(prefix="freeagentos-worker-") as area:
@@ -467,14 +490,15 @@ def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
         from roles.model_attribution import GatewaySession, safe_attribution_diagnostics, diagnostic_defaults, _ipc_failure
         setup_diagnostics = diagnostic_defaults()
         try:
-            session = GatewaySession() if cmd and cmd[0] == "claude-free" else None
+            from foundation import current_config
+            session = GatewaySession() if _model_command(cmd) and current_config().attribution_enabled else None
         except Exception as exc:
             session = None
             setup_diagnostics['registration_status'] = _ipc_failure(exc)
         if session is None:
             result = _run_worker_impl(cmd, cwd=cwd, timeout=timeout, role=role, limits=limits,
                                     policy_profile=policy_profile, stream_activity=stream_activity)
-            if cmd and cmd[0] == "claude-free":
+            if cmd and _model_command(cmd):
                 result.evidence["attribution_diagnostics"] = safe_attribution_diagnostics(setup_diagnostics)
             return result
         session.begin()
@@ -499,6 +523,9 @@ def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
     except WorkerBoundaryError:
         raise
     except Exception as exc:
+        from foundation import ConfigError
+        if isinstance(exc, ConfigError):
+            raise WorkerBoundaryError(str(exc)) from None
         raise WorkerBoundaryError("WORKER_CONTROLLER_ERROR:" + type(exc).__name__) from exc
 
 
