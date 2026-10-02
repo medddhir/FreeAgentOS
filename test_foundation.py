@@ -21,6 +21,9 @@ class FoundationTests(unittest.TestCase):
         from test_doctor import DoctorCases
         with self.subTest(case="doctor"):
             DoctorCases().cases()
+        from test_bootstrap import BootstrapCases
+        with self.subTest(case="bootstrap"):
+            BootstrapCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
