@@ -202,6 +202,15 @@ def valid_transport(transport):
             and isinstance(transport.get('token'),str) and _TAG.fullmatch(transport['token']) is not None)
 
 
+def validate_socket_path(path, uid=GATEWAY_UID):
+    """Shared read-only filesystem trust check; no IPC/session mutation."""
+    path = Path(path)
+    parent=path.parent.lstat();info=path.lstat()
+    if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=uid or stat.S_IMODE(parent.st_mode)!=0o700
+            or not stat.S_ISSOCK(info.st_mode) or info.st_uid!=uid or stat.S_IMODE(info.st_mode)!=0o600):
+        raise ValueError('ATTRIBUTION_PEER_INVALID')
+
+
 class GatewaySession:
     """No retry or execution dependency; private IPC failures only lose evidence."""
     def __init__(self,path=None,uid=GATEWAY_UID):
@@ -212,10 +221,7 @@ class GatewaySession:
         self.diagnostics = diagnostic_defaults()
 
     def _exchange(self,op):
-        parent=self.path.parent.lstat();info=self.path.lstat()
-        if (not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=self.uid or stat.S_IMODE(parent.st_mode)!=0o700
-                or not stat.S_ISSOCK(info.st_mode) or info.st_uid!=self.uid or stat.S_IMODE(info.st_mode)!=0o600):
-            raise ValueError('ATTRIBUTION_PEER_INVALID')
+        validate_socket_path(self.path, self.uid)
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as channel:
             channel.settimeout(0.25);channel.connect(str(self.path))
             import struct

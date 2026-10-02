@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Source-tree observer entrypoint; does not bootstrap or mutate the system."""
+import os
+import sys
+from pathlib import Path
+root = Path(__file__).resolve().parents[1]
+runtime = root / '.venv-orchestrator/bin/python3'
+if runtime.is_file() and Path(sys.executable).absolute() != runtime.absolute():
+    os.execv(str(runtime), [str(runtime), __file__, *sys.argv[1:]])
+sys.path.insert(0, str(root / 'orchestrator'))
+from doctor import main
+raise SystemExit(main())

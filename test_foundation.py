@@ -17,6 +17,10 @@ class FoundationTests(unittest.TestCase):
         for name in ['case_paths', 'case_xdg', 'case_overrides', 'case_resources', 'case_absent', 'case_version', 'case_malformed', 'case_precedence', 'case_launchers', 'case_structured_command', 'case_endpoints', 'case_socket_trust', 'case_model_configuration', 'case_credentials', 'case_gitignore', 'case_no_policy_changes', 'case_configured_health', 'case_alternate_launcher_attribution', 'case_disabled_attribution', 'case_portable_helpers', 'case_worker_environment']:
             with self.subTest(case=name):
                 getattr(self, name)()
+        # Extend the same bounded foundation table with observer regressions.
+        from test_doctor import DoctorCases
+        with self.subTest(case="doctor"):
+            DoctorCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

@@ -13,6 +13,7 @@ dependencies = ["langgraph==1.2.12"]
 dev = ["setuptools==68.1.2", "wheel==0.42.0"]
 
 [project.scripts]
+freeagent = "orchestrator.entrypoint:doctor_main"
 freeagent-run = "orchestrator.entrypoint:main"
 
 [tool.setuptools]
