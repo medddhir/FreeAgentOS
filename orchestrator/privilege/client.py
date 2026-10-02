@@ -13,11 +13,13 @@ class Sandbox:
 
 
 class ControllerClient:
-    def __init__(self, path, enrollment, server_uid, server_gid):
+    def __init__(self, path, enrollment, server_uid, server_gid, *, linux_validation=False):
+        self.mode='LINUX' if linux_validation is True else 'SIMULATED'
+        if self.mode=='LINUX' and server_uid!=0:raise p.BoundaryError('PEER_NOT_ALLOWED')
         self.enrollment=enrollment
         self.channel=None;self.seq=0;self._handles=set()
         try:
-            validate_socket(path,server_uid,server_gid)
+            validate_socket(path,server_uid,server_gid,parent_mode=0o750 if self.mode=='LINUX' else 0o700,socket_mode=0o660 if self.mode=='LINUX' else 0o600)
             channel=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);self.channel=channel
             channel.settimeout(p.TIMEOUT);channel.connect(str(path))
             if peer_credentials(channel)[1:]!=(server_uid,server_gid):raise p.BoundaryError('PEER_NOT_ALLOWED')
@@ -27,7 +29,7 @@ class ControllerClient:
             hello=self._rpc('HELLO',{'enrollment':enrollment.enrollment_id,'token':enrollment.token,
                                    'challenge':greeting['challenge'],'build':p.BUILD,'policy':policy_hash()})
             p.keys(hello,('build','policy','mode'))
-            if hello!={'build':p.BUILD,'policy':policy_hash(),'mode':'SIMULATED'}:raise p.BoundaryError('POLICY_REJECTED')
+            if hello!={'build':p.BUILD,'policy':policy_hash(),'mode':self.mode}:raise p.BoundaryError('POLICY_REJECTED')
         except p.BoundaryError:
             self.close();raise
         except OSError:
@@ -48,8 +50,8 @@ class ControllerClient:
     def _snapshot(self, value):
         p.keys(value,('handle','state','class','role','mode','enforcement','cleanup'))
         if (not p.identifier(value['handle']) or any(type(value[k]) is not str for k in ('state','class','role','mode','enforcement','cleanup')) or value['state'] not in p.STATES
-                or value['mode']!='SIMULATED' or value['enforcement']!='UNPROVEN'
-                or value['cleanup'] not in ('SIMULATED','UNPROVEN')):raise p.BoundaryError('INVALID_REQUEST')
+                or value['mode']!=self.mode or value['enforcement']!='UNPROVEN'
+                or value['cleanup'] not in (('CONFIRMED','UNPROVEN') if self.mode=='LINUX' else ('SIMULATED','UNPROVEN'))):raise p.BoundaryError('INVALID_REQUEST')
         from .policy import execution_class
         execution_class(value['class'],value['role'])
         return value

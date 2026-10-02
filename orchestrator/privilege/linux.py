@@ -87,7 +87,7 @@ class PinnedFile:
         try:
             info=os.fstat(fd)
             if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_mode & 0o022
-                    or not info.st_mode & 0o111 or info.st_size>32*1024*1024):
+                    or info.st_mode & 0o6000 or not info.st_mode & 0o111 or info.st_size>32*1024*1024):
                 raise BoundaryError('POLICY_REJECTED')
             digest=hashlib.sha256()
             while block:=os.read(fd,65536):digest.update(block)
@@ -143,23 +143,25 @@ class OwnedPidfd:
         return not select.select([self.fd],[],[],0)[0]
 
     def close(self):
-        os.close(self.fd)
+        if self.fd is not None:os.close(self.fd);self.fd=None
 
 
 class Deadline:
     """Controller disconnect is immediately terminal; no reconnect ownership."""
     def __init__(self, clock=time.monotonic):
-        self.clock=clock;self.started=clock();self.base=180;self.hard=240;self.grace=False
+        from ..roles.lease import BASE_SECONDS, HARD_SECONDS
+        self.clock=clock;self.started=clock();self.base=BASE_SECONDS;self.hard=HARD_SECONDS;self.grace=False
 
     def grant_grace(self, authenticated_recent_activity):
         # This boolean must originate in trusted broker telemetry, never RPC.
-        if authenticated_recent_activity is not True or self.clock()-self.started>180:
+        if authenticated_recent_activity is not True or self.clock()-self.started>self.base:
             raise BoundaryError('POLICY_REJECTED')
         self.grace=True
 
     def expired(self, connected=True):
         elapsed=self.clock()-self.started
-        return connected is not True or elapsed>=min(self.hard,self.base+(60 if self.grace else 0))
+        from ..roles.lease import GRACE_SECONDS
+        return connected is not True or elapsed>=min(self.hard,self.base+(GRACE_SECONDS if self.grace else 0))
 
 
 class OwnedCgroup:
@@ -295,6 +297,8 @@ class ChildSetup:
         if self.stage!='ROOTFS_READY' or type(uid) is not int or type(gid) is not int or not 1<=uid<=2**31-1 or not 1<=gid<=2**31-1:
             raise BoundaryError('POLICY_REJECTED')
         libc=self._libc()
+        libc.prctl.argtypes=[ctypes.c_int,ctypes.c_ulong,ctypes.c_ulong,ctypes.c_ulong,ctypes.c_ulong]
+        libc.prctl.restype=ctypes.c_int
         # Drop ambient and bounding capabilities while setup still has authority.
         if libc.prctl(47,4,0,0,0)!=0:raise BoundaryError('BACKEND_FAILURE')
         with open('/proc/sys/kernel/cap_last_cap') as stream:
@@ -310,6 +314,7 @@ class ChildSetup:
             _fields_=[('version',ctypes.c_uint32),('pid',ctypes.c_int)]
         class Data(ctypes.Structure):
             _fields_=[('effective',ctypes.c_uint32),('permitted',ctypes.c_uint32),('inheritable',ctypes.c_uint32)]
+        libc.capset.argtypes=[ctypes.c_void_p,ctypes.c_void_p];libc.capset.restype=ctypes.c_int
         header=Header(0x20080522,0);data=(Data*2)()
         if libc.capset(ctypes.byref(header),ctypes.byref(data))!=0:raise BoundaryError('BACKEND_FAILURE')
         if libc.prctl(38,1,0,0,0)!=0:raise BoundaryError('BACKEND_FAILURE')

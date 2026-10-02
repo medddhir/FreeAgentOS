@@ -1,0 +1,34 @@
+# REVIEW TEMPLATE ONLY. Never installed/enabled by normal bootstrap.
+[Unit]
+Description=FreeAgentOS isolated synthetic privilege validation
+After=local-fs.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/opt/freeagentos-supervisor/venv/bin/python -I -m orchestrator.privilege.service --admin /etc/freeagentos-stage31d/admin.json --permit /etc/freeagentos-stage31d/permit.json
+UMask=0077
+Restart=no
+KillMode=control-group
+TimeoutStopSec=10
+Delegate=cpu memory pids
+DelegateSubgroup=supervisor
+PrivateTmp=yes
+PrivateMounts=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/freeagentos-stage31d /run/freeagentos-stage31d /sys/fs/cgroup
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=mnt pid net
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_CHROOT CAP_SETUID CAP_SETGID CAP_SETPCAP CAP_MKNOD CAP_CHOWN CAP_DAC_OVERRIDE
+AmbientCapabilities=
+# ProtectControlGroups would defeat explicitly delegated owned scope writes.
+# Child clears every capability, bounding set, ambient set before FD exec.
+
+[Install]
+WantedBy=multi-user.target

@@ -12,10 +12,12 @@ from .security import directory_fd, peer_credentials
 
 
 class Supervisor:
-    def __init__(self, enrollment, roots, backend, journal):
+    def __init__(self, enrollment, roots, backend, journal, *, linux_validation=False):
         # No dispatch to arbitrary pluggable privileged code or production fallback.
         from .backend import FakeBackend, SyntheticProcessBackend
-        if type(backend) not in (FakeBackend,SyntheticProcessBackend) or not backend.simulation_only:
+        from .isolation import LinuxBackend
+        self.linux=type(backend) is LinuxBackend and linux_validation is True
+        if not self.linux and (type(backend) not in (FakeBackend,SyntheticProcessBackend) or not backend.simulation_only):
             raise p.BoundaryError('POLICY_REJECTED')
         self.enrollment=enrollment;self.roots=roots;self.backend=backend;self.journal=journal
         if journal.policy!=policy_hash():raise p.BoundaryError('POLICY_REJECTED')
@@ -33,8 +35,8 @@ class Supervisor:
 
     def _snapshot(self, r):
         return {'handle':r['handle'],'state':r['state'],'class':r['class'],'role':r['role'],
-                'mode':'SIMULATED','enforcement':'UNPROVEN',
-                'cleanup':'SIMULATED' if r['state']=='RELEASED' else 'UNPROVEN'}
+                'mode':'LINUX' if self.linux else 'SIMULATED','enforcement':'UNPROVEN',
+                'cleanup':('CONFIRMED' if self.linux else 'SIMULATED') if r['state']=='RELEASED' else 'UNPROVEN'}
 
     def _release(self,r):
         if r['state']=='RELEASED':return
@@ -71,7 +73,8 @@ class Supervisor:
                     self.records[handle]=r
                     self._save()  # Durable ownership intent before backend creation.
                     try:
-                        self.backend.prepare(handle,c.recipe,limits)
+                        if self.linux:self.backend.create(handle,args['run_id'],args['slot'],args['class'],args['role'],limits)
+                        else:self.backend.prepare(handle,c.recipe,limits)
                         r['state']='CREATED';self._save()
                     except Exception:
                         r['state']='FAILED_DIRTY';self._save()
@@ -87,6 +90,7 @@ class Supervisor:
                             r['state']='FAILED_DIRTY';self._save();raise p.BoundaryError('BACKEND_FAILURE') from None
                         r['state']='RUNNING';self._save()
                     elif op=='STATUS':
+                        if self.linux:r['state']=self.backend.status(handle)['state'];self._save()
                         if r['state']=='RUNNING' and not self.backend.running(handle):
                             r['state']='TERMINATED';self._save()
                     elif op=='TERMINATE':
@@ -119,6 +123,7 @@ class Supervisor:
         """Administrative startup simulation; never offered as a public RPC."""
         with self.lock:
             pending=[r for r in self.records.values() if r['state']!='RELEASED']
+            if self.linux:self.backend.reconcile_control(pending)
             # Validate every ownership claim before doing any cleanup.
             if any(r['owner']!=self.backend.owner or
                    (not self.backend.owns(r['handle'],r['owner']) and not self.backend.cleaned(r['handle'],r['owner']) and r['state']!='CREATING') for r in pending):
@@ -133,15 +138,17 @@ class LocalServer:
     Real peer credentials and token checks, synthetic enforcement only.
     No ancillary FD acceptance: FD provisioning waits for Stage 3.1C review.
     """
-    def __init__(self, path, supervisor):
+    def __init__(self, path, supervisor, *, enrolled_group=None):
         self.path=Path(path);self.supervisor=supervisor
-        self.parent=directory_fd(self.path.parent,os.getuid())
+        if enrolled_group is not None and (not supervisor.linux or os.geteuid()!=0 or enrolled_group!=supervisor.enrollment.gid):raise p.BoundaryError('POLICY_REJECTED')
+        self.parent=directory_fd(self.path.parent,os.getuid(),0o750 if enrolled_group is not None else 0o700)
         self.listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
         self.channels=set();self.threads=[];self.lock=threading.Lock();self.stop_event=threading.Event()
         self.semaphore=threading.BoundedSemaphore(p.MAX_CLIENTS)
         try:
             # Never unlink an existing path to force socket creation.
-            self.listener.bind(str(self.path));os.chmod(self.path,0o600)
+            self.listener.bind(str(self.path));os.chmod(self.path,0o660 if enrolled_group is not None else 0o600)
+            if enrolled_group is not None:os.chown(self.path,0,enrolled_group)
             self.inode=self.path.lstat().st_ino
             self.listener.listen(p.MAX_CLIENTS);self.listener.settimeout(.1)
         except BaseException:
@@ -178,7 +185,7 @@ class LocalServer:
             if a['build']!=p.BUILD or a['policy']!=self.supervisor.journal.policy:raise p.BoundaryError('POLICY_REJECTED')
             authenticated=True
             recent=deque(maxlen=p.MAX_RATE)
-            p.send(channel,p.response(seq,'OK',{'build':p.BUILD,'policy':self.supervisor.journal.policy,'mode':'SIMULATED'}))
+            p.send(channel,p.response(seq,'OK',{'build':p.BUILD,'policy':self.supervisor.journal.policy,'mode':'LINUX' if self.supervisor.linux else 'SIMULATED'}))
             while seq<p.MAX_REQUESTS:
                 request=p.validate_request(p.receive(channel))
                 if request['seq']!=seq+1:raise p.BoundaryError('INVALID_REQUEST')

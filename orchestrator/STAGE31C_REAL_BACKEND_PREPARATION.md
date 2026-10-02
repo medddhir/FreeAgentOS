@@ -1,169 +1,363 @@
-# Stage 3.1C real backend preparation — PARTIAL
+# Stage 3.1C — completed real Linux backend preparation
 
-This checkpoint adds audited preparation primitives, not a complete activated
-Linux isolation backend. Production `run_worker`, simulation transport, policy
-hash, protocol v1, doctor, bootstrap and attribution acceptance are unchanged.
-No privileged operation was executed through the new code. No installation
-bundle is ready to authorize. Do not proceed to privileged validation yet.
+Preparation is implemented and deterministically testable. **No real backend
+operation has been executed privileged.** Production isolation is not verified;
+`run_worker()`, attribution, bootstrap, doctor, permissions and numerical
+resource/lease policies remain unchanged. No verified tag is created.
 
-## LINUX_BACKEND
+## IMPLEMENTED / STATICALLY VERIFIED / READ_ONLY_PROBED
 
-`privilege/linux.py` is separate from FakeBackend. Imports perform no kernel
-operation. LinuxIsolationBackend exposes read-only readiness; prepare/start
-always reject with RECOVERY_REQUIRED. The existing supervisor rejects its type.
-Neither RPC nor user config selects it. This is an intentional activation fence,
-not an implementation of namespace/rootfs enforcement.
+Implemented: descriptor snapshot ingestion, enrolled executable/argv binding,
+child setup, fixed rootfs recipes, owned cgroup operations, pidfd identity,
+independent deadline monitor, resource journal/recovery, authenticated service
+composition, enrollment preparation, installation manifest and validation plan.
 
-## SYSCALLS_AND_BINARIES
+Statically verified: bounded operation schemas; no RPC paths/PIDs/executable/
+argv/environment/mount tuples; fixed execution classes; class/role/resource
+validation; root-owned registrations; child identity/capability drop before
+exec; private FD closure; recovery only against exact owned resources.
 
-Implemented calls: lazy libc syscall 437 (x86_64 openat2), os.pidfd_open,
-select readiness, open/read/write/mkdir/rmdir via administrator-owned directory
-FDs. No external binaries, subprocess, shell, raw kill, mount, umount,
-chroot or mknod occur in new code. ChildSetup additionally implements libc
-unshare and ordered prctl/capset/setgroups/setgid/setuid calls behind child-only
-and rootfs-ready guards. Tests mock unshare and never execute these changes.
-Cgroup filesystem writes exist behind an unconditional mutation rejection.
-Pidfd opens identify only a supplied helper-child object; no public PID input.
-The constructor API is administrative/internal and is not an RPC.
+Read-only/unprivileged probes: openat2 traversal/symlink/magic-link/mount-crossing
+rejection; executable hash changes; source descriptor replacement races;
+platform/cgroup prerequisites. Availability is not enforcement proof.
 
-Primary specifications: [openat2](https://man7.org/linux/man-pages/man2/openat2.2.html)
-and [cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html).
+NOT YET EXECUTED PRIVILEGED: namespace/mount/chroot/device/cgroup writes, identity
+and capability drop, service activation, actual deadlines and crash recovery.
+Those require owner-authorized Stage3.1D in a disposable validation machine.
 
-## SECURE_PATH_RESOLUTION / FD_MODEL
+## LINUX_BACKEND / LIFECYCLE
 
-secure_open only accepts exact relative components, with BENEATH, NO_SYMLINKS,
-NO_MAGICLINKS and NO_XDEV. Single-link regular files/directories only. No create
-or write flags; special files rejected. Missing syscall/platform guarantees
-reject PATH_REJECTED without realpath fallback. NO_XDEV is below an enrolled
-anchor; acquiring the anchor across normal filesystem mounts needs separate
-administrator verification. All returned FDs are CLOEXEC and caller-owned.
-Executable records retain FD/inode/device/hash and require root ownership,
-non-group/world-writability and executable mode. Hash validation detects
-in-place modification but does not prove immutable inode contents during exec;
-root-owned immutable installation and safe FD exec remain required.
+`isolation.LinuxBackend` implements create/start/status/running/terminate/cleanup/
+recover. Same state vocabulary as protocol v1: CREATING, CREATED, RUNNING,
+TERMINATING, TERMINATED, RELEASED, FAILED_DIRTY. Intent is durable before allocation;
+resource inode identity is durable before snapshot/setup. Invalid transitions,
+reused run IDs and dirty-state reuse reject. Maximum records128, active16;
+protocol supervisor additionally enforces two active scopes per enrolled UID.
 
-## WORKSPACE_SNAPSHOT
+FakeBackend remains the ordinary simulation backend. Supervisor accepts Linux
+only through a trusted constructor flag plus exact backend type, never an RPC.
+Service selects LinuxDriver from root-owned installation registry; tests supply
+RecordingDriver. The older LinuxIsolationBackend qualification facade and
+OwnedCgroup primitive remain blocked compatibility seams, not active alternatives.
+All imports are inert. Normal production workers do not import this package.
 
-NOT IMPLEMENTED. The existing protocol CREATE supplies a slot; START only a
-handle. Existing RegisteredRoots pins directories but does not copy/hash a
-sealed manifest into a helper-owned snapshot. Pinned files prevent path
-substitution, not concurrent writes to inode contents. Do not bind a mutable
-controller workspace into a privileged recipe. Required work: bounded manifest
-registration and verified copy through openat2 FDs into private helper storage;
-verify external verification hashes before admission. No path arguments added
-to RPC to bypass this gap.
+## SECURE_PATH_RESOLUTION / FD_MODEL / WORKSPACE_SNAPSHOT
+
+`sealed.Seal.from_verification` checks the trusted external verification manifest
+SHA256, source_inventory and existing worker/research/test policies. It ignores
+host source/workspace strings. A trusted registration opens the workspace once;
+SnapshotSource retains that CLOEXEC root FD. Root/parent/path replacement cannot
+redirect the descriptor. openat2 uses BENEATH|NO_SYMLINKS|NO_MAGICLINKS|NO_XDEV
+below that anchor. Unsupported primitives reject; no realpath fallback.
+
+The helper creates an exclusive private destination and copies only sealed
+regular single-link files. It hashes the bytes actually written against the
+external inventory, with file/byte/directory budgets. A concurrent source inode
+write cannot admit differing bytes. Copy failure leaves a dirty owned resource;
+no partial snapshot is launched. Source metadata, symlinks, .git pointer and
+credentials are not projected implicitly. Current source snapshot bounds are
+20,000 files,1GiB total,128MiB/file; directories plus files bounded22,000.
+Tester copy remains separately capped by its existing192MiB/20,000-entry policy.
+
+Source/runtime/executable/root descriptors are supervisor-owned and CLOEXEC.
+Only trusted launcher setup temporarily receives them through pass_fds. Before
+untrusted FD exec it closes every FD above2 except the approved ELF FD and setup
+receipt; both remaining descriptors close on exec. No privileged directory FD
+reaches the worker. No ancillary FDs accepted from RPC.
+
+## EXECUTION_REGISTRY / FINAL_ARGV / ENVIRONMENT_POLICY
+
+ExecutionRegistry is immutable and enrolled by slot. Every entry binds class,
+role, root-owned executable FD/device/inode/SHA256, minimal runtime FD, opaque job
+ID and exclusive non-root worker UID/GID. In-place executable changes reject.
+Runtime contents must be root-owned, not writable by other users, with no
+symlinks/special files/hardlinks, and carry the minimal-runtime marker. Fixed
+mount targets must be directories. Installation parents must be root-owned and
+not group/world-writable. ELF FD exec avoids shebang/CLOEXEC ambiguity.
+
+Fixed class contracts:
+
+| Class | Final variable binding | Filesystem | Identity |
+|---|---|---|---|
+| MODEL_WORKER | `--broker-job <enrolled opaque job>` | broker-only workspace access | enrolled exclusive model UID/GID |
+| DETERMINISTIC_TESTER | `--verification-job <enrolled opaque job>` | private test copy | enrolled exclusive tester UID/GID |
+| RESEARCH_HELPER | `--research-job <enrolled opaque job>` | runtime only | enrolled exclusive research UID/GID |
+
+These are approved adapter contracts, not a production worker cutover. Future
+adapter enrollment must prove it understands its job interface and broker
+contract. Stage3.1D service enrolls only the hashed static synthetic ELF with
+fixed `--synthetic`; it cannot launch a model/provider. No RPC argv/executable/
+interpreter/flags API. Arguments are tuples/arrays and never shell-parsed.
+
+Worker environment is fixed PATH=/usr/bin:/bin, LANG=C.UTF-8, private HOME=/home,
+TMPDIR=/tmp and existing bytecode setting. Caller LD_*, PYTHONPATH, PYTHONINSPECT,
+BASH_ENV, shell hooks, certificate overrides and provider variables are absent.
+Credential delivery is deliberately outside this privilege protocol; future
+broker delivery must not copy the controller environment.
+
+## CHILD_LAUNCHER / IDENTITY_DROP_ORDER / CAPABILITY_DROP
+
+Fresh trusted interpreter `-I -m orchestrator.privilege.child` avoids unsafe
+threaded Python preexec_fn. Its inherited descriptors/configuration are fixed
+supervisor-generated data, bounded16KiB, strict duplicate-free JSON.
+
+Order: parent durable START intent → paused launcher/pidfd → attach launcher to
+owned cgroup → release pipe barrier → unshare mount/PID (private network for
+validation/tester) → fork PID namespace init → private mount propagation → fixed
+rootfs/runtime/scratch → minimal dev/proc → chroot and cwd → RLIMITs → clear ambient
+and bounding capabilities → clear groups → GID → UID → clear all capability sets
+→ no_new_privs → close privileged FDs → FD exec approved ELF. Ordered composition
+is exercised with injected RecordingCalls; identity syscalls are mocked.
+
+Namespace init verification requires PID1; the trusted outer launcher waits and
+is also contained in the owned cgroup. No model/client code executes as root.
+No_new_privs also applies through the unit; child clears all capabilities rather
+than forwarding the helper's bounding set. Setup CAP_SYS_ADMIN remains broad and
+is restricted to root-owned reviewed code, never a general command interface.
 
 ## MOUNT_RECIPES / DEVICE_POLICY / ROOTFS_MODEL
 
-Immutable logical recipe registry: model (sealed workspace, readonly runtime,
-private scratch/proc); tester (test copy and private network additionally);
-research (runtime/scratch/proc). Devices limited to null, zero, random, urandom.
-No host mount pairs, arbitrary devices or Docker/GPU sockets. Actual recipe
-construction, device preparation and mounts are NOT implemented. Existing
-model worker has broker-only file access, mount/PID isolation and controller
-readonly projection; new model recipe must preserve broker mediation and must
-not grant direct writable workspace access. Chroot alone is never sufficient.
+Only recipe-owned source FDs and fixed targets: minimal enrolled runtime bind,
+readonly/nosuid remount; private tmpfs tmp/run/home/dev/workspace; namespace-local
+proc. Tester gets a bounded private writable copy. Model/research receive no
+direct project projection, preserving broker-only filesystem access. No host
+home, credential directory, Docker socket, GPU or block device projection.
 
-## IDENTITY_DROP_ORDER / CAPABILITY_DROP
-
-Ordered plan: attach paused child to owned cgroup; establish mount/PID context;
-private propagation; fixed rootfs; chroot plus chdir; clear bounding/ambient
-capabilities while privileged; clear supplementary groups; set GID; set UID;
-clear all capsets; no_new_privs; close privileged FDs; exec approved class.
-ChildSetup implements namespace and identity/capability syscalls, but the
-ROOTFS_READY admission stage is deliberately unreachable. PID namespace fork,
-mount/rootfs and execution remain plan labels. Need a reviewed single-thread
-child launcher; Python preexec_fn in a multithreaded service is unsuitable.
-No user/model/client code may execute before all drop assertions succeed.
-Supervisor setup capabilities and minimal bounding set remain unqualified.
-
-## EXECUTION_REGISTRY / ENVIRONMENT_POLICY
-
-Fixed execution classes inherited from Stage 3.1B; root-owned pinned executable
-primitive added. No executable/argv/mount/env selection through protocol.
-Role-specific final argv construction and FD exec are NOT implemented. Fixed
-PATH/HOME/LANG and Python bytecode setting use existing worker_environment;
-caller LD_*, PYTHONPATH, BASH_ENV and provider variables are not inherited.
-Credential delivery is unresolved; never copy the controller environment.
+Exactly four character devices: null(1,3),zero(1,5),random(1,8),urandom(1,9).
+Parameters are code-owned. All mounts exist only in the owned child namespace.
+After its entire cgroup is empty, no helper/worker retains namespace FDs; kernel
+namespace destruction removes projections. Recovery does not scan/unmount host
+mount tables. Stage3.1D must verify this actual destruction and zero residuals.
+Reserved worker identities must have no unrelated processes/users capable of
+retaining namespace FDs. Chroot is one layer, never the entire boundary.
 
 ## CGROUP_V2 / PIDFD
 
-OwnedCgroup models scope creation beneath a pinned administrative subtree;
-fixed memory.max, memory.swap.max=0, pids.max, cpu.max; paused-child attach;
-cgroup.kill, bounded cgroup.events population read, empty-only removal. Limits
-are validated against existing policy. No PID enumeration fallback. All
-mutations are blocked. Delegated subtree acquisition, filesystem-type/ownership
-qualification and controller enabling remain to implement. No claim that any
-caller-supplied FD is already a qualified production cgroup root.
-OwnedPidfd implements direct-child identity/readiness and CLOEXEC. Real descendant
-termination must use cgroup.kill, not direct-child termination alone.
+Read-only qualification: filesystem magic, owned/delegated directory, cpu/memory/
+pids availability, subtree enablement and cgroup.kill file. Fixed reason codes:
+CGROUP_V2_UNAVAILABLE, DELEGATION_UNPROVEN, CONTROLLER_MISSING,
+CONTROLLERS_DISABLED, CGROUP_KILL_UNAVAILABLE. Enforcement always UNPROVEN.
+
+Root entrypoint verifies kernel cgroup membership ends in the exact validation
+unit's `/supervisor` leaf before pinning/restricting its parent delegated domain.
+Only that empty domain may enable the three required controllers. Per-run scope
+name is `fa-<installation owner>-<opaque handle>`. Fixed ceilings are independently
+validated: memory.max,swap.max=0,pids.max,cpu.max. Attach only the helper-created,
+unreaped child, never a protocol PID. Kill uses cgroup.kill; verify exact populated0
+before removal. No unsafe PID enumeration fallback.
+
+Pidfd retains launcher identity; direct child exit still triggers whole-scope
+termination. Missing pidfd support fails qualification. Recovery never uses a
+persisted PID: durable scope inode/device, private registration, boot identity
+and owned name bind cleanup. Foreign or ambiguous identities remain dirty.
 
 ## LEASE_SUPERVISION / DISCONNECT_BEHAVIOR
 
-Deadline uses monotonic time, base180/grace60/hard240. Grace requires a trusted
-boolean, which must originate in authenticated recent broker activity; model
-output is insufficient. Connection-bound ownership from Stage 3.1B is preserved:
-a disconnected controller is terminal, not reconnectable. Deadline computes
-expiry but no independent monitor/event loop invokes owned scope kill yet.
-Research/tester role deadlines must be mapped separately before activation.
+ActivityLease is reused from production, with BASE180/GRACE60/HARD240/recent30;
+planner/reviewer bases are read from their existing source constants. Research/
+tester policies retain their current ceilings. Monotonic start is before setup;
+bounded launcher setup receipt is independently limited10 seconds. Supervisor
+monitor runs without client requests. Only trusted broker telemetry can grant
+existing one-shot grace. Failure retries only the known owned dirty scope;
+admission remains fenced until verified recovery.
+
+For the explicitly synthetic validation service only, a successful supervisor
+read of one sealed fixture byte at179 seconds supplies trusted local broker-like
+telemetry. It uses no worker/model output and no new RPC. This exercises real
+existing240-second hard-cap semantics without changing production values.
+Normal backend construction does not enable this test coordinator.
+
+Protocol v1 uses a persistent authenticated connection. Its close/EOF/crash/
+transport timeout is terminal: cleanup that connection's scopes; no reconnect or
+ownership transfer. Future validation client must poll STATUS under the existing
+bounded transport timeout, including while waiting for the hard-cap test. A
+short transient RPC connection is not the supported ownership model. Monitor
+continues even when controller requests cease; cgroup unit kill is an additional
+service-death containment layer.
 
 ## REAL_RESOURCE_JOURNAL / RECOVERY
 
-Existing versioned bounded private atomic journal is unchanged. New pure recovery
-planner requires exact fields/version/policy/boot identity/opaque handle/recipe
-and rejects raw PIDs or paths. Actions: verify ownership, kill scope, verify
-empty, reap owned pidfd, remove private root/scope, mark released. This does not
-prove ownership across restart: needs root-private ledger, cgroup inode/boot
-registration and durable pre-create records, not names alone. Real resource
-journal persistence and executable recovery are NOT implemented. No host scans.
+ResourceJournal v2: private root-owned0700 directory, regular single-link0600
+atomic/fsynced file; max128 records/256KiB; strict versions/keys/types/IDs/policy.
+Only owner/run/handle/class/role/state/boot/time/scope+root inode/device/cleanup.
+No prompt/output/token/environment/file contents. Existing protocol ownership
+journal remains v1. Both ledgers retain their separate responsibilities.
 
-## SERVICE_ENTRYPOINT / SYSTEMD_TEMPLATE / INSTALL_MANIFEST / AUTH_ENROLLMENT
+Before recovery validate all pending records and all FD/inode/absence proofs.
+Then kill owned scope, prove empty, reap owned child if retained, remove private
+root and exact scope, mark RELEASED. Root-private exclusive names plus durable
+creation intent cover crash before inode update. New-boot matching scope is
+ambiguous and rejected. A protocol-only intent is reconciled only after exact
+scope/root absence proof. Corruption/foreign ownership fails closed without a
+host-wide scanner, PID kill or mount scan. Dirty records are never erased to
+claim cleanup. Resource allocations failed midway are retained for recovery.
 
-NOT ADDED: incomplete backend must not be advertised as an installable service.
-Existing temporary token/enrollment contracts remain; no current enrollment.
-Future reviewed administrator bundle must contain root-owned immutable package
-under /opt/freeagentos-supervisor, root-owned0600 enrollment/policy registry
-under /etc/freeagentos-supervisor, root-private0700 journal under
-/var/lib/freeagentos-supervisor, and restricted enrolled-group0750 runtime /
-0660 Unix socket. Client secret needs a separate private0600 user delivery file.
-No development checkout paths or credentials in a bundle. A systemd template
-must audit required CAP_SYS_ADMIN/CHROOT/SETUID/SETGID/SETPCAP, delegation,
-mount-namespace visibility, and cleanup across service termination. Do not
-blindly enable ProtectControlGroups or RestrictNamespaces against required
-operations. Privilege installation remains separate from install.sh.
+## SERVICE_ENTRYPOINT / AUTH_ENROLLMENT / INSTALL_MANIFEST
+
+`python -I -m orchestrator.privilege.service --admin <root-private registry>
+--permit <root-private permit>` is prepared, NOT run. It requires EUID0, immutable
+root-owned installed package/parents, strict root-private configuration,
+root-private enrollment/token/journals, exact policy/version and administrator
+synthetic-only permit hash. Source-contract hashes participate in HELLO policy
+identity. Stale installations fail closed. Socket parent0750 root/enrolled-GID,
+socket0660, SO_PEERCRED+UID/GID+separate token+connection challenge. Client must
+explicitly request Linux validation mode; default simulation behavior unchanged.
+
+prepare_enrollment only writes into an empty caller-owned0700 staging directory,
+returns non-secret metadata, and stores separate0600 token. No current machine
+was enrolled. Administrator must securely deliver a separate0600 client token to
+the enrolled user; no token/hash/token prefix enters evidence or Git.
+
+validation.bundle_manifest receives reviewed package/runtime/synthetic hashes,
+adds unit hash/protocol/build/policy and exact target/owner/group/mode/purpose.
+`validation.prepare_bundle` writes a private NON-INSTALLED staging bundle with
+admin/permit/verification/unit and private enrollment artifacts. It returns only
+safe metadata; existing staging contents refuse. Generated non-secret registry
+hashes are bound when staging; secret material is
+never put in a public bundle. Paths use /opt,/etc,/var/lib,/run and the delegated
+validation unit, never a developer checkout. Normal install.sh remains non-root.
+
+## SYSTEMD_TEMPLATE
+
+`validation.service` is a review-only packaged resource, not installed/enabled.
+Delegate=cpu memory pids and DelegateSubgroup=supervisor keep manager processes out
+of the scope-creation domain. This matches Ubuntu24.04 systemd255;
+[upstream v255 directive specification](https://raw.githubusercontent.com/systemd/systemd/v255/man/systemd.resource-control.xml).
+Capabilities: SYS_ADMIN(namespaces/mount),SYS_CHROOT,SETUID/SETGID,SETPCAP,
+MKNOD(minimal devices),CHOWN(disposable tmpfs),DAC_OVERRIDE(sealed enrolled input).
+No ambient capabilities. NoNewPrivileges, readonly system/home, private tmp/mounts,
+AF_UNIX-only transport, restricted namespace kinds, kernel protection and
+control-group KillMode apply. ProtectControlGroups is omitted because it would
+block delegated writes. ReadWritePaths includes cgroups, but code only admits the
+kernel-verified service domain. This is synthetic validation hardening, not a
+production model-network unit; compatibility remains for Stage3.1D to prove.
 
 ## WSL2_READINESS / NATIVE_UBUNTU_REQUIREMENTS
 
-Read-only observed: Ubuntu24.04.4 x86_64, WSL2 kernel6.6.87.2; cpu/memory/pids
-controllers listed; namespace entries and Python pidfd APIs present. PID1 is
-`codex`, not systemd in this execution context. No delegated subtree or mount
-capability proved. WSL2 validation readiness: PARTIAL. Native Ubuntu requires
-a separate machine; WSL results are not proof. doctor remains UNPROVEN.
+Current read-only observations: Ubuntu24.04 x86_64 WSL2 kernel6.6.87.2, cgroup v2
+cpu/memory/pids visible, namespace paths/pidfd API detectable. PID1 is codex in the
+current execution context. Systemd/delegation/privileged enforcement are not
+proved here: WSL2 readiness PARTIAL. Use a separately authorized disposable native
+Ubuntu24.04 VM first; native qualification REQUIRES_MACHINE. Doctor stays
+UNPROVEN regardless of implementation files.
 
-## VALIDATION AND SECURITY REVIEW
+## STAGE31D_EXACT_VALIDATION_PLAN / ROLLBACK
 
-Compact test table checks import inertness, actual unprivileged openat2 paths,
-symlink/traversal rejection, missing syscall failure, FD inheritance, immutable
-recipes, identity/drop ordering as plans, ceilings, deadlines, recovery rejection,
-executable mutation detection and permanent activation fence. These do not
-substitute for all requested real-backend security tests. Existing full test
-runner includes historical isolation fixtures; new-code tests perform no
-privileged kernel mutations. No original Stage2 evidence is touched.
+One authorization covers one bounded validation campaign, **three sequential
+synthetic scopes**, no retries: hard-cap, controller-disconnect, supervisor-restart.
+One scope cannot both finish by hard cap and remain live for crash/disconnect tests.
+No project/model/provider/gateway is used. Plan data has attempt_limit1/scope_limit3.
 
-## STAGE31D_EXACT_VALIDATION_PLAN
+1. Preflight disposable Ubuntu24.04 VM/systemd255/x86_64; untouched production;
+   reserved enrolled user and exclusive worker UID; matching reviewed hashes;
+   namespace/openat2/pidfd/cgroup.kill/controllers. Abort before install if absent.
+2. Stage reviewed supervisor venv/package with pinned dependencies (no system
+   Python), copied interpreter executable and minimal runtime. Compile the fixed
+   `fixtures/synthetic_worker.c` using `cc -static -O2`; hash ELF. Runtime contains
+   only marker, bin/synthetic-worker and empty proc/dev/tmp/run/home/workspace.
+   Its root is root-owned0755, non-writable by workers, so the dropped UID can
+   traverse the isolated filesystem. Private staging/journals/tokens remain0700/0600.
+   No shared host root/home bindings. Stage a tiny externally sealed input file.
+3. Prepare enrollment in empty private staging; record public identity; deliver
+   token privately. Create administrator registry+hashed permit and resource/
+   control journal directories from the manifest. Do not overwrite existing paths.
+4. Install only the temporary named unit and reviewed hash-matching artifact
+   paths; start once. Verify owner/modes, Unix-only socket and exact HELLO policy.
+5. Enrolled unprivileged client tests authenticated HELLO and wrong-token/peer
+   rejection. No secrets/frames printed. Persistent client polls STATUS.
+6. Scope1 CREATE/START: collect bounded synthetic JSON proof from its private
+   pipe, verify UID/GID non-root, PID1/namespace inode changes, capability sets0,
+   NNP, no host root. Inspect owned scope limits/process membership and pidfd.
+   Fixture forks one harmless descendant. Trusted read coordinator provides grace;
+   prove independent termination at existing240-second ceiling, empty scope and
+   RELEASE. Never substitute EXEC_READY for successful worker exec/proof.
+7. Scope2 CREATE/START then crash/close the client. Prove owned descendant kill,
+   RELEASE/empty state and zero residuals for that scope.
+8. Scope3 CREATE/START then terminate only the validation service's trusted main
+   process in a controlled crash. Restart once as a recovery phase (not worker
+   retry). Prove resource ledger recovery, no worker resurrection, empty scopes,
+   no retained private mounts. Admission fails if ownership is ambiguous.
+9. Execute TERMINATE/RELEASE where applicable, stop validation service, verify
+   owned scope population0 and worker/pidfd reaping. Private namespaces vanish;
+   verify rootfs paths are not mounts. Remove only inode/hash-matching owned roots,
+   scopes, socket, unit and installation artifacts. Preserve FAILED_DIRTY ledger
+   and installation if cleanup cannot be proven. Check workers0/scopes0/mounts0.
+10. Remove temporary privilege enrollment/client token through explicit reviewed
+    paths after clean proof. Preserve bounded safe evidence. No broad cleanup
+    command, arbitrary PID kill, umount-a, pkill or host cgroup scan is permitted.
 
-Prerequisite: complete and review snapshot/argv/child-launcher/identity/capability/
-mount/cgroup qualification, independent supervision and durable recovery first.
-Until then Stage3.1D is BLOCKED; do not authorize installation of this checkpoint.
-After readiness: use a disposable VM (native Ubuntu first, WSL separately), no
-projects/models/providers/gateway. Explicitly install temporary root-owned service
-and enrolled unprivileged test client. Test authorized handshake, wrong peer/token;
-synthetic child namespace IDs, mount/rootfs visibility, UID/GID and all capability
-sets; exact cgroup limits and descendant membership; pidfd identity; scoped kill;
-real existing180+60/240 lease; controller disconnect; supervisor crash/restart
-recovery. Check all mounts/cgroups/processes gone. Remove temporary unit/package/
-enrollment/journal/runtime only after cleanup proof; preserve bounded test facts.
-Never host-wide kill/unmount or erase a dirty ledger to claim clean rollback.
+The ordered23-phase plan and rollback target validator are data-only, no privileged
+executor exposed. The future owner-authorized operator performs these
+explicit steps on the validation machine. No phase was executed in Stage3.1C.
 
-Next preparation checkpoint must complete these named gaps before one separately
-authorized Stage3.1D validation. This milestone is PARTIAL, not production-ready.
+## TESTS / SECURITY REVIEW
+
+Compact regression tables exercise descriptor replacement, source symlink/hash
+rejection, argv immutability, FD close set, environment, ordered child composition,
+resource bounds, deadline monitor, disconnect, lifecycle transitions, atomic
+journal/parser/secret rejection, ownership recovery, service refusal, deterministic
+manifest and foreign rollback rejection. Existing simulation/authentication tests
+remain applicable. Full trusted runner includes historical isolation fixtures;
+new real-backend tests use only recording calls, mocks and unprivileged probes.
+
+Security call-site inventory is generated from the complete privilege package
+and stored below. No shell=True/os.system/eval/pickle/unsafe YAML. ast.literal_eval
+in policy parses repository-owned constants only. No arbitrary RPC executable,
+path, environment, mount pair, cgroup or PID. Tokens are never logged. Production
+kernel behavior remains unverified until Stage3.1D.
+
+| Call site | Primitive | Reachability and justification |
+|---|---|---|
+| `orchestrator/privilege/backend.py:110` | `Popen` | Existing fixed synthetic direct-child test fixture; owned Popen/pidfd only; never an RPC PID. |
+| `orchestrator/privilege/backend.py:117` | `pidfd_open` | Existing fixed synthetic direct-child test fixture; owned Popen/pidfd only; never an RPC PID. |
+| `orchestrator/privilege/backend.py:25` | `pidfd_send_signal` | Existing fixed synthetic direct-child test fixture; owned Popen/pidfd only; never an RPC PID. |
+| `orchestrator/privilege/backend.py:29` | `kill` | Existing fixed synthetic direct-child test fixture; owned Popen/pidfd only; never an RPC PID. |
+| `orchestrator/privilege/child.py:101` | `unshare` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:110` | `_mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:112` | `_mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:113` | `_mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:115` | `_mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:119` | `fchown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:123` | `chown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:124` | `chown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:127` | `mknod` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:128` | `_mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:130` | `chroot` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:159` | `execve` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:55` | `mount` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:70` | `fchown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/child.py:83` | `fchown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/journal.py:59` | `fchmod` | Restricts owned staging/temporary files to0600/0400, not a system installation. |
+| `orchestrator/privilege/kernel.py:139` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/kernel.py:149` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/kernel.py:187` | `Popen` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/kernel.py:192` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/kernel.py:200` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/kernel.py:214` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:138` | `pidfd_open` | Helper-created unreaped child identity; mocked in new lifecycle tests. |
+| `orchestrator/privilege/linux.py:202` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:207` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:216` | `_write` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:286` | `unshare` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:303` | `prctl` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:310` | `prctl` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:311` | `prctl` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:312` | `setgid` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:312` | `setgroups` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:312` | `setuid` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:319` | `capset` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:320` | `prctl` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+| `orchestrator/privilege/linux.py:44` | `syscall` | Read-only openat2 path resolution; exercised on disposable files. |
+| `orchestrator/privilege/real_journal.py:62` | `fchmod` | Restricts owned staging/temporary files to0600/0400, not a system installation. |
+| `orchestrator/privilege/sealed.py:97` | `fchmod` | Restricts owned staging/temporary files to0600/0400, not a system installation. |
+| `orchestrator/privilege/security.py:77` | `fchmod` | Restricts owned staging/temporary files to0600/0400, not a system installation. |
+| `orchestrator/privilege/service.py:135` | `fchmod` | Temp enrollment mode0600, or future kernel-verified delegated domain; no live enrollment. |
+| `orchestrator/privilege/service.py:95` | `fchmod` | Temp enrollment mode0600, or future kernel-verified delegated domain; no live enrollment. |
+| `orchestrator/privilege/supervisor.py:151` | `chown` | Permit-gated future service/child setup; mocked/recorded in Stage3.1C; not executed privileged. |
+
+No umount/raw os.kill/syscall kill sites exist in the new backend. Cgroup writes
+are confined to kernel.LinuxDriver._write and the still-disabled legacy
+linux.OwnedCgroup._write. Journal/enrollment writes are private atomic local
+files. FD-based exec is approved ELF only. The C fixture reads bounded operational
+proc metadata and forks a single harmless descendant; it has only been compiled,
+never run. No mount/cgroup/model/provider RPC fields were added.

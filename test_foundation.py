@@ -30,6 +30,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege_linux import LinuxPreparationCases
         with self.subTest(case="linux_preparation"):
             LinuxPreparationCases().cases()
+        from test_privilege_complete import LinuxCompleteCases
+        with self.subTest(case="linux_complete"):
+            LinuxCompleteCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

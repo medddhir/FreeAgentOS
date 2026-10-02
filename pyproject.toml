@@ -24,5 +24,6 @@ freeagentos_data = "data"
 freeagentos_tools = "bin"
 
 [tool.setuptools.package-data]
+"orchestrator.privilege" = ["validation.service", "fixtures/*.c"]
 freeagentos_data = ["*.json"]
 freeagentos_tools = ["dev-intel", "prompt-intel", "exa-intel", "freeagent-test", "freeagent-run", "freeagent-code"]

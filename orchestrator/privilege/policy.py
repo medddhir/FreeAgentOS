@@ -66,7 +66,9 @@ def policy_hash():
            'protocol_bounds':{'frame':wire.MAX_FRAME,'clients':wire.MAX_CLIENTS,'active':wire.MAX_ACTIVE,
                               'per_uid':wire.MAX_PER_UID,'entries':wire.MAX_ENTRIES,'requests':wire.MAX_REQUESTS,'rate':wire.MAX_RATE,'journal_bytes':wire.MAX_JOURNAL,'transport_timeout_ms':int(wire.TIMEOUT*1000)},
            'environment':dict(ENVIRONMENT),'lease':{'base':180,'grace':60,'hard':240,'recent':30},
-           'caps':{'read':8,'write':8,'planner_targets':4,'fixer_attempts':2}}
+           'caps':{'read':8,'write':8,'planner_targets':4,'fixer_attempts':2},
+           'linux_contract_sources':{path.name:hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(Path(__file__).parent.glob('*.py'))}}
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
