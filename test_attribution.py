@@ -79,6 +79,8 @@ class I(unittest.TestCase):
         self.assertEqual(profiles.selected_profile('coder').profile_id,'claude-free-default')
         self.session_binding()
         self.lifecycle_diagnostics()
+        from test_attribution_diagnostic import check_diagnostic
+        check_diagnostic(self)
 
     def session_binding(self):
         import os,socket,tempfile,threading,subprocess
