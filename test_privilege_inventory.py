@@ -79,7 +79,7 @@ class InventoryCases(unittest.TestCase):
             for suffix in ('security-probe','security_probe.c','compiler.identity','build.record'):
                 e=next(e for e in plan['entries'] if e['target'].endswith(suffix));path=root/e['slot'];raw=path.read_bytes()
                 path.write_bytes(b'altered');self.reject(obs.capture);path.write_bytes(raw);path.chmod(e['mode'])
-            e=next(e for e in plan['entries'] if e['target'].endswith('capture.json'));(root/e['slot']).write_bytes(b'x'*(i.MAX_FILE+1));self.reject(obs.capture)
+            e=next(e for e in plan['entries'] if e['type']=='file' and e['staged']);(root/e['slot']).write_bytes(b'x'*(i.MAX_FILE+1));self.reject(obs.capture)
             binding,build,_=self.identities();build['fixture_source_sha256']='0'*64;self.reject(lambda:i.prepare(binding,build))
     def case_planned_or_partial_cannot_authorize(self):
         with self.fixture() as (root,plan,obs,snapshot,contract):
@@ -90,7 +90,7 @@ class InventoryCases(unittest.TestCase):
             changed=self.copy(contract);changed['mode']='REAL_VALIDATION';self.reject(lambda:i.prerequisite(plan,snapshot,changed))
     def case_persistence_interrupted_and_restart(self):
         with self.fixture() as (root,plan,obs,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
-            Path(tmp).chmod(0o700);i.persist_record(tmp,plan,snapshot,contract)
+            Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract)
             self.assertEqual(i.load_record(tmp,contract)['observed'],snapshot)
             self.reject(lambda:i.persist_record(tmp,plan,snapshot,contract))
             path=Path(tmp)/'inventory.json';path.write_bytes(b'{');self.reject(lambda:i.load_record(tmp,contract))
@@ -120,7 +120,14 @@ class InventoryCases(unittest.TestCase):
                 Path(tmp).chmod(0o700);guard=f.guard(directory,expected)
                 journal=ResourceJournal(tmp,expected['policy'],expected['owner'],uid=os.getuid())
                 try:
-                    guard.claim();value=inventory_plan(guard,journal,plan,snapshot)
+                    guard.claim()
+                    self.reject(lambda:inventory_plan(guard,journal,plan,snapshot))
+                    report=Path(tmp)/'inventory';report.mkdir(mode=0o700)
+                    record_proof=i.persist_record(report,plan,snapshot,expected)
+                    receipt=i.ReceiptStore(report)
+                    self.addCleanup(receipt.close)
+                    identity=receipt.publish(obs,snapshot,expected,record_proof)
+                    value=inventory_plan(guard,journal,plan,snapshot,receipt=receipt,receipt_identity=identity,observer=obs)
                     self.assertFalse(value['removal_enabled']);self.assertFalse(value['inventory']['qualifying'])
                     self.reject(guard.claim)
                     partial=self.copy(snapshot);partial['observations'].pop()
@@ -137,3 +144,130 @@ class InventoryCases(unittest.TestCase):
             self.assertEqual(cached(b'x=1').body[0].value.value,1);self.assertEqual(cached(b'x=2').body[0].value.value,2)
             self.reject(lambda:cached(b'x='));self.assertEqual(cached.cache_info().maxsize,64)
         self.assertIs(ps._tree,original)
+
+    def case_conditional_membership(self):
+        with self.fixture() as (root,plan,observer,observed,contract):
+            targets={e['target'] for e in plan['entries']}
+            self.assertEqual(sum(t.startswith('RECOVERY_ROOT/rollback-') for t in targets),42)
+            self.assertEqual(sum(t.startswith('CAMPAIGN_ROOT/probe-') for t in targets),3)
+            self.assertIn('/var/lib/freeagentos-stage31d/control/state.json',targets)
+            for e in plan['entries']:
+                if e['target'] in ('CAMPAIGN_ROOT/reserved.json','CAMPAIGN_ROOT/consumed.json'):
+                    self.assertEqual(e['applicability'],'CONDITIONAL')
+            entry=next(e for e in plan['entries'] if e['staged'] and e['applicability']=='CONDITIONAL')
+            (root/entry['slot']).unlink();snapshot=observer.capture()
+            contract['inventory_sha256']=i.digest({'plan':plan,'observed':snapshot})
+            self.assertFalse(i.prerequisite(plan,snapshot,contract)['qualifying'])
+            required=next(e for e in plan['entries'] if e['staged'] and e['applicability']=='REQUIRED' and e['type']=='file')
+            (root/required['slot']).unlink();self.reject(observer.capture)
+
+    def case_receipt_restart_freshness_and_redaction(self):
+        with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+            Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract)
+            store=i.ReceiptStore(tmp)
+            try:
+                identity=store.publish(observer,snapshot,contract,record_proof)
+                self.assertTrue(store.accept(identity,observer,snapshot,contract)['freshly_rechecked'])
+                self.reject(lambda:store.publish(observer,snapshot,contract,record_proof))
+                raw=(Path(tmp)/'receipt.json').read_bytes();self.assertNotIn(b'SYNTHETIC-TEST',raw)
+                self.assertLess(len(raw),i.MAX_RECORD)
+            finally:store.close()
+            store=i.ReceiptStore(tmp)
+            try:
+                self.assertFalse(store.accept(identity,observer,snapshot,contract)['qualifying'])
+                e=next(e for e in plan['entries'] if e['type']=='file' and e['staged'] and e['category']!='CREDENTIAL')
+                (root/e['slot']).write_bytes(b'changed')
+                self.reject(lambda:store.accept(identity,observer,snapshot,contract))
+            finally:store.close()
+
+    def case_receipt_durability_boundaries(self):
+        # file fsync, pending-directory fsync, published-directory fsync.
+        for boundary in (1,2,3):
+            with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+                Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+                original=os.fsync;calls=[]
+                def failure(fd):
+                    calls.append(fd)
+                    if len(calls)==boundary:raise OSError('recording durability fault')
+                    return original(fd)
+                try:
+                    with patch.object(i.os,'fsync',side_effect=failure):self.reject(lambda:store.publish(observer,snapshot,contract,record_proof))
+                    self.assertTrue((Path(tmp)/'inventory.json').exists())
+                    self.assertTrue((Path(tmp)/('receipt.json' if boundary==3 else 'receipt.pending')).exists())
+                    self.reject(lambda:store.publish(observer,snapshot,contract,record_proof))
+                finally:store.close()
+        for operation in ('write',):
+            with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+                Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+                try:
+                    with patch.object(i.os,operation,side_effect=OSError('recording fault')):self.reject(lambda:store.publish(observer,snapshot,contract,record_proof))
+                    self.assertTrue((Path(tmp)/'receipt.pending').exists())
+                finally:store.close()
+
+    def case_receipt_conflict_replacement_and_lock(self):
+        with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+            Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+            try:
+                self.reject(lambda:i.ReceiptStore(tmp))
+                identity=store.publish(observer,snapshot,contract,record_proof)
+                path=Path(tmp)/'receipt.json';raw=path.read_bytes();path.rename(Path(tmp)/'saved');path.write_bytes(raw);path.chmod(0o600)
+                self.reject(lambda:store.accept(identity,observer,snapshot,contract))
+                path.unlink();path.symlink_to(Path(tmp)/'saved');self.reject(lambda:store.accept(identity,observer,snapshot,contract))
+            finally:store.close()
+        with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+            Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+            from orchestrator.privilege import socket_state
+            rename=socket_state._rename
+            def conflict(fd,source,target):
+                out=os.open(target,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600,dir_fd=fd)
+                os.close(out);rename(fd,source,target)
+            try:
+                with patch.object(socket_state,'_rename',side_effect=conflict):self.reject(lambda:store.publish(observer,snapshot,contract,record_proof))
+                self.assertTrue((Path(tmp)/'receipt.pending').exists());self.assertEqual((Path(tmp)/'receipt.json').read_bytes(),b'')
+            finally:store.close()
+
+    def case_receipt_invalid_and_record_replacement(self):
+        for mode in ('corrupt','truncated','version','qualifying','record'):
+            with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+                Path(tmp).chmod(0o700);record_proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+                try:
+                    expected=store.publish(observer,snapshot,contract,record_proof);path=Path(tmp)/'receipt.json'
+                    if mode=='record':
+                        record=Path(tmp)/'inventory.json';raw=record.read_bytes();record.rename(Path(tmp)/'original');record.write_bytes(raw);record.chmod(0o600)
+                    else:
+                        value=json.loads(path.read_bytes())
+                        if mode in ('version','qualifying'):value['version' if mode=='version' else 'qualifying']=2 if mode=='version' else True
+                        raw=b'{' if mode=='corrupt' else path.read_bytes()[:-1] if mode=='truncated' else i.encode(value)
+                        path.write_bytes(raw)
+                        # Even a caller supplying a new identity cannot bypass schema checks.
+                        expected={'identity':i._identity(path.stat()),'sha256':hashlib.sha256(raw).hexdigest()}
+                    self.reject(lambda:store.accept(expected,observer,snapshot,contract))
+                    self.assertTrue((Path(tmp)/'inventory.json').exists())
+                finally:store.close()
+
+    def case_dynamic_journal_membership(self):
+        binding,build,_=self.identities()
+        plan=i.prepare(binding,build,['journal/pending-'+'a'*32,'control/pending-'+'b'*32])
+        self.assertEqual(len(plan['dynamic']),2);i.validate_plan(plan)
+        for members in (['journal/pending-'+'a'*32]*2,['../foreign'],['journal/pending-other'],['/etc/passwd'],[{}]):
+            self.reject(lambda:i.prepare(binding,build,members))
+        self.reject(lambda:i.prepare(binding,build,['journal/pending-'+format(n,'032x') for n in range(i.MAX_ENTRIES)]))
+
+    def case_receipt_bounds_identity_and_publication(self):
+        with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+            Path(tmp).chmod(0o700);proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+            try:
+                record=Path(tmp)/'inventory.json';raw=record.read_bytes();record.rename(Path(tmp)/'original');record.write_bytes(raw);record.chmod(0o600)
+                self.reject(lambda:store.publish(observer,snapshot,contract,proof))
+                self.assertFalse((Path(tmp)/'receipt.json').exists())
+            finally:store.close()
+        with self.fixture() as (root,plan,observer,snapshot,contract),tempfile.TemporaryDirectory() as tmp:
+            Path(tmp).chmod(0o700);proof=i.persist_record(tmp,plan,snapshot,contract);store=i.ReceiptStore(tmp)
+            try:
+                expected=store.publish(observer,snapshot,contract,proof)
+                changed=self.copy(contract);changed['enrollment']='f'*32
+                self.reject(lambda:store.accept(expected,observer,snapshot,changed))
+                path=Path(tmp)/'receipt.json';path.chmod(0o644)
+                self.reject(lambda:store.accept(expected,observer,snapshot,contract));path.chmod(0o600)
+                path.write_bytes(b'x'*(i.MAX_RECORD+1));self.reject(lambda:store.accept(expected,observer,snapshot,contract))
+            finally:store.close()

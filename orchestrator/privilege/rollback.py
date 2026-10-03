@@ -173,8 +173,10 @@ class RecordingRollback:
         return result
 
 
-def inventory_plan(guard,journal,inventory,observed):
+def inventory_plan(guard,journal,inventory,observed,*,receipt=None,receipt_identity=None,observer=None):
     """B10 recording prerequisite; never enables installation removal."""
-    from .inventory import prerequisite
-    proof=prerequisite(inventory,observed,guard.expected)
+    if receipt is None or receipt_identity is None or observer is None:
+        raise p.BoundaryError('POLICY_REJECTED')
+    if observer.plan!=inventory:raise p.BoundaryError('POLICY_REJECTED')
+    proof=receipt.accept(receipt_identity,observer,observed,guard.expected)
     return {'recovery':make_plan(guard,journal),'inventory':proof,'removal_enabled':False}

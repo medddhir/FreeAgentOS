@@ -16,13 +16,13 @@ from .security import directory_fd
 from .validation import bundle_manifest
 
 VERSION=1
-MAX_ENTRIES=128
+MAX_ENTRIES=192  # fixed rollback audit family adds 42 entries to the prior 98
 MAX_FILE=4*1024*1024
 MAX_TOTAL=32*1024*1024
 MAX_RECORD=256*1024
 BINDING=('installation','enrollment','owner','source_commit','policy','package_sha256','runtime_sha256')
 PROVENANCE=('synthetic_sha256','security_probe_sha256','fixture_source_sha256','synthetic_source_sha256',
-            'compiler_sha256','build_recipe_sha256','build_record_sha256')
+            'compiler_sha256','build_recipe_sha256','build_record_sha256','launcher_sha256')
 
 
 def encode(value):
@@ -51,7 +51,7 @@ def _fixture(name):
     finally:os.close(root)
 
 
-def prepare(binding,provenance):
+def prepare(binding,provenance,dynamic=()):
     p.keys(binding,BINDING);p.keys(provenance,PROVENANCE)
     if (any(not p.identifier(binding[k],40 if k=='source_commit' else 32 if k in ('installation','enrollment','owner') else 64) for k in BINDING)
             or any(not p.identifier(v,64) for v in provenance.values()) or binding['policy']!=policy_hash()
@@ -59,10 +59,10 @@ def prepare(binding,provenance):
             or provenance['synthetic_source_sha256']!=_fixture('synthetic_worker.c')):raise p.BoundaryError('POLICY_REJECTED')
     manifest=bundle_manifest(binding['package_sha256'],binding['runtime_sha256'],provenance['synthetic_sha256'])
     entries=[]
-    def add(target,kind,mode,category,sha=None,staged=True):
-        limit=65 if category=='CREDENTIAL' else 65536 if target.endswith('/capture.json') else 8192 if target.endswith(('/approval.json','/reserved.json','/consumed.json')) else 262144 if target.endswith(('/resources.json','/control.json','/inventory.json')) else MAX_FILE
+    def add(target,kind,mode,category,sha=None,staged=True,applicability="REQUIRED"):
+        limit=8192 if target.startswith(('RECOVERY_ROOT/','CAMPAIGN_ROOT/')) else 2048 if target.endswith(('supervisor.sock.owner.json','supervisor.sock.pending')) else 65 if category=='CREDENTIAL' else 65536 if target.startswith('OWNED_B8/') else 2048 if target.startswith('OWNED_B7/') else 8192 if target.endswith(('/approval.json','/reserved.json','/consumed.json')) else 262144 if target.endswith(('/resources.json','/state.json','/inventory.json','/receipt.json')) else 262144 if '/pending-' in target else MAX_FILE
         entries.append({'slot':format(len(entries),'03d'),'target':target,'type':kind,'mode':mode,
-                        'category':category,'sha256':sha,'staged':staged,'max_bytes':limit,'installed_uid':'ENROLLED_UID' if target.startswith('ENROLLED_PRIVATE_CLIENT/') else 0,'installed_gid':'ENROLLED_GID' if target.startswith('/run/') or target.startswith('ENROLLED_PRIVATE_CLIENT/') else 0})
+                        'category':category,'applicability':applicability,'sha256':sha,'staged':staged,'max_bytes':limit,'installed_uid':'ENROLLED_UID' if target.startswith('ENROLLED_PRIVATE_CLIENT/') else 0,'installed_gid':'ENROLLED_GID' if target.startswith('/run/') or target.startswith('ENROLLED_PRIVATE_CLIENT/') else 0})
     for item in manifest['entries']:
         source=item['source'];kind='directory' if source.endswith('directory') or source in ('package','runtime','kernel-delegated-domain') else 'file'
         category='CREDENTIAL' if source=='private-token' else 'RUNTIME' if source=='kernel-delegated-domain' else 'RETAINED' if source in ('state-directory','resource-journal-directory','control-journal-directory') else 'IMMUTABLE'
@@ -70,6 +70,7 @@ def prepare(binding,provenance):
     add('/etc/freeagentos-stage31d/verification.json','file',0o600,'RETAINED')
     add('/etc/freeagentos-stage31d/install-manifest.json','file',0o600,'RETAINED')
     add('/var/lib/freeagentos-stage31d/input','directory',0o700,'RUNTIME',staged=False)
+    add('/opt/freeagentos-supervisor/venv/bin/python','file',0o755,'IMMUTABLE',provenance['launcher_sha256'])
     add('/opt/freeagentos-supervisor/runtime/bin/security-probe','file',0o755,'IMMUTABLE',provenance['security_probe_sha256'])
     for name,key in (('security_probe.c','fixture_source_sha256'),('synthetic_worker.c','synthetic_source_sha256')):
         add('/opt/freeagentos-supervisor/fixtures/'+name,'file',0o644,'IMMUTABLE',provenance[key])
@@ -88,21 +89,43 @@ def prepare(binding,provenance):
         ('supervisor.sock.owner.json','file',0o600,'RETAINED',True),('supervisor.sock.pending','file',0o600,'RETAINED',False),
         ('supervisor.sock.retired','socket',0o660,'RUNTIME',False)):
         add('/run/freeagentos-stage31d/'+name,kind,mode,category,staged=staged)
-    for name in ('approval.json','campaign.lock','reserved.json','consumed.json','inventory.json','capture.json','recovery-results.json','resources.json','control.json'):
-        add('/var/lib/freeagentos-stage31d/evidence/'+name,'file',0o600,'RETAINED')
+    # Logical protected roots are registered by the future installation, not RPC paths.
+    for name in ('approval.json','campaign.lock','reserved.json','consumed.json'):
+        add('CAMPAIGN_ROOT/'+name,'file',0o600,'RETAINED',applicability='CONDITIONAL' if name in ('reserved.json','consumed.json') else 'REQUIRED')
+    for selector in ('cpu','memory','pids'):
+        add('CAMPAIGN_ROOT/probe-'+selector+'.json','file',0o600,'RETAINED',applicability='CONDITIONAL')
+    for round_id in range(3):
+        for name in ([f'rollback-{round_id}.json',f'rollback-{round_id}-result.json']+
+                     [f'rollback-{round_id}-action-{action}.json' for action in range(12)]):
+            add('RECOVERY_ROOT/'+name,'file',0o600,'RETAINED',applicability='CONDITIONAL')
+    for target in ('/var/lib/freeagentos-stage31d/journal/resources.json',
+                   '/var/lib/freeagentos-stage31d/control/state.json'):
+        add(target,'file',0o600,'RETAINED')
+    for name in ('inventory.json','receipt.json','receipt.lock','receipt.pending'):
+        add('INVENTORY_ROOT/'+name,'file',0o600,'RETAINED',applicability='CONDITIONAL')
+    # B7/B8 capture is owned in-memory state; no existing persistence pathname.
+    for n in range(3):
+        add('OWNED_B7/'+str(n),'file',0o600,'RETAINED',staged=False,applicability='CONDITIONAL')
+        add('OWNED_B8/'+str(n),'file',0o600,'RETAINED',staged=False,applicability='CONDITIONAL')
+    # Only the two existing journal atomic-write families admit variable names.
+    if type(dynamic) not in (list,tuple) or len(dynamic)>MAX_ENTRIES or any(type(v) is not str for v in dynamic) or len(set(dynamic))!=len(dynamic):raise p.BoundaryError('BOUNDS_EXCEEDED')
+    for member in dynamic:
+        import re
+        if type(member) is not str or re.fullmatch(r'(journal|control)/pending-[0-9a-f]{32}',member) is None:raise p.BoundaryError('PATH_REJECTED')
+        add('/var/lib/freeagentos-stage31d/'+member,'file',0o600,'RETAINED')
     for n in range(3):
         # Runtime ledger IDs supply eventual identity; labels do not prove absence.
         add('OWNED_SCOPE/'+str(n),'directory',0o700,'RUNTIME',staged=False)
         add('OWNED_ROOT/'+str(n),'directory',0o700,'RUNTIME',staged=False)
     if len(entries)>MAX_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
     return {'version':VERSION,'kind':'PLANNED','binding':dict(binding),'provenance':dict(provenance),
-            'entries':entries,'authority':False,'qualifying':False,'build_reproducible':'UNPROVEN',
+            'entries':entries,'dynamic':list(dynamic),'authority':False,'qualifying':False,'build_reproducible':'UNPROVEN',
             'evidence_limits':{'campaign_records':3,'rollback_files':42,'capture_bytes':65536,'resource_journal_bytes':262144}}
 
 
 def validate_plan(plan):
-    p.keys(plan,('version','kind','binding','provenance','entries','authority','qualifying','build_reproducible','evidence_limits'))
-    expected=prepare(plan['binding'],plan['provenance'])
+    p.keys(plan,('version','kind','binding','provenance','entries','dynamic','authority','qualifying','build_reproducible','evidence_limits'))
+    expected=prepare(plan['binding'],plan['provenance'],plan['dynamic'])
     if encode(plan)!=encode(expected):raise p.BoundaryError('POLICY_REJECTED')
     return digest(plan)
 
@@ -131,10 +154,12 @@ class StagingInventory:
         self.check();plan=json.loads(encode(self.plan))
         if digest(plan)!=self.plan_hash:raise p.BoundaryError('POLICY_REJECTED')
         expected={e['slot'] for e in plan['entries'] if e['staged']}
-        if set(os.listdir(self.fd))!=expected:raise p.BoundaryError('JOURNAL_INVALID')
+        present=set(os.listdir(self.fd))
+        required={e['slot'] for e in plan['entries'] if e['staged'] and e['applicability']=='REQUIRED'}
+        if not required<=present or not present<=expected:raise p.BoundaryError('JOURNAL_INVALID')
         observations=[];total=0
         for e in plan['entries']:
-            if not e['staged']:
+            if not e['staged'] or e['slot'] not in present:
                 observations.append({'slot':e['slot'],'status':'UNOBSERVED','identity':None,'sha256':None});continue
             flags=os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK
             if e['type']=='directory':flags|=os.O_DIRECTORY
@@ -181,8 +206,10 @@ def prerequisite(plan,observed,contract):
     if type(values) is not list or len(values)!=len(entries):raise p.BoundaryError('JOURNAL_INVALID')
     for e,v in zip(entries,values):
         p.keys(v,('slot','status','identity','sha256'))
-        if v['slot']!=e['slot'] or v['status']!=('STAGING_OBSERVED' if e['staged'] else 'UNOBSERVED'):raise p.BoundaryError('JOURNAL_INVALID')
-        if e['staged']:
+        if v['slot']!=e['slot'] or v['status'] not in ('STAGING_OBSERVED','UNOBSERVED'):raise p.BoundaryError('JOURNAL_INVALID')
+        if v['status']=='UNOBSERVED' and e['staged'] and e['applicability']=='REQUIRED':raise p.BoundaryError('JOURNAL_INVALID')
+        if v['status']=='STAGING_OBSERVED' and not e['staged']:raise p.BoundaryError('JOURNAL_INVALID')
+        if v['status']=='STAGING_OBSERVED':
             p.keys(v['identity'],('device','inode','ctime_ns','size','uid','gid','mode'))
             if (any(type(n) is not int or n<0 or n>=2**63 for n in v['identity'].values()) or v['identity']['mode']!=e['mode'] or v['identity']['uid']!=os.getuid() or v['identity']['gid']!=os.getgid()
                     or v['identity']['inode']==0 or v['identity']['size']>e['max_bytes']
@@ -217,8 +244,10 @@ def persist_record(directory,plan,observed,contract):
                 if n<=0:raise p.BoundaryError('BACKEND_FAILURE')
                 offset+=n
             os.fsync(out)
+            identity=_identity(os.fstat(out))
         finally:os.close(out)
         os.fsync(fd)
+        return {'identity':identity,'sha256':hashlib.sha256(raw).hexdigest()}
     finally:os.close(fd)
 
 
@@ -242,3 +271,110 @@ def load_record(directory,contract):
     if encode(value)!=raw:raise p.BoundaryError('JOURNAL_INVALID')
     p.keys(value,('plan','observed'));prerequisite(value['plan'],value['observed'],contract)
     return value
+
+
+class ReceiptStore:
+    """Recording-only immutable receipt publication in protected registered storage.
+
+    Production requires root-owned 0700 storage/0600 files, with the receipt
+    identity held by a separate protected installation registration. A same-UID
+    staging owner can replace all evidence: these tests do not establish that
+    production trust boundary. No receipt grants authority or removal eligibility.
+    """
+    def __init__(self,directory):
+        import fcntl
+        self.path=Path(directory);self.fd=None;self.lock=None
+        self.fd=directory_fd(self.path,os.getuid())
+        try:
+            self.parent=os.fstat(self.fd)
+            self.lock=os.open('receipt.lock',os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_CLOEXEC|os.O_NONBLOCK,0o600,dir_fd=self.fd)
+            info=os.fstat(self.lock)
+            self._safe(info)
+            fcntl.flock(self.lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            self.lock_identity=_identity(info)
+            self.check()
+        except BaseException:
+            self.close();raise
+    @staticmethod
+    def _safe(info):
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink!=1 or info.st_uid!=os.getuid()
+                or info.st_gid!=os.getgid() or stat.S_IMODE(info.st_mode)!=0o600):
+            raise p.BoundaryError('JOURNAL_INVALID')
+    def check(self):
+        fd=directory_fd(self.path,os.getuid())
+        try:
+            if (os.fstat(fd).st_dev,os.fstat(fd).st_ino)!=(self.parent.st_dev,self.parent.st_ino):raise p.BoundaryError('JOURNAL_INVALID')
+            if _identity(os.stat('receipt.lock',dir_fd=fd,follow_symlinks=False))!=self.lock_identity:raise p.BoundaryError('JOURNAL_INVALID')
+        finally:os.close(fd)
+    def _read(self,name):
+        child=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=self.fd)
+        try:
+            before=os.fstat(child);self._safe(before)
+            if not 0<before.st_size<=MAX_RECORD:raise p.BoundaryError('BOUNDS_EXCEEDED')
+            raw=os.read(child,MAX_RECORD+1)
+            if (len(raw)!=before.st_size or _identity(os.fstat(child))!=_identity(before)
+                    or _identity(os.stat(name,dir_fd=self.fd,follow_symlinks=False))!=_identity(before)):
+                raise p.BoundaryError('JOURNAL_INVALID')
+            return raw,_identity(before)
+        finally:os.close(child)
+    def _pending_absent(self):
+        try:os.stat('receipt.pending',dir_fd=self.fd,follow_symlinks=False)
+        except FileNotFoundError:return
+        raise p.BoundaryError('JOURNAL_INVALID')
+    def publish(self,observer,observed,contract,record_proof):
+        self.check();self._pending_absent()
+        observer.recheck(observed)
+        record=load_record(self.path,contract)
+        if encode(record)!=encode({'plan':observer.plan,'observed':observed}):raise p.BoundaryError('POLICY_REJECTED')
+        raw,identity=self._read('inventory.json')
+        p.keys(record_proof,('identity','sha256'))
+        if record_proof!={'identity':identity,'sha256':hashlib.sha256(raw).hexdigest()}:raise p.BoundaryError('JOURNAL_INVALID')
+        for name in ('receipt.json','receipt.pending'):
+            try:os.stat(name,dir_fd=self.fd,follow_symlinks=False)
+            except FileNotFoundError:continue
+            raise p.BoundaryError('JOURNAL_INVALID')
+        receipt={'version':1,'kind':'STAGING_RECEIPT','binding':observer.plan['binding'],
+                 'inventory_sha256':digest(record),'record_sha256':hashlib.sha256(raw).hexdigest(),
+                 'record_identity':identity,'directory':{'device':self.parent.st_dev,'inode':self.parent.st_ino},
+                 'qualifying':False,'installed_observed':False}
+        payload=encode(receipt)
+        out=os.open('receipt.pending',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o600,dir_fd=self.fd)
+        try:
+            offset=0
+            while offset<len(payload):
+                n=os.write(out,payload[offset:])
+                if n<=0:raise p.BoundaryError('BACKEND_FAILURE')
+                offset+=n
+            os.fsync(out)
+        finally:os.close(out)
+        # Persist the pending intent before publication. Failure retains evidence.
+        os.fsync(self.fd);self.check()
+        from .socket_state import _rename
+        try:_rename(self.fd,'receipt.pending','receipt.json')  # Linux RENAME_NOREPLACE
+        except p.BoundaryError:raise p.BoundaryError('JOURNAL_INVALID') from None
+        os.fsync(self.fd)
+        published,saved=self._read('receipt.json')
+        if published!=payload:raise p.BoundaryError('JOURNAL_INVALID')
+        return {'identity':saved,'sha256':hashlib.sha256(payload).hexdigest()}
+    def accept(self,expected,observer,observed,contract):
+        self.check();self._pending_absent()
+        p.keys(expected,('identity','sha256'))
+        raw,identity=self._read('receipt.json')
+        if identity!=expected['identity'] or hashlib.sha256(raw).hexdigest()!=expected['sha256']:raise p.BoundaryError('JOURNAL_INVALID')
+        try:value=json.loads(raw,object_pairs_hook=p._pairs)
+        except (ValueError,UnicodeError,RecursionError):raise p.BoundaryError('JOURNAL_INVALID') from None
+        p.keys(value,('version','kind','binding','inventory_sha256','record_sha256','record_identity','directory','qualifying','installed_observed'))
+        if (encode(value)!=raw or type(value['version']) is not int or value['version']!=1
+                or value['kind']!='STAGING_RECEIPT' or value['binding']!=observer.plan['binding']
+                or value['directory']!={'device':self.parent.st_dev,'inode':self.parent.st_ino}
+                or value['qualifying'] is not False or value['installed_observed'] is not False):raise p.BoundaryError('POLICY_REJECTED')
+        record=load_record(self.path,contract);record_raw,record_identity=self._read('inventory.json')
+        if (record_identity!=value['record_identity'] or hashlib.sha256(record_raw).hexdigest()!=value['record_sha256']
+                or digest(record)!=value['inventory_sha256']
+                or encode(record)!=encode({'plan':observer.plan,'observed':observed})):raise p.BoundaryError('JOURNAL_INVALID')
+        observer.recheck(observed)  # Receipts never substitute for fresh artifact reads.
+        self.check()
+        return prerequisite(observer.plan,observed,contract)|{'receipt_sha256':expected['sha256'],'freshly_rechecked':True}
+    def close(self):
+        if self.lock is not None:os.close(self.lock);self.lock=None
+        if self.fd is not None:os.close(self.fd);self.fd=None

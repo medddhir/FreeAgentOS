@@ -1956,3 +1956,168 @@ Observed installed identities, expanded artifact membership, durable receipts,
 credential/removal adapters and real authority remain explicit gaps. No real
 installation/enrollment/approval, stress, model/provider, new-backend activation
 or Stage3.1D execution occurred. No tag/push/deployment is authorized.
+
+### B10 membership and durable staging receipt preparation
+
+Baseline ad8c6795dbebf19b1bb42a8d90605ca3cfea76df; preparation only.
+Stage3.1D NOT AUTHORIZED. No installed inventory or real cleanup is qualified.
+
+The source-backed catalog now includes the actual control/state.json and
+journal/resources.json locations, the approved service Python launcher digest,
+three campaign probe tickets, and the rollback executor's 42 audit records
+(three rounds, each with intent, twelve action records, and result). Campaign,
+recovery and inventory roots are logical protected registrations, not newly
+chosen host paths. Replaced generic capture/recovery placeholders with existing
+contracts. B7 (2048 bytes per owned result) and B8 (65536 per owned aggregate)
+are separately recorded as unobserved in-memory families for three owned scopes;
+no fictitious capture-file persistence is asserted. Existing socket lock,
+identity ledger, pending/retired state and credentials remain inventoried.
+
+Membership labels distinguish REQUIRED from CONDITIONAL (tickets, rollback and
+receipt artifacts only exist when their lifecycle applies). Declared conditional
+objects may be absent; if present they must pass identical observation checks.
+Required staged objects cannot be omitted. The two real journals' pending-<32hex>
+files use an explicit bounded dynamic allowlist: journal/ or control/ only, no
+arbitrary filename/path. Declared pending objects are required and retained.
+Extra/duplicate/foreign objects reject. All records bind exact ordered membership.
+
+Measured fixed catalog:151 entries,134 staged objects; a complete synthetic
+report measured72682 bytes before this document's final edits (source size may
+change). The old128-entry cap cannot cover98 previous entries plus42 rollback
+records and existing probe/receipt/launcher families. Entry bound is explicitly
+raised to192, permitting at most41 dynamic journal entries with this catalog.
+Exhaustion blocks publication; no unbounded discovery. File4MiB, aggregate32MiB,
+report/receipt256KiB bounds remain. Campaign/rollback records are8KiB, socket
+ledgers2KiB, resource/control journals256KiB. Original B7/B8 limits are unchanged.
+
+ReceiptStore publishes schema1 STAGING_RECEIPT: installation/enrollment/owner,
+source/policy/package/runtime binding, full inventory digest, original report
+SHA256 and device/inode/ctime/size/owner/mode, registered directory device/inode,
+qualifying=false and installed_observed=false. Fixture/build provenance and
+membership are transitively bound through the inventory digest. No token bytes
+are read or hashed: only credential metadata appears in observations.
+Compiler/build hashes remain provenance assertions, not reproducibility proof.
+
+Storage contract: production requires root-owned0700 registered storage,
+root-owned0600 single-link files and a separate protected registration retaining
+the trusted receipt identity. Tests use current-UID temporary storage only.
+An exclusive permanent0600 flock lock prevents cooperating concurrent writers;
+no-follow directory FDs and inode checks detect parent/lock substitution. Record
+publication returns a trusted inode/digest proof; receipt publication requires it,
+so replacement before receipt publication also rejects. Receipt writes use
+exclusive receipt.pending, file fsync, directory fsync, Linux renameat2
+RENAME_NOREPLACE, then directory fsync. Conflicting destinations never overwrite.
+Any uncertain persistence retains pending/published and original inventory
+records. Restart refuses pending evidence; no reset, migration or cleanup retry
+restores a consumed campaign. Publication returns the receipt identity only after
+successful durability ordering. Power-loss behavior remains untested.
+
+Acceptance requires that externally retained receipt identity, strict canonical
+bounded parsing, matching directory/report identity and digest, current policy
+and recording campaign bindings, AND fresh StagingInventory.recheck. Corrupt,
+truncated, unsupported, replaced, symlinked, stale or conflicting state rejects.
+No self-contained receipt can prove its own provenance after wholesale replacement
+by its storage owner: protected registration is an explicit trust prerequisite.
+A receipt proves only committed staging metadata under these storage assumptions;
+it does not prove root installation, real absence, enforcement or approval.
+
+B6 recording prerequisites are obtained through ReceiptStore.accept, never a
+real ticket. B9 inventory_plan now requires the receipt, trusted receipt identity
+and pinned observer, with fresh recheck; missing receipt blocks that consumer.
+The older prerequisite function remains metadata/schema validation used during
+publication; it is not fresh receipt acceptance. Removal plans remain disabled
+and retained evidence remains retained. Campaign/approval/resource/recovery
+history is neither rewritten nor deleted. Changed contract sources change B2's
+policy identity; old policy-bound records remain rejected without relabelling.
+
+Deterministic cases cover membership applicability and journal families, original
+source/executable mutations, receipt round-trip/restart/redaction, replacement
+before and after publication, lock exclusion, a conflicting destination during
+publication, write failure and each of three fsync boundaries, strict schema,
+corruption/truncation/bounds/mode, changed artifacts, and B6/B9 recording linkage.
+Existing inventory and policy/cache regressions remain. Cache comment now states
+that bounded raw source bytes remain in keys alongside immutable digest values;
+cache behavior is unchanged.
+
+B10 remains PARTIAL. Package/runtime directory hashes do not enumerate a real
+installed interpreter/dependency tree. Protected installed-identity and receipt
+registration/publication, live lifecycle family observations, secure client token
+delivery/rotation/revocation, verified compiled provenance and actual removal
+adapters remain absent. Dynamic journal entries cover declared leftovers only;
+future protected installed observation must enumerate within the bound or block
+on unknown/excess objects. B6 campaign integration, B8 real-launch/enforcement,
+B9 real recovery/absence and B12 target qualification remain unproven. Doctor
+active isolation remains UNPROVEN; no stress or privileged execution occurred.
+
+Verification outcome for this uncommitted preparation: inventory, campaign,
+rollback and policy-identity focused tables passed. Required freeagent-test ran
+518 tests in117.263s, exit1 RESULT=FAIL (62 failures,52 errors), not a timeout.
+The existing active host preflight reported sandbox_boundary, cgroup_scope,
+cgroup_kill, unprivileged_test_user and worker_scope ERROR; existing sandbox
+regressions raised ISOLATED_SANDBOX_SETUP_FAILED and dependent graph tests
+returned BLOCKED. Read-only inspection of the escalated test context showed
+UID0, effective/bounding capabilities000001ffffffffff, no_new_privs0, seccomp0
+and a writable cgroup2 mount. Therefore missing privilege or a read-only cgroup
+mount is not established as the cause. Exact active setup failure remains
+unresolved; no machine changes or blind full-suite retry were performed.
+
+A final source review corrected reserved/consumed campaign record applicability
+to CONDITIONAL: these are allocated only after claim, unlike required approval
+and permanent lock. Focused tables were rerun for this correction. Required
+verification remains FAILED/UNVERIFIED and this milestone must remain uncommitted.
+No new Linux-backend activation, campaign or B8 stress-mode execution occurred.
+The required existing suite's sandbox tests were attempted; they are not
+Stage3.1D validation or proof of new backend enforcement.
+
+### B10 required-suite failure diagnosis: invocation umask, not backend changes
+
+The117.263s failed run was launched with shell `umask077` to protect its log.
+That unintentionally changed the mask inherited by every test fixture. Grouped
+captured failures share the active sandbox setup path: fourteen retained direct
+ISOLATED_SANDBOX_SETUP_FAILED tracebacks, one actual-host-preflight assertion
+reporting ACTIVE_PREFLIGHT_ERROR:RuntimeError, and downstream graph/integrity/
+repair/CLI assertions or missing-result KeyErrors/IndexErrors after preflight
+blocked. The runner retains only64KiB, so not all52 error tracebacks survive the
+original output truncation; missing diagnostics are not invented root causes.
+
+Exact chain: sandbox._run_isolated_in_area creates rootfs with mkdir(mode0755)
+and rootfs/etc, rootfs/opt and other parents with ordinary mkdir. Mask077 makes
+these root-owned directories0700. _setup_and_exec retains all existing namespace,
+mount, cgroup and UID65534 isolation, then chroot invokes /usr/bin/env. The
+unprivileged child cannot traverse the rootfs/parents and emits Permission denied;
+no test RESULT marker reaches the parent. The parent raises
+ISOLATED_SANDBOX_SETUP_FAILED at its exit/marker check; preflight fails closed and
+graph tests never reach their expected tester/repair paths. Static capability
+availability and cleanup-evidence validation are not bypassed.
+
+Same current-source representative through freeagent-test.run: normal invocation
+PASS(0.749s); inherited077 FAIL(0.185s), with bounded observational instrumentation
+confirming child Permission denied. Normal0022 then passed host-preflight,
+CPU-policy observation and integrity-delete representatives together in3.084s.
+No production code, fixture assertion, timeout, privilege or security policy was
+changed. Corrected log capture creates its file explicitly0600 with O_EXCL and
+passes the unchanged normal environment to freeagent-test; it does not set umask.
+This is restoration of normal invocation conditions, not a host security change.
+
+Baseline sandbox.py, preflight.py and bin/freeagent-test bytes match committed
+ad8c6795 exactly. No isolated baseline checkout was necessary: paired current-code
+runs differing only in inherited mask establish the harness cause without
+assuming unrelated baseline/package environments are equivalent. Inventory,
+campaign, rollback and policy-identity tables passed again in5.426s.
+
+Read-only process checks found no concurrent unittest/freeagent-test jobs. Two
+pre-existing test-shaped root cgroups were empty(populated0, cgroup.procs empty).
+Their ownership/lifetime cannot be proven from a name alone; they were neither
+removed nor repurposed. This is not a global zero-residual or B9 cleanup claim.
+Original failed logs and diagnostic evidence remain private under /tmp.
+
+The one justified unchanged full-suite run under normal conditions passed:
+518 tests in279.461s, RESULT=PASS, exit0; total wall281.268s, conservative
+138.732s headroom below the unchanged420s limit. Log:
+/tmp/freeagent-b10-normal-conditions-required.log (0600). This supersedes the
+previous FAILED/UNVERIFIED verification outcome, not the recorded diagnostic
+history. Final scoped diff and whitespace review are required before committing.
+B10 preparation remains PARTIAL for the installed identity, dependency-tree,
+credential lifecycle, compiled provenance and real-removal gaps listed above.
+No new backend/campaign activation, B8 stress execution, real approval or
+Stage3.1D authorization occurred. Only the existing authorized suite fixtures ran.

@@ -129,7 +129,7 @@ def _resource_literal(tree,name):
     return value
 
 
-MAX_ANALYSES = 64  # at most 16MiB source keys; only immutable digests retained
+MAX_ANALYSES = 64  # bounded source bytes retained in keys (at most 16MiB), plus immutable digest values
 
 
 @lru_cache(maxsize=MAX_ANALYSES)
