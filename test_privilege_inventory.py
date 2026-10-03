@@ -24,8 +24,8 @@ class InventoryCases(unittest.TestCase):
         build={k:sha for k in i.PROVENANCE};build.update(fixture_source_sha256=i._fixture('security_probe.c'),synthetic_source_sha256=i._fixture('synthetic_worker.c'))
         return binding,build,blob
     @contextlib.contextmanager
-    def fixture(self):
-        binding,build,blob=self.identities();plan=i.prepare(binding,build)
+    def fixture(self,phase="POST_APPROVAL"):
+        binding,build,blob=self.identities();plan=i.prepare(binding,build,phase=phase)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);root.chmod(0o700)
             fd=os.open(ps._source_root(),os.O_RDONLY|os.O_DIRECTORY)

@@ -55,7 +55,8 @@ def check_package(path,uid=0):
             os.close(fd);fd=nxt
             info=os.fstat(fd)
             if info.st_uid!=uid or info.st_mode & 0o022:raise BoundaryError('POLICY_REJECTED')
-        # Hash every Python source belonging to helper + shared fixed policies.
+        # Check ownership, object type and mode throughout the package tree.
+        # Content integrity is a separate artifact/closure observation contract.
         stack=[os.dup(fd)];count=0
         try:
             while stack:

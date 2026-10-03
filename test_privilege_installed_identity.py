@@ -16,8 +16,8 @@ class InstalledIdentityCases(unittest.TestCase):
     def reject(self,fn):
         with self.assertRaises((p.BoundaryError,OSError)):fn()
     @contextlib.contextmanager
-    def fixture(self):
-        with InventoryCases().fixture() as (_,plan,observer,observed,contract),tempfile.TemporaryDirectory() as temp:
+    def fixture(self,closure=False):
+        with InventoryCases().fixture(phase="PRE_APPROVAL" if closure else "POST_APPROVAL") as (_,plan,observer,observed,contract),tempfile.TemporaryDirectory() as temp:
             base=Path(temp);base.chmod(0o700)
             tree=base/'tree';tree.mkdir(mode=0o700)
             blobs={}
@@ -32,6 +32,9 @@ class InstalledIdentityCases(unittest.TestCase):
             blobs['venv/pyvenv.cfg']=b'SYNTHETIC_NO_INTERPRETER';blobs['runtime/.freeagent-runtime']=b'FREEAGENTOS_MINIMAL_RUNTIME_V1\n'
             for name in n.REQUIRED_FILES:
                 if name not in blobs:blobs[name]=b'SYNTHETIC_DEPENDENCY_NOT_EXECUTED'
+            if closure:
+                from orchestrator.privilege.build_closure import NATIVE_FILES, PACKAGE_FILES
+                for name in NATIVE_FILES|PACKAGE_FILES:blobs[name]=b'SYNTHETIC_DECLARED_DEPENDENCY'
             dirs=set(n.RUNTIME_DIRS)
             for name in blobs:
                 path=Path(name).parent
@@ -47,6 +50,10 @@ class InstalledIdentityCases(unittest.TestCase):
             receipt=i.ReceiptStore(report);identity=receipt.publish(observer,observed,contract,proof)
             contract['qualified_target_sha256']='a'*64
             register=base/'registration';register.mkdir(mode=0o700);store=n.RecordingRegistration(register)
+            if closure:
+                store.close()
+                from orchestrator.privilege.build_closure import StagingClosureRegistration
+                store=StagingClosureRegistration(register)
             args=(receipt,identity,observer,observed,contract,dep,snapshot)
             try:yield store,args,tree
             finally:store.close();receipt.close();dep.close()

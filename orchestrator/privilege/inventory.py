@@ -51,7 +51,8 @@ def _fixture(name):
     finally:os.close(root)
 
 
-def prepare(binding,provenance,dynamic=()):
+def prepare(binding,provenance,dynamic=(),*,phase="POST_APPROVAL"):
+    if phase not in ("POST_APPROVAL","PRE_APPROVAL"):raise p.BoundaryError("POLICY_REJECTED")
     p.keys(binding,BINDING);p.keys(provenance,PROVENANCE)
     if (any(not p.identifier(binding[k],40 if k=='source_commit' else 32 if k in ('installation','enrollment','owner') else 64) for k in BINDING)
             or any(not p.identifier(v,64) for v in provenance.values()) or binding['policy']!=policy_hash()
@@ -117,15 +118,21 @@ def prepare(binding,provenance,dynamic=()):
         # Runtime ledger IDs supply eventual identity; labels do not prove absence.
         add('OWNED_SCOPE/'+str(n),'directory',0o700,'RUNTIME',staged=False)
         add('OWNED_ROOT/'+str(n),'directory',0o700,'RUNTIME',staged=False)
+    if phase=='PRE_APPROVAL':
+        for entry in entries:
+            if entry['target'].startswith(('CAMPAIGN_ROOT/','RECOVERY_ROOT/','INVENTORY_ROOT/','OWNED_B7/','OWNED_B8/')):
+                entry['staged']=False;entry['applicability']='CONDITIONAL'
     if len(entries)>MAX_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
-    return {'version':VERSION,'kind':'PLANNED','binding':dict(binding),'provenance':dict(provenance),
+    result={'version':VERSION,'kind':'PLANNED','binding':dict(binding),'provenance':dict(provenance),
             'entries':entries,'dynamic':list(dynamic),'authority':False,'qualifying':False,'build_reproducible':'UNPROVEN',
             'evidence_limits':{'campaign_records':3,'rollback_files':42,'capture_bytes':65536,'resource_journal_bytes':262144}}
+    if phase=='PRE_APPROVAL':result['phase']=phase
+    return result
 
 
 def validate_plan(plan):
-    p.keys(plan,('version','kind','binding','provenance','entries','dynamic','authority','qualifying','build_reproducible','evidence_limits'))
-    expected=prepare(plan['binding'],plan['provenance'],plan['dynamic'])
+    p.keys(plan,('version','kind','binding','provenance','entries','dynamic','authority','qualifying','build_reproducible','evidence_limits'),('phase',))
+    expected=prepare(plan['binding'],plan['provenance'],plan['dynamic'],phase=plan.get('phase','POST_APPROVAL'))
     if encode(plan)!=encode(expected):raise p.BoundaryError('POLICY_REJECTED')
     return digest(plan)
 

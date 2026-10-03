@@ -58,7 +58,7 @@ def validate_manifest(value):
                 or node['mode'] not in (0o644,0o755) or node['type']=='directory' and node['mode']!=0o755
                 or (not p.identifier(node['sha256'],64) if node['type']=='file' else node['sha256'] is not None)):
             raise p.BoundaryError('PATH_REJECTED')
-        if node['type']=='file' and not (name in REQUIRED_FILES or
+        if node['type']=='file' and not (name in REQUIRED_FILES or name in ('package/orchestrator/roles/__init__.py','python_base/lib/libpython3.12.so.1.0') or
                 re.fullmatch(r'(venv|python_base)/lib/python3\.12/[A-Za-z0-9_.+/-]+\.(py|so|pyc)',name) or
                 re.fullmatch(r'venv/lib/python3\.12/site-packages/[A-Za-z0-9_.+-]+\.dist-info/(METADATA|WHEEL|RECORD)',name) or
                 re.fullmatch(r'runtime/(lib|lib64)/[A-Za-z0-9_.+/-]+\.so(?:\.[0-9]+)*',name)):

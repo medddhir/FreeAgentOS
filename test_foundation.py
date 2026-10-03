@@ -85,6 +85,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="installed_identity_preparation"):
             InstalledIdentityCases().cases()
 
+        from test_privilege_build_closure import ClosureCases
+        with self.subTest(case="immutable_closure"):
+            ClosureCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)

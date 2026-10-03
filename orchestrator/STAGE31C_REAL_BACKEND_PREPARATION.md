@@ -2250,3 +2250,101 @@ local reads; it is not a proof that kernel I/O cannot stall. Real protected stor
 power-loss behavior, complete dependency closure and root installation remain
 unproven. Only existing authorized suite fixtures exercised isolation; no new
 privileged backend, campaign, stress mode, model or provider was activated.
+
+### B10 immutable closure and acyclic pre-approval preparation
+
+Baseline3abc2aa49aaa88ecec90ff24c5e1ea4bc1cce201. Preparation only; Stage3.1D
+NOT AUTHORIZED. build_closure.py is packaged Python source and explicitly bound
+by policy_sources. Existing policy-bound records consequently mismatch and are
+not rewritten, deleted or relabelled.
+
+SUPPORTED CONTRACT: UBUNTU24_X86_64_PY312_SUPERVISOR_V1 models a private supervisor
+package, Python3.12 interpreter/venv configuration and external python_base,
+read-only runtime and two fixed compiled synthetic fixtures. It is NOT the
+LangGraph controller installation. The supervisor service uses stdlib and the
+shared lease module; application sources retained for policy hashing need not be
+imported. The controller pyproject still requires pinned langgraph and its runtime
+lock; those dependencies are deliberately outside this isolated supervisor profile.
+The profile rejects third-party site-packages rather than claiming their closure.
+Orchestrator is currently a namespace package (no fabricated __init__.py required).
+roles/__init__.py, all existing helper/policy resources, fixture C inputs and unit
+are included. The specific shared-interpreter profile declares libpython3.12.so.1.0,
+ELF loader ld-linux-x86-64.so.2 and libc.so.6. Other required extension/native libraries
+must appear as explicitly reviewed graph nodes/edges; an unresolved edge rejects.
+Static fixtures do not automatically require dynamic loader edges. This is a
+constrained proposed bundle profile, not an observation of the current host build.
+
+GRAPH: every immutable file has exact path/category/content identity and bounded
+requires edges. All edges must resolve in the exact observed tree; all nodes must
+be reachable from the interpreter, fixture and package/resource roots. No arbitrary
+host inspection, executable discovery, ldd or importing observed code occurs.
+Declared graph completeness is NOT independently verified semantic import/ELF
+closure. Empty unresolved lists cannot turn declarations into verification.
+verification is fixed to dependency_closure=DECLARED, build=UNPROVEN and
+reproducibility=UNPROVEN; claimed verification rejects. Compiler/build/source and
+fixture identities bind to the existing inventory provenance. No compiler/build
+comparison or synthetic executable was run in this task. A future independently
+reviewed import/ELF dependency extractor and build comparison are required before
+this profile can qualify a real bundle. No claim of full verified closure is made.
+
+BOUNDS: unchanged dependency bounds1024 nodes,240-character paths,16MiB/file,
+128MiB cumulative observed bytes and cooperative10s per observation; new graph
+limit4096 edges, unchanged256KiB manifest/report limit. Directory membership and
+no-follow pinned file/ancestry checks are reused. open/read/stat/scandir and fsync
+can block between monotonic checks; these limits are not hard wall-clock bounds.
+A real publisher will require supervised I/O/build containment and protected
+storage; this milestone supplies no such authority.
+
+ORDER: inventory.prepare(...,phase='PRE_APPROVAL') adds an explicit canonical
+phase; the default POST_APPROVAL contract remains unchanged. Campaign, recovery,
+inventory receipt and capture slots remain enumerated but are conditional and
+unstaged before approval. No credential/approval placeholders grant authority.
+The ordinary staging receipt therefore can bind a pre-approval inventory without
+approval.json existing. build_closure.preapproval_identity hashes only the fixed
+binding, provenance, closure digest and immutable entries. It never includes
+observed metadata or generated receipt/approval/attempt/recovery bytes.
+Sequence: finalized source/policy -> reviewed immutable closure -> pre-approval
+inventory/fresh observations -> receipt/registration -> separately protected
+owner approval binding those prior identities -> consumed attempt/runtime ledger.
+Later full-phase accounting observes approval/attempt artifacts without rewriting
+or replacing the frozen pre-approval identity. Hashes of generated mutable bytes
+are never inserted into the build/closure graph. A publication record is evidence,
+not an input to its own immutable digest. Later source changes require new policy
+identity and invalidate prior records rather than silently refreshing them.
+
+CONSUMER: StagingClosureRegistration extends existing RecordingRegistration
+persistence and fresh receipt/dependency rechecks with mandatory graph validation
+and immutable pre-approval identity. The integrated tests publish and accept using
+existing staging inventory and durable receipt paths. Same non-qualifying flags
+apply; no protected publisher, real service/campaign cutover or credential adapter
+is added. Existing recording consumers remain explicitly non-authoritative.
+The service.check_package comment now correctly describes ownership/type/mode
+checks, not hashing. Its behavior was not expanded into content verification.
+
+DETERMINISTIC EVIDENCE: temporary synthetic graph/layout, receipt and registration
+round-trip with no approval file; foreign compiler/provenance, invalid graph,
+missing package/interpreter/stdlib/native dependencies; undeclared file and changed
+native identity; explicit refusal of reproducibility claims and extra mutable
+schema fields. Modified immutable hashes change the digest, while mutable state
+is excluded by schema. Existing staging inventory/registration regressions pass.
+These tests establish shape/binding/freshness behavior, NOT Python/ELF semantic
+closure, root ownership, fixture build reproducibility or real enforcement.
+
+B10 remains PARTIAL: independently verified complete import/native dependency
+closure and build comparison, administrator-protected publication/identity storage,
+credential lifecycle, production consumers and real removal remain missing.
+B6 campaign, B8 real launch/enforcement, B9 real cleanup and B12 target evidence
+are still unproven. Doctor active isolation remains UNPROVEN. No unowned cgroup
+was inspected or touched; no new privileged backend, service, enrollment, owner
+approval, stress mode, model or provider was activated.
+
+Verification for this milestone: focused closure/inventory/registration tables
+PASS7.289s. A temporary setuptools build_py packaging-only check byte-matched the
+new closure module, roles initializer, unit and both C fixtures; staging was
+removed by TemporaryDirectory. Existing system setuptools was used only for that
+layout check, not a pinned/reproducible release-build claim. No interpreter/native
+artifact or compiled synthetic fixture build was performed. Required unchanged
+freeagent-test PASS518 tests in227.779s, RESULT=PASS, exit0; wall229.356s,
+190.644s conservative headroom. Private log /tmp/freeagent-b10-closure-required.log
+was created explicitly0600 without changing umask. Final diff/whitespace review
+passed. Only existing authorized suite fixtures ran; no new privileged validation.
