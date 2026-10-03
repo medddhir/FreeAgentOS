@@ -134,7 +134,50 @@ class ControllerClient:
         except (ValueError,TypeError,UnicodeError,RecursionError):raise p.BoundaryError('INVALID_REQUEST') from None
         return c.validate_report(value,expectation)
 
+    def begin_security_assessment(self,sandbox,expectation,prepared):
+        """Freeze authenticated recording inputs; no launch or cleanup action."""
+        from . import security_assembly as a, security_collection as c
+        import time
+        a.plan_value(prepared,expectation)
+        pending=getattr(self,'_assessments',{})
+        now=time.monotonic_ns()
+        for key,v in list(pending.items()):
+            if now>v[0].started_ns+c.VIEW_NS:pending.pop(key)
+        handle=self._handle(sandbox)
+        if handle in pending or len(pending)>=8:raise p.BoundaryError('BOUNDS_EXCEEDED')
+        report=self.collect_security(sandbox,expectation)
+        if any(v['value']['at_ns']>time.monotonic_ns() for v in report['observations']):raise p.BoundaryError('INVALID_REQUEST')
+        seen=getattr(self,'_assessment_samples',set())
+        sample=(handle,expectation.sample,expectation.subject)
+        if sample in seen:raise p.BoundaryError('INVALID_REQUEST')
+        seen.add(sample);self._assessment_samples=seen
+        pending[handle]=(expectation,prepared,report);self._assessments=pending
+        return a.assess(expectation,prepared,report)
+
+    def finish_security_assessment(self,sandbox):
+        """Final result requires authenticated ownership-bound release proof.
+
+        STATUS is observer-only; caller must separately request normal cleanup.
+        Pending input never becomes a kernel qualification certificate.
+        """
+        from . import security_assembly as a, security_collection as c
+        import time
+        handle=self._handle(sandbox);pending=getattr(self,'_assessments',{})
+        value=pending.get(handle)
+        if value is None:raise p.BoundaryError('INVALID_STATE')
+        x,prepared,report=value
+        if time.monotonic_ns()>x.started_ns+c.VIEW_NS:
+            pending.pop(handle);raise p.BoundaryError('INVALID_STATE')
+        status=self.status(sandbox)
+        if (status['class'],status['role'])!=(x.binding['class'],x.binding['role']):raise p.BoundaryError('POLICY_REJECTED')
+        confirmed=status['state']=='RELEASED' and status['cleanup']=='CONFIRMED' and status['mode']=='LINUX'
+        result=a.assess(x,prepared,report,'CONFIRMED' if confirmed else 'UNPROVEN')
+        if status['state']=='RELEASED':pending.pop(handle)
+        return result
+
     def close(self):
         if self.channel is not None:self.channel.close();self.channel=None
         self._handles.clear();self._bindings.clear()
         if hasattr(self,'_security_seen'):self._security_seen.clear()
+        if hasattr(self,'_assessments'):self._assessments.clear()
+        if hasattr(self,'_assessment_samples'):self._assessment_samples.clear()

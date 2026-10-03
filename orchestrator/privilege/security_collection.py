@@ -38,6 +38,9 @@ def observation(value,x):
     p.keys(value,('kind','value'))
     kind=value['kind'];v=value['value']
     if kind=='PROOF_RECORD':s.validate(v,x)
+    elif kind in ('DEMAND','OUTCOME'):
+        from .security_assembly import metadata
+        metadata(kind,v,x)
     else:
         if kind not in ('ISOLATION','RESOURCES','CONTAINMENT'):raise p.BoundaryError('INVALID_REQUEST')
         p.keys(v,CAPTURE_FIELDS);identity(v,x)

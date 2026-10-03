@@ -1448,3 +1448,90 @@ Final freeagent-test: 518 tests,325.762s, RESULT=PASS, exit0. Diff/whitespace an
 new-module static execution review passed. These tests establish immutable
 recording-plan delivery and fail-closed preparation, not real stress launch,
 compiled-fixture provenance, kernel containment or resource enforcement.
+
+### B8 bounded recording assembly and final cleanup gating
+
+`security_assembly.py` reuses security_proof's validators/resource predicates and
+security_collection's immutable snapshots. Two explicit schema1 tagged union
+extensions, DEMAND and OUTCOME, carry only fixed bounded recording metadata.
+They use the existing binding/sample/subject/scope/time/provenance envelope.
+They count toward the unchanged24 records,8192 bytes per record,65536 aggregate,
+10s capture/view expiry,6144 decoded page bytes/11 pages,16KiB frames and128
+connection requests. Old proof/capture records remain valid; older controllers
+reject unknown tags. The policy source identity includes the new module and
+changed contracts, so incompatible helpers/journals remain rejected without
+migration, relabeling or deletion. B7 schema/output remains unchanged.
+
+The trusted PreparedProbe is validated against the exact canonical fixed
+recording-only plan, not merely its copied digest. Both metadata records bind
+that plan digest and the complete execution identity. Demand is independently
+recorded attempted work, not configured maxima or child stdout claims. BEFORE
+and AFTER independent counters must share the same sample/scope/identity and
+ordered interval: BEFORE <= demand < AFTER <= outcome <= original five-second
+probe window. All inputs stay within original capture time bounds. Unknown,
+extra, contradictory, overflowed, stale, wrong-plan or wrong-identity evidence
+is invalid/unproven. No raw process/file access, authorization or launch API
+was introduced. The assembly uses supplied authenticated recordings, not live
+kernel observer claims. Its expected plan is not approval to execute it.
+
+CPU requires recorded runnable demand>=2, paired fixed quota/period readback,
+matching elapsed interval, sufficient periods, positive bounded CPU usage and
+throttling events; normal observed completion and recorded executable transition
+are required. Memory requires attempted demand above the fixed memory ceiling,
+paired limit/swap readback, monotonic max/OOM/OOM-kill events, bounded peak and
+an independently recorded matching resource termination (no controller-requested
+termination). PID requires attempts above the fixed PID limit, paired readback,
+bounded peak, monotonic denial event and recorded normal completion/transition.
+Actual successful child creation need not equal all16 attempts; resource denial
+is expected. Configured limits, claims, exit alone or isolated counter increments
+cannot qualify the recorded predicates. Existing resource numeric policy and
+180/current grace/240s leases remain unchanged. No resource stress was executed.
+
+ControllerClient.begin_security_assessment retrieves an existing authenticated
+snapshot, retains its immutable validated report and plan, and returns a bounded
+pre-cleanup assessment. It does not launch, terminate or release anything.
+At most8 pending snapshots/512KiB are retained; sample/subject reuse is rejected
+and seen samples are bounded by the existing connection request budget. Expired
+pending inputs are removed on the next begin/finalize or client close; these are
+client-local recording buffers, not server resources or cleanup proof. No cursor
+lifetime, paging or request limit is bypassed. Partial capture remains unproven;
+closed INCOMPLETE snapshots containing a complete set of explicit recording
+records may establish only the selected recorded resource predicate. This is
+separate from CAPTURED's unchanged fixed-reader completeness semantics.
+
+finish_security_assessment uses authenticated STATUS for the same owned handle
+and checks role/class. Final recorded success requires RELEASED plus existing
+supervisor/backend ownership-bound CONFIRMED cleanup/absence. Release itself
+remains an explicit caller action. Unknown/dirty/nonreleased cleanup withholds
+PASS and retains cleanup_obligation. Finalized input is consumed once; expiry
+never implies cleanup. Release before capture invalidates retrieval. A frozen
+pre-release snapshot may be assessed after release within the unchanged expiry
+because cleanup uses a fresh authenticated status, not a child claim. The client
+does not add journal writes or hide dirty task/reader resources: existing B1/B4
+and async cleanup/recovery fencing remain authoritative, including release failure.
+
+Assessment fields distinguish completeness (COMPLETE/OBSERVATIONS_COMPLETE/INCOMPLETE),
+recorded_assessment (PASS/FAIL/INCONCLUSIVE), cleanup and cleanup_obligation.
+Every result has qualifying=false and enforcement=UNPROVEN, including recorded
+PASS with confirmed cleanup. It cannot make doctor active isolation READY.
+Recording metadata and fake-driver cleanup are not real-kernel proof.
+
+B8 remains PARTIAL. B6 must still supply verified owner campaign authority,
+durable one-attempt accounting and compiled-fixture provenance. The real launcher
+must bind final probe argv and protected gate/CLOEXEC channels, produce owned
+executable-transition/exit evidence, and pair actual demand and scoped counter
+reads with final cleanup. The new recording metadata must not be re-labelled
+as independently observed kernel evidence. Actual enforcement still requires
+separately authorized real-kernel validation. B6/B9/B10/B12 remain unresolved;
+Stage3.1D remains NOT AUTHORIZED. No permissive production authorization was added.
+
+Verification: seven integrated assembly cases passed, including actual typed
+client/supervisor recording retrieval and final STATUS after release for CPU,
+memory and PID; missing/configured/child-only evidence; normal partial demand
+completion; unrelated outcomes; counter reset/readback mismatch; cross-binding,
+wrong-plan, reordered/stale/overflowed inputs; duplicate assessment; early release,
+expiry and dirty cleanup after a failed owned termination. Affected collection,
+proof, stress preparation, policy, B7 and B11 regressions passed. Final
+freeagent-test passed518 tests in286.954s, RESULT=PASS, exit0. Final diff and
+whitespace checks passed. No real stress or privileged backend was executed;
+recording PASS cannot qualify isolation/readiness.

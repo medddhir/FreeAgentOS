@@ -66,6 +66,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="stress_gate_preparation"):
             StressGateCases().cases()
 
+        from test_privilege_security_assembly import SecurityAssemblyCases
+        with self.subTest(case="security_assembly"):
+            SecurityAssemblyCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)
