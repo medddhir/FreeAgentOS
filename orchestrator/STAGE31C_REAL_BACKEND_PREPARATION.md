@@ -1750,3 +1750,209 @@ whitespace review passed. B9 recording preparation is deterministically checked,
 but B9 remains PARTIAL: real adapters, B10 inventory, independent real-kernel
 absence observations and explicit owner authorization remain missing. No real
 rollback or privileged validation was executed; Stage3.1D is NOT AUTHORIZED.
+
+### B10 installation inventory preparation — staging observations only
+
+IMPLEMENTED: inventory.py extends validation.bundle_manifest rather than
+replacing the install contract. Its version1 plan has98 fixed slots (87 required
+staging objects), capped at128. Slots identify targets as data, never authorize
+caller paths or deletion. The root is explicitly registered private temporary
+storage, with flat code-owned slot names. Existing manifest paths, exact
+allowlisted package/policy sources, both synthetic C sources/executable digests,
+compiler identity/build recipe/build record digests, unit/admin/permit/enrollment,
+verification/install manifests, separate server/client token objects, socket/
+lock/ownership artifacts, campaign approval/reservation/consumption, evidence/
+resource/control ledgers, capture/recovery results and three owned scope/root
+slots are represented. Client location is ENROLLED_PRIVATE_CLIENT, not a supplied
+home directory. Future installation must resolve that class through protected
+enrollment; no current client token is created, delivered or inspected.
+
+The plan records expected root/enrolled owner classes, modes, types and artifact
+hashes. Observation records separately bind device/inode/ctime/size and staging
+UID/GID/mode. A staging observation is never ROOT_INSTALLED. Runtime sockets,
+retired/pending sockets, workspace/rootfs/scopes remain UNOBSERVED and require
+B5/resource-journal proofs and independently authorized later observations.
+The catalog does not fabricate kernel object identity or absence from paths.
+
+Bounds: each file at most4MiB, total noncredential bytes32MiB, encoded report/
+plan256KiB. Tokens64/65 bytes, capture64KiB, campaign approval/reserved/consumed
+8KiB, resource/control/inventory records256KiB. Existing B7/B8 collection limits,
+frames, paging and request budget are unchanged. B6/B9's three recording scopes,
+42 rollback audit files and bounded evidence families are recorded as inventory
+families, not invented individual host identities. Future real installation must
+materialize and prove every applicable family member; this staging adapter
+cannot inventory an arbitrary live venv, cgroup hierarchy or growing directory.
+
+SOURCE AND PROVENANCE: source commit, exact policy, installation/enrollment/owner,
+package/runtime and both fixture/executable identities bind the plan. Both C
+source digests are checked from packaged resources. Build recipe/compiler/build
+record files are digest-bound but remain recorded provenance, not proof that a
+compiler produced the executable or that a build is reproducible. Dependencies
+and runtime tree are presently opaque reviewed artifact identities: a real
+installer must supply bounded expanded immutable artifact membership and actual
+installed observations before enabling removal/campaigns. No fixture compilation
+or execution is performed by inventory tests.
+
+FILESYSTEM AND STORAGE: pinned CLOEXEC directory FDs, no-follow/nonblocking opens,
+regular single-link files, exact modes/owners, bounded reads and before/after/
+named inode checks. Staging directories must be empty; unknown flat objects,
+missing members, symlinks, duplicate slots, oversized objects, altered artifacts,
+parent or object replacement fail closed. Capture copies and hash-checks the
+validated plan before resolving any slot. recheck compares the entire snapshot;
+replacement/rotation invalidates it. The observation digest includes planned
+identity and actual nonsecret metadata/digests, not just the planned paths.
+
+Credentials are never read, hashed or returned by inventory. Only existence,
+size, ownership, mode and object identity are inventoried. Test credentials are
+fixed clearly synthetic markers in disposable folders. No real token or approval
+is issued. Public reports exclude contents; unknown schema fields cannot enter
+persisted inventory. Future rotation/revocation requires an explicit privileged
+credential transaction, stopping admission/invalidating authenticated authority,
+new server/client copies and a new inventory observation. Enrollment identity and
+resource/attempt evidence must survive revocation; deleting a token is not scope
+cleanup or proof of process absence. Existing secret storage/export rules remain.
+
+Exclusive inventory.json persistence in separate private staging evidence uses
+bounded canonical JSON, mode0600 and file/directory fsync. It never overwrites or
+resets an existing record. Partial/interrupted/corrupt/replaced/symlinked or
+unsupported records fail closed and remain for review; exclusive creation excludes
+concurrent writers. This is not a production root-owned inventory publisher or
+power-loss durability qualification. Original campaign/resource journals are not
+rewritten and old policy-bound state is not migrated/relabelled.
+
+B6/B9 INTEGRATION: prerequisite checks bind complete ordered staging observations
+and the plan to the reviewed recording campaign inventory digest, installation,
+enrollment, owner, source, policy and artifacts. Planned/partial/real-mode claims
+reject. rollback.inventory_plan supplies the checked prerequisite to the existing
+owned recovery planner. Neither API grants a campaign ticket, enables stress,
+removes installation artifacts or restores a consumed attempt. Recorded input
+always says qualifying=false, execution_enabled=false, removal_enabled=false.
+
+REMOVAL DATA ONLY: stop admission, independently clean/prove owned scopes, revoke
+server/client credentials, remove only hash-and-inode-matched immutable files,
+remove empty owned directories, retain recovery evidence. Every actual removal
+step remains blocked pending observed installed identities, B9 independent real
+absence proof and explicit owner authorization. Approval/attempt, enrollment
+ownership, journals, inventory and recovery evidence must survive ambiguity;
+state/journal parent directories are retained. No recursive deletion, PID kill,
+service control or arbitrary path interface exists.
+
+DETERMINISTIC VERIFICATION: complete synthetic staging; foreign/missing/duplicate
+objects; wrong owner/mode/type; symlinks/replacement/parent substitution; altered
+source/executable/provenance; malformed credential length; oversized capture;
+planned/partial/qualifying/version/mode substitutions; exclusive/interrupted
+persistence/restart; B6 consumed-attempt and B9 prerequisite integration; token
+redaction and retained evidence. Recording PASS cannot establish installation,
+credential authenticity, real cleanup, authority or enforcement. B9's parser
+cache is bounded64 entries, exact-source-content keyed, scoped to its test table
+and cleared on exit; changed bytes and invalid syntax reject/reparse correctly.
+No demonstrated production leak or invalidation defect was found. New inventory
+sources join the B2 allowlist, so policy mismatches remain fail closed.
+
+PACKAGING: a disposable pinned setuptools/wheel venv and temporary source tree
+built a wheel without runtime dependency installation. All55 required policy/
+helper sources plus unit/C resources were present. No global Python, installer,
+enrollment or service changed. Initial build attempt correctly failed because
+controller venv lacked build tools; disposable build used existing build lock.
+
+B10 remains PARTIAL: observed root installation, expanded dependency/runtime
+artifact membership, individual live evidence-family inventory, secure client
+credential delivery/revocation, verified compiled provenance and real inventory/
+removal adapters are absent. B6 full campaign, B8 real launch/enforcement, B9 real
+rollback and B12 target qualification remain unresolved. Stage3.1D is NOT
+AUTHORIZED; doctor active isolation remains UNPROVEN.
+
+B10 focused verification: inventory, rollback, policy identity and campaign
+regressions passed in32.915s (inventory2.104s). Final bounded inventory check
+passed in2.531s with zero FD growth. Static forbidden-operation, compilation and
+whitespace checks passed. First required suite timed out at421.473s (unchanged
+420s limit), during test_unauthorized_delete_cannot_verify. That test passed
+independently in2.379s; no leftover Python verification process was present.
+Historical successful suites measured321.157–412.397s. One unchanged-suite retry
+is justified by these bounded diagnostics, not by assuming machine slowness.
+Private verification logs remain outside Git under/tmp, mode0600.
+
+Staging storage is not a protected root publisher: load checks inode stability
+through the current read and validates the bound content, but a same-content
+replacement completed before reopening needs a separately protected durable
+receipt to prove the original storage inode. No installed/removal qualification
+is possible through these staging APIs. That production receipt/expanded
+inventory integration remains a B10 gap, not invented proof.
+
+Required-verification outcome: the single unchanged-suite retry also returned
+RESULT=TIMEOUT, EXIT_CODE=124 at420.396s, during
+UnitGraphTests.test_path_violation_blocks (preceding unit graph cases completed).
+No required full-suite PASS was obtained for B10. No further blind retry, timeout
+change, assertion weakening or test omission was performed. B10 remains a
+PARTIAL/UNVERIFIED uncommitted preparation checkpoint. Focused and wheel resource
+checks do not substitute for the required verification contract. Six scoped
+files remain uncommitted; no tag, push, deployment or privileged action occurred.
+
+### B10 timeout diagnosis — measured source-analysis reuse
+
+The two captured420s timeouts ended in different late-suite tests: first
+TrustedEntrypointTests.test_unauthorized_delete_cannot_verify after
+ test_target_sandbox_failure_returns_blocked_exit completed; retry
+UnitGraphTests.test_path_violation_blocks after
+ test_meta_heavy_small_plan_uses_one_coder_tester_and_reviewer completed. Logs
+contain no per-test timestamps. No leftover/concurrent verification job was
+present before diagnostics. Historical committed B9 passed518 tests in388.176s.
+No isolated checkout was needed: instrumentation localizes current work directly.
+
+Bounded profiling of the unchanged19 foundation regression groups passed in
+213.090s. source_identity consumed177.725s cumulative; AST parsing109.538s and
+serialization58.735s dominated. These cumulative call times overlap and must
+not be summed with thread joins. B10 itself used7.434s. Collection47.316s wall/
+43.500s CPU, campaign39.660s wall/39.157s CPU, and other older groups also repeated
+policy analysis. Every group had zero FD delta. No nested duplicate cases()
+execution was found; fixture setup/teardown independently checks fresh policy
+identity repeatedly. It is necessary to keep those identity checks, but not to
+reparse and serialize identical source bytes on every check. B10 cannot be
+identified as the sole cause from whole-suite timing; substantial pre-existing
+CPU work and suite timing variability are measured contributors.
+
+FIX: policy_sources caches only immutable per-source analysis digests, keyed by
+exact current source bytes, allowlisted relative source, validation contract and
+numeric-name set. MAX_ANALYSES=64 bounds source keys to16MiB plus small metadata;
+no mutable AST/dict, path/stat/FD, whole-policy identity or failure is cached.
+Every source_identity call still opens and reads every required source with the
+existing no-follow, type/link, byte limits and before/after identity checks.
+Missing/unreadable/symlinked/replaced sources therefore cannot be served from
+cached file metadata. New or invalid bytes must undergo original validation;
+failed analysis is not retained. Returned identity dictionaries are fresh.
+Existing binding_version and validation meaning are preserved; changed helper
+source changes B2 policy identity, so old journals still reject unchanged.
+No production policy values, service/runtime behavior or trust root changed.
+
+The redundant B9 and B10 table-only parser caches were removed. All cases and
+assertions remain, including prior mutation/syntax checks; integrated fixtures
+still execute. Added tests prove fresh reads on warm hits, cached/uncached
+analysis equality, same-size/same-mtime mutation, missing/symlink/unreadable and
+invalid content rejection after warming, immutable/fresh result isolation,
+failed-entry nonretention and bounded eviction. No test membership, security
+coverage, timeout or assertion was reduced to obtain faster execution.
+
+Focused policy/inventory/rollback/campaign checks passed in3.722s with zero FD
+delta. Repeating the unchanged foundation table under comparable profiling
+passed in20.161s, with all19 groups and zero FD deltas.54307 source reads measured
+1.08936s wall/1.07873s thread CPU;195 nonblocking flock calls measured0.00128s
+wall (max0.00012s);105 intentional sleeps measured3.75202s wall. These counters
+cover instrumented calls, not all OS I/O, and threaded timing may overlap. The
+large parsing/serialization reduction is measured; no kernel readiness proof is
+claimed. Private diagnostic logs are /tmp/freeagent-b10-foundation-profile.txt
+and /tmp/freeagent-b10-foundation-profile-after.txt, mode0600, outside Git.
+Required unchanged420s verification is run once after this measured fix.
+Inventory membership, durable receipts, installed identities and credential/
+removal adapters were not expanded by timeout diagnosis. B10 remains PARTIAL.
+
+Final required verification after the measured fix:518 tests in279.745s;
+RESULT=PASS, EXIT_CODE=0. Wall282.232s leaves137.768s conservative headroom under
+the unchanged420s limit. One full run after the fix was required and performed;
+no additional retry, skipped test or timeout extension. Log:
+/tmp/freeagent-b10-after-measured-fix.log (mode0600, outside Git). Final diff,
+whitespace and compilation review passed. Tested partial B10 preparation and
+its necessary diagnosis fix may now be committed; B10 is not complete.
+Observed installed identities, expanded artifact membership, durable receipts,
+credential/removal adapters and real authority remain explicit gaps. No real
+installation/enrollment/approval, stress, model/provider, new-backend activation
+or Stage3.1D execution occurred. No tag/push/deployment is authorized.

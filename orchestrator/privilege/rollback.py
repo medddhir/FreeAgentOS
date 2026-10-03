@@ -171,3 +171,10 @@ class RecordingRollback:
         try:self.guard._persist(prefix+'-result.json',result)
         except Exception:raise p.BoundaryError('CLEANUP_INCOMPLETE') from None
         return result
+
+
+def inventory_plan(guard,journal,inventory,observed):
+    """B10 recording prerequisite; never enables installation removal."""
+    from .inventory import prerequisite
+    proof=prerequisite(inventory,observed,guard.expected)
+    return {'recovery':make_plan(guard,journal),'inventory':proof,'removal_enabled':False}

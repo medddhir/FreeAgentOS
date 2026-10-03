@@ -5,6 +5,7 @@ package ancestry; clients use their installed package. Source-only wheels are
 required: missing source never falls back to imported application objects.
 """
 import ast
+from functools import lru_cache
 import hashlib
 import os
 from pathlib import Path
@@ -46,7 +47,7 @@ AUTHORITATIVE = MappingProxyType({
 })
 # Explicit existing helper contract: no glob admitting arbitrary adjacent files.
 PRIVILEGE_SOURCES = tuple('privilege/'+name+'.py' for name in (
-    '__init__','backend','campaign','child','client','evidence','execution','isolation','journal','kernel',
+    '__init__','backend','campaign','child','client','evidence','execution','inventory','isolation','journal','kernel',
     'linux','policy','policy_sources','protocol','real_journal','recording','rollback','sealed',
     'security','security_assembly','security_capture','security_collection','security_observe','security_proof','service','socket_state','stress_gate','supervisor','validation'))
 NUMBERS = frozenset(('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS',
@@ -128,6 +129,37 @@ def _resource_literal(tree,name):
     return value
 
 
+MAX_ANALYSES = 64  # at most 16MiB source keys; only immutable digests retained
+
+
+@lru_cache(maxsize=MAX_ANALYSES)
+def _source_digest(relative, raw, rule, numeric_names):
+    """Pure byte analysis, never cache a path/stat/FD or mutable AST/result.
+
+    Caller must first securely read the current source. Exact bytes and the
+    explicit validation contract are cache keys. Failures are not cached.
+    """
+    if relative not in AUTHORITATIVE and relative not in PRIVILEGE_SOURCES:
+        raise BoundaryError('POLICY_REJECTED')
+    if type(raw) is not bytes or not 0<len(raw)<=MAX_SOURCE_BYTES:
+        raise BoundaryError('POLICY_REJECTED')
+    tree=_tree(raw);mode,names=rule;definitions=_definitions(tree) if names else {}
+    if any(name not in definitions for name in names):raise BoundaryError('POLICY_REJECTED')
+    for name in names:
+        expected=ast.Assign if name.isupper() else ast.ClassDef if name[0].isupper() else ast.FunctionDef
+        if not isinstance(definitions[name],expected):raise BoundaryError('POLICY_REJECTED')
+    for name in numeric_names:
+        node=definitions[name]
+        if not isinstance(node,ast.Assign) or not 0<_integer(node.value,definitions)<2**63:
+            raise BoundaryError('POLICY_REJECTED')
+    for name in set(names)&{'WORKER_POLICY','RESEARCH_POLICY','RESOURCE_POLICY'}:_resource_literal(tree,name)
+    if mode=='AST':
+        nodes=[n for n in tree.body if not isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))
+               or n.name in names]
+        raw=ast.dump(ast.Module(body=nodes,type_ignores=[]),include_attributes=False).encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
 def source_identity():
     try:root=os.open(_source_root(),os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
     except OSError:raise BoundaryError('POLICY_REJECTED') from None
@@ -136,25 +168,9 @@ def source_identity():
         for relative in (*AUTHORITATIVE,*PRIVILEGE_SOURCES):
             raw=_read_source(root,relative);total+=len(raw)
             if total>MAX_TOTAL_BYTES:raise BoundaryError('POLICY_REJECTED')
-            tree=_tree(raw)
-            if relative in AUTHORITATIVE:
-                mode,names=AUTHORITATIVE[relative];definitions=_definitions(tree)
-                if any(name not in definitions for name in names):raise BoundaryError('POLICY_REJECTED')
-                for name in names:
-                    expected=ast.Assign if name.isupper() else ast.ClassDef if name[0].isupper() else ast.FunctionDef
-                    if not isinstance(definitions[name],expected):raise BoundaryError('POLICY_REJECTED')
-                for name in set(names)&NUMBERS:
-                    node=definitions[name]
-                    if not isinstance(node,ast.Assign) or not 0<_integer(node.value,definitions)<2**63:
-                        raise BoundaryError('POLICY_REJECTED')
-                for name in set(names)&{'WORKER_POLICY','RESEARCH_POLICY','RESOURCE_POLICY'}:_resource_literal(tree,name)
-                if mode=='AST':
-                    # Keep module-level bindings/control flow: later rebinding
-                    # of a deadline must not escape the selected definition.
-                    nodes=[n for n in tree.body if not isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef))
-                           or n.name in names]
-                    raw=ast.dump(ast.Module(body=nodes,type_ignores=[]),include_attributes=False).encode()
-            result[relative]=hashlib.sha256(raw).hexdigest()
+            rule=AUTHORITATIVE.get(relative,('FILE',()))
+            numeric_names=tuple(sorted(set(rule[1])&NUMBERS))
+            result[relative]=_source_digest(relative,raw,rule,numeric_names)
         return {'binding_version':2,'sources':result}
     except (OSError,ValueError,RecursionError):raise BoundaryError('POLICY_REJECTED') from None
     finally:os.close(root)

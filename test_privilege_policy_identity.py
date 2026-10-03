@@ -18,7 +18,7 @@ from test_privilege_complete import LinuxCompleteCases
 
 class PolicyIdentityCases(unittest.TestCase):
     def cases(self):
-        for name in ('stable','mutations','invalid','no_execution','agreement','mismatch','journals','packaging'):
+        for name in ('stable','mutations','invalid','no_execution','agreement','mismatch','journals','packaging','content_cache'):
             with self.subTest(case=name):getattr(self,'case_'+name)()
 
     @contextlib.contextmanager
@@ -153,3 +153,45 @@ class PolicyIdentityCases(unittest.TestCase):
         metadata=tomllib.loads(Path('pyproject.toml').read_text())
         self.assertTrue({'orchestrator','orchestrator.roles','orchestrator.privilege'}<=set(metadata['tool']['setuptools']['packages']))
         self.assertTrue(all((sources._source_root()/name).is_file() for name in (*sources.AUTHORITATIVE,*sources.PRIVILEGE_SOURCES)))
+
+    def case_content_cache(self):
+        sources._source_digest.cache_clear()
+        with self.fixture() as root:
+            first=policy.policy_hash();identity=sources.source_identity()
+            with patch.object(sources,'_read_source',wraps=sources._read_source) as read, \
+                    patch.object(sources,'_tree',side_effect=AssertionError('cache hit reparsed')):
+                self.assertEqual(identity,sources.source_identity())
+                self.assertEqual(read.call_count,len(sources.AUTHORITATIVE)+len(sources.PRIVILEGE_SOURCES))
+            # Every cached digest equals a fresh analysis; no cached AST/dict can
+            # be mutated to change a future result.
+            fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY)
+            try:
+                for name in (*sources.AUTHORITATIVE,*sources.PRIVILEGE_SOURCES):
+                    raw=sources._read_source(fd,name);rule=sources.AUTHORITATIVE.get(name,('FILE',()))
+                    nums=tuple(sorted(set(rule[1])&sources.NUMBERS))
+                    self.assertEqual(identity['sources'][name],sources._source_digest.__wrapped__(name,raw,rule,nums))
+            finally:os.close(fd)
+            identity['sources'].clear();self.assertEqual(first,policy.policy_hash())
+            path=root/'roles/lease.py';old=path.read_bytes();before=path.stat()
+            path.write_bytes(old.replace(b'BASE_SECONDS = 180',b'BASE_SECONDS = 181'))
+            os.utime(path,ns=(before.st_atime_ns,before.st_mtime_ns))
+            self.assertNotEqual(first,policy.policy_hash())  # same size/mtime
+            path.write_bytes(b'invalid syntax(')
+            for _ in range(2):
+                with self.assertRaisesRegex(p.BoundaryError,'POLICY_REJECTED'):policy.policy_hash()
+            path.write_bytes(old);self.assertEqual(first,policy.policy_hash())
+            with patch.object(sources.os,'read',side_effect=PermissionError()):
+                with self.assertRaisesRegex(p.BoundaryError,'POLICY_REJECTED'):policy.policy_hash()
+            path.unlink()
+            with self.assertRaisesRegex(p.BoundaryError,'POLICY_REJECTED'):policy.policy_hash()
+            path.symlink_to(root/'roles/activity.py')
+            with self.assertRaisesRegex(p.BoundaryError,'POLICY_REJECTED'):policy.policy_hash()
+        for n in range(sources.MAX_ANALYSES+5):
+            raw=('x=1\n# '+str(n)).encode()
+            value=sources._source_digest('privilege/__init__.py',raw,('FILE',()),())
+            self.assertIs(type(value),str)
+        self.assertEqual(sources._source_digest.cache_info().maxsize,64)
+        self.assertLessEqual(sources._source_digest.cache_info().currsize,64)
+        before=sources._source_digest.cache_info().currsize
+        with self.assertRaises(p.BoundaryError):sources._source_digest('privilege/__init__.py',b'x=',('FILE',()),())
+        self.assertEqual(before,sources._source_digest.cache_info().currsize)

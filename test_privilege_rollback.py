@@ -1,6 +1,5 @@
 """B9 offline fake recovery: no service, process or kernel mutation."""
 import contextlib
-import functools
 import json
 import os
 from pathlib import Path
@@ -13,22 +12,15 @@ from test_privilege_campaign import CampaignGuardCases
 
 class RollbackCases(unittest.TestCase):
     def cases(self):
-        # Parsing is pure and readers never mutate the AST. Cache exact source
-        # bytes only for this recording table; every policy call still securely
-        # reads, validates and hashes sources. Different bytes cannot reuse ASTs.
         from orchestrator.privilege import policy_sources
         from orchestrator.privilege.policy import policy_hash
         expected_policy=policy_hash()
-        parsed=functools.lru_cache(maxsize=64)(policy_sources._tree)
-        try:
-            with patch.object(policy_sources,'_tree',parsed):
-                self.assertEqual(policy_hash(),expected_policy)
-                self.assertNotEqual(parsed(b'value=1').body[0].value.value,
-                                    parsed(b'value=2').body[0].value.value)
-                self.reject(lambda:parsed(b'value='))
-                for name in sorted(n for n in dir(self) if n.startswith('case_')):
-                    with self.subTest(case=name):getattr(self,name)()
-        finally:parsed.cache_clear()
+        self.assertEqual(policy_hash(),expected_policy)
+        self.assertNotEqual(policy_sources._tree(b'value=1').body[0].value.value,
+                            policy_sources._tree(b'value=2').body[0].value.value)
+        self.reject(lambda:policy_sources._tree(b'value='))
+        for name in sorted(n for n in dir(self) if n.startswith('case_')):
+            with self.subTest(case=name):getattr(self,name)()
 
     @contextlib.contextmanager
     def fixture(self,released=False):
