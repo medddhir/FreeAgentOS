@@ -2596,3 +2596,72 @@ Diff/whitespace review passed. No copied candidate/comparison executable was run
 the unchanged suite retains its existing authorized unprivileged --observe fixture
 regression. No stress, privileged validation, service installation or production
 integration occurred. These passes verify preparation/rejection behavior only.
+
+### B10 bounded source-bound export repair (preparation only)
+
+Baseline 9029ce89061da4139f1235f1475f033f86414868 reproduced the review
+claim: `from sys import not_real` returned STATIC_METADATA_VERIFIED and a
+staging prerequisite with qualified=false. `import sys` and a verified literal
+Python export also passed; an absent Python export was rejected. The builtin
+module-membership shortcut incorrectly supplied attribute evidence. This never
+granted protected installed authority, but incorrectly admitted static metadata.
+The repaired invented attribute is UNRESOLVED and candidate_prerequisite rejects
+it with POLICY_REJECTED. Builtin module membership remains supported; builtin,
+frozen and native attributes have no positive producer and remain unresolved,
+including genuinely existing attributes. No version whitelist or ELF-symbol
+inference was added.
+
+Export rule version 1 proves bounded unconditional literal assignments, earlier
+verified aliases, separately resolved imported aliases, plain definitions with
+verified immediate expressions, exact manifest package children, and actual star
+imports whose literal list/tuple __all__ names are each verified. A syntactic
+binding alone is insufficient. Conditional publication, deletion/rebinding,
+dynamic hooks, unresolved targets, generated exports, complex classes/decorators
+and unsupported immediate expressions remain unproven. Exact child modules are
+still analyzed even when their publication cannot be proved; uncertainty cannot
+silently omit their dynamic-import/native-loading findings.
+
+Limits: depth32, aggregate bindings16384, proof/expression/star work32768,
+__all__ names1024, identifier128 characters, retained expression nodes100000.
+Existing source256KiB, file16MiB, total128MiB, manifest1024, graph4096, report256KiB
+and cooperative10-second observation bounds are unchanged. Per-observation caches
+bind rule version, manifest SHA256 and pinned object identity. All cohort identities
+are freshly checked before/after analysis, including transitive target sources;
+there is no cross-observation cache. Same-byte replacement, changed bytes and
+replacement after a cached positive proof reject stale observation. No target
+module executes. Import/export analysis shares one bounded source parse; an
+intermediate concrete run demonstrated duplicate parsing could exceed the existing
+cooperative deadline. Sharing parsing corrected that cost without raising bounds.
+Policy identity already hashes this authoritative verifier source, so this repair
+changes policy identity; incompatible old journals retain mismatch rejection.
+
+Concrete candidate: available supported Python3.12.3-1ubuntu0.17 inputs were used
+without substitution. The recorded baseline private analysis had435 findings:
+attribute310, missing-module59, source-bound1, star26, dynamic-code19,
+dynamic-import19, dynamic-native1. Fresh repaired analysis has1029: attribute904
+and all other category counts unchanged. All previously analyzed Python sources
+remain visited. These are unresolved semantics, not1029 proven missing libraries.
+368 artifacts/38658318 bytes,34 native artifacts, no missing native dependency-edge
+findings; fresh analysis completed6.829s with152197-byte report. Staging prerequisite
+rejects UNRESOLVED. Fixed comparison builds matched without executing their outputs;
+matching does not prove complete toolchain closure or universal reproducibility.
+The candidate's source-commit reference is the baseline; observed working-source
+hashes are not a new committed provenance attestation.
+
+Deterministic export, analyzer, concrete-bundle, policy agreement, closure and
+installed-registration regressions PASS49.689s; additional mid-observation cached
+proof replacement regression PASS. The new compact export table is included in
+the required foundation suite. These tests establish static rejection/freshness,
+not runtime import success, dynamic closure, protected installation or kernel
+isolation. B10 remains PARTIAL for builtin/native positive export evidence,
+unsupported dynamic semantics, toolchain closure, protected publication,
+credentials and real consumer/removal integration. Prior B6/B8/B9/B12 gaps remain;
+doctor active isolation UNPROVEN; Stage3.1D NOT AUTHORIZED. No stress, model/provider,
+privileged backend activation or production integration occurred.
+
+Required verification: unchanged `/root/agent-stack/bin/freeagent-test` PASS518
+ tests in292.862s, RESULT=PASS, exit0; wall295.678s, conservative124.322s
+headroom against420s. Private log `/tmp/freeagent-b10-source-exports-required.log`
+explicit0600; normal test umask. Final relevant diff and whitespace checks PASS.
+The unchanged suite's existing authorized fixtures remain distinct from this
+milestone's never-executed candidate/build outputs and prohibited stress modes.

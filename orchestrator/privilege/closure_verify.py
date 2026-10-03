@@ -15,6 +15,11 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
+EXPORT_RULE_VERSION=1
+MAX_EXPORT_DEPTH=32
+MAX_EXPORT_ENTRIES=16384
+MAX_EXPORT_QUERIES=32768
+MAX_ALL_NAMES=1024
 ENTRYPOINTS=('orchestrator.privilege.service','orchestrator.privilege.child','encodings','importlib','site')
 PREFIXES=('package/','python_base/lib/python3.12/','venv/lib/python3.12/')
 # Fixed profile expectations, not discovered by importing the target interpreter.
@@ -39,6 +44,10 @@ def syntax(raw):
 
 def imports(raw,module,package=False):
     _,nodes=syntax(raw)
+    return _imports(nodes,module,package)
+
+
+def _imports(nodes,module,package):
     names=[];unresolved=[];aliases={}
     for node in nodes:
         if isinstance(node,ast.Import):
@@ -54,7 +63,7 @@ def imports(raw,module,package=False):
             if not base:unresolved.append('IMPORT_BASE_MISSING');continue
             names.append((base,False))
             for alias in node.names:
-                if alias.name=='*':unresolved.append('STAR_IMPORT_UNRESOLVED')
+                if alias.name=='*':names.append((base+'.*',True))
                 else:
                     names.append((base+'.'+alias.name,True))  # may be an attribute
                     aliases[alias.asname or alias.name]=base+'.'+alias.name
@@ -77,6 +86,204 @@ def imports(raw,module,package=False):
             elif resolved in ('eval','exec','builtins.eval','builtins.exec'):
                 unresolved.append('DYNAMIC_CODE_UNRESOLVED')
     return sorted(set(names)),sorted(set(unresolved))
+
+
+def _import_base(node,module,package):
+    parts=module.split('.') if package else module.split('.')[:-1]
+    if node.level:
+        if node.level>len(parts):return None
+        parts=parts[:len(parts)-node.level+1]
+        return '.'.join(parts+([node.module] if node.module else [])) or None
+    return node.module or None
+
+
+class _Exports:
+    """Per-observation source proofs, not runtime imports or native evidence.
+
+    Cache keys include rule, manifest digest and pinned observation identity.
+    An allowed module name never supplies evidence about its attributes.
+    Unsupported mutation/publication remains unproven; no target code runs.
+    """
+    def __init__(self,modules,files,snapshot,read,module,unresolved,bounded):
+        self.modules=modules;self.files=files;self.read=read;self.module=module
+        self.unresolved=unresolved;self.bounded=bounded
+        self.identities={row['path']:tuple(sorted(row['identity'].items())) for row in snapshot['nodes']}
+        self.indexes={};self.cache={};self.imported={};self.positions={};self.entries=0;self.queries=0;self.stored_nodes=0
+    def _key(self,name):
+        found=self.modules.get(name)
+        if found is None or not found[0].endswith('.py'):return None
+        path=found[0]
+        return (EXPORT_RULE_VERSION,path,self.files[path]['sha256'],self.identities[path])
+    def _index(self,name):
+        key=self._key(name)
+        if key is None:return None
+        if key in self.indexes:return self.indexes[key]
+        path=key[1];raw=self.read(path)
+        if len(raw)>MAX_PY_BYTES:
+            self.unresolved.add('SOURCE_ANALYSIS_BOUND:'+path);self.indexes[key]=None
+            self.imported[key]=([],[]);return None
+        tree,nodes=syntax(raw)
+        self.imported[key]=_imports(nodes,name,self.modules[name][1])
+        bindings={};unsafe=set();stars=[];tainted=False;positions={}
+        def bind(symbol,value):
+            self.entries+=1
+            if self.entries>MAX_EXPORT_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
+            # Retain only immediate expressions, not function/class bodies.
+            expressions=[x for x in value[1:] if x is not None] if value[0]=='expression' else value[2] if value[0]=='definition' else []
+            self.stored_nodes+=sum(1 for expression in expressions for _ in ast.walk(expression))
+            if self.stored_nodes>MAX_AST_NODES:raise p.BoundaryError('BOUNDS_EXCEEDED')
+            if symbol in bindings:unsafe.add(symbol)
+            bindings[symbol]=value;positions[symbol]=position
+        def effects(node):
+            # Module-scope effects only: function/class internals have their own
+            # scopes and are not unconditional module publication.
+            pending=[node]
+            while pending:
+                current=pending.pop()
+                if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+                    unsafe.add(current.name);continue
+                if isinstance(current,ast.Import):unsafe.update(a.asname or a.name.split('.')[0] for a in current.names)
+                if isinstance(current,ast.ImportFrom):
+                    if any(a.name=='*' for a in current.names):unsafe.add('__getattr__')
+                    unsafe.update(a.asname or a.name for a in current.names)
+                if isinstance(current,ast.Name) and isinstance(current.ctx,(ast.Store,ast.Del)):unsafe.add(current.id)
+                pending.extend(ast.iter_child_nodes(current))
+        for position,node in enumerate(tree.body):
+            self.bounded()
+            if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
+                immediate=[]
+                valid=not node.decorator_list and not getattr(node,'type_params',[])
+                if node.decorator_list:tainted=True
+                if isinstance(node,ast.ClassDef):
+                    plain=not node.bases and not node.keywords and all(isinstance(x,ast.Pass) or isinstance(x,ast.Expr) and isinstance(x.value,ast.Constant) for x in node.body)
+                    if not plain:tainted=True
+                    valid=valid and plain
+                else:
+                    immediate=list(node.args.defaults)+[x for x in node.args.kw_defaults if x is not None]
+                    immediate += [x.annotation for x in (*node.args.posonlyargs,*node.args.args,*node.args.kwonlyargs) if x.annotation is not None]
+                    immediate += [x.annotation for x in (node.args.vararg,node.args.kwarg) if x and x.annotation is not None]
+                    if node.returns is not None:immediate.append(node.returns)
+                    if any(isinstance(x,ast.Call) for value in immediate for x in ast.walk(value)):tainted=True
+                bind(node.name,('definition',valid,immediate))
+            elif isinstance(node,ast.Assign):
+                if any(isinstance(x,ast.Call) for x in ast.walk(node.value)):tainted=True
+                for target in node.targets:
+                    if isinstance(target,ast.Name):bind(target.id,('expression',node.value))
+                    else:effects(target);tainted=True
+            elif isinstance(node,ast.AnnAssign):
+                if any(isinstance(x,ast.Call) for value in (node.value,node.annotation) if value for x in ast.walk(value)):tainted=True
+                if isinstance(node.target,ast.Name):bind(node.target.id,('expression',node.value,node.annotation))
+                else:effects(node);tainted=True
+            elif isinstance(node,ast.Import):
+                for alias in node.names:
+                    bind(alias.asname or alias.name.split('.')[0],('module',alias.name if alias.asname else alias.name.split('.')[0],alias.name))
+            elif isinstance(node,ast.ImportFrom):
+                base=_import_base(node,name,self.modules[name][1])
+                for alias in node.names:
+                    if alias.name=='*':stars.append((base,position))
+                    else:bind(alias.asname or alias.name,('import',base,alias.name))
+            elif isinstance(node,ast.Pass) or isinstance(node,ast.Expr) and isinstance(node.value,ast.Constant):pass
+            else:
+                effects(node)
+                # Unknown module-scope calls/attribute writes can mutate globals;
+                # do not infer publication through globals(), hooks or exec.
+                if any(isinstance(x,(ast.Call,ast.Attribute,ast.Subscript)) for x in ast.walk(node)):tainted=True
+        if {'__getattr__','__dir__'} & (bindings.keys()|unsafe):tainted=True
+        result=(bindings,unsafe,stars,tainted)
+        self.positions[key]=positions;self.indexes[key]=result;return result
+    def source_imports(self,name):
+        self._index(name)
+        return self.imported[self._key(name)]
+    def _expression(self,node,name,depth,visiting,position):
+        self.queries+=1;self.bounded()
+        if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
+            self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
+        if isinstance(node,ast.Constant):return ('VALUE',None)
+        if isinstance(node,(ast.List,ast.Tuple,ast.Set)):
+            return ('VALUE',None) if all(self._expression(x,name,depth+1,visiting,position) for x in node.elts) else None
+        if isinstance(node,ast.Dict):
+            return ('VALUE',None) if all(k is not None and self._expression(k,name,depth+1,visiting,position)
+                and self._expression(v,name,depth+1,visiting,position) for k,v in zip(node.keys,node.values)) else None
+        if isinstance(node,ast.UnaryOp) and isinstance(node.op,(ast.UAdd,ast.USub)) and isinstance(node.operand,ast.Constant) and type(node.operand.value) in (int,float,complex):return ('VALUE',None)
+        if isinstance(node,ast.Name):
+            value=self.proof(name,node.id,depth+1,visiting)
+            index=self._index(name);positions=self.positions.get(self._key(name),{})
+            if node.id in positions:
+                return value if positions[node.id]<position else None
+            if index and index[2] and all(at<position for _,at in index[2]):return value
+            return None
+        if isinstance(node,ast.Attribute):
+            base=self._expression(node.value,name,depth+1,visiting,position)
+            if base and base[0]=='MODULE':
+                if base[1]==name and self.positions[self._key(name)].get(node.attr,position)>=position:return None
+                return self.proof(base[1],node.attr,depth+1,visiting)
+        return None
+    def proof(self,name,symbol,depth=0,visiting=frozenset()):
+        self.queries+=1;self.bounded()
+        if type(symbol) is not str or not symbol.isidentifier() or len(symbol)>128:return None
+        if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
+            self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
+        key=self._key(name)
+        # The sole declared namespace package has no __init__ source/hook.
+        # Only an exact manifest child can supply module membership here.
+        if name=='orchestrator' and name+'.'+symbol in self.modules and self.module(name+'.'+symbol):
+            return ('MODULE',name+'.'+symbol)
+        if key is None:return None  # builtin/frozen/native attribute evidence absent
+        query=(key,symbol)
+        if query in visiting:
+            self.unresolved.add('EXPORT_CYCLE_UNRESOLVED:'+name+'.'+symbol);return None
+        if query in self.cache:return self.cache[query]
+        visiting=visiting|{query};index=self._index(name)
+        if index is None:return None
+        bindings,unsafe,stars,tainted=index;value=None
+        if tainted or symbol in unsafe:return None
+        binding=bindings.get(symbol)
+        # A star binding is accepted only when its literal publication is fully
+        # verified. Do not let a later/unresolved star shadow a known name.
+        candidates=[]
+        for base,_ in stars:
+            names=self.star(base,depth+1,visiting) if base else None
+            if names is None:return None
+            if symbol in names:candidates.append(base)
+        if binding and candidates:return None
+        if binding:
+            kind=binding[0]
+            at=self.positions[key][symbol]
+            if kind=='expression':
+                value=self._expression(binding[1],name,depth+1,visiting,at)
+                if len(binding)>2 and not self._expression(binding[2],name,depth+1,visiting,at):value=None
+            elif kind=='module':
+                if self.module(binding[2]) and self.module(binding[1]):value=('MODULE',binding[1])
+            elif kind=='import':
+                if binding[1] and self.module(binding[1]):value=self.proof(binding[1],binding[2],depth+1,visiting)
+            elif kind=='definition':
+                if binding[1] and all(self._expression(x,name,depth+1,visiting,at) for x in binding[2]):value=('VALUE',None)
+        elif stars:
+            # Unknown/dynamic star publication may shadow an earlier binding.
+            if len(candidates)==1:value=self.proof(candidates[0],symbol,depth+1,visiting)
+        elif self.modules[name][1]:
+            child=name+'.'+symbol
+            if child in self.modules and self.module(child):value=('MODULE',child)
+        self.cache[query]=value;return value
+    def star(self,name,depth=0,visiting=frozenset()):
+        self.queries+=1;self.bounded()
+        if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
+            self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+str(name));return None
+        index=self._index(name) if name else None
+        if index is None:return None
+        bindings,unsafe,stars,tainted=index
+        binding=bindings.get('__all__')
+        if tainted or '__all__' in unsafe or not binding or binding[0]!='expression':return None
+        if self.proof(name,'__all__',depth+1,visiting) is None:return None
+        node=binding[1]
+        if not isinstance(node,(ast.List,ast.Tuple)) or len(node.elts)>MAX_ALL_NAMES:return None
+        names=[]
+        for item in node.elts:
+            if not isinstance(item,ast.Constant) or type(item.value) is not str or not item.value.isidentifier() or len(item.value)>128:return None
+            names.append(item.value)
+        if len(set(names))!=len(names):return None
+        if not all(self.proof(name,symbol,depth+1,visiting) for symbol in names):return None
+        return tuple(names)
 
 
 def elf(raw):
@@ -140,9 +347,8 @@ def analyze(tree,snapshot,closure,binding,provenance):
     files={v['path']:v for v in tree.manifest['nodes'] if v['type']=='file'}
     declared={v['path']:set(v['requires']) for v in closure['artifacts']}
     modules={};unresolved=set();derived={};native={};started=tree.clock();total=0
-    # Per-analysis bounded export sets, not cross-observation content caching.
-    # Concrete stdlib imports otherwise re-read/re-parse one parent per symbol.
-    exports_by_path={}
+    def bounded():
+        if tree.clock()-started>c.n.MAX_SECONDS:raise p.BoundaryError('BOUNDS_EXCEEDED')
     def read(path):
         nonlocal total
         if tree.clock()-started>c.n.MAX_SECONDS:raise p.BoundaryError('BOUNDS_EXCEEDED')
@@ -170,41 +376,39 @@ def analyze(tree,snapshot,closure,binding,provenance):
                 else:continue
                 if name in modules:unresolved.add('AMBIGUOUS_MODULE:'+name)
                 else:modules[name]=(path,package)
-    def resolve(name,attribute=False):
-        if name in BUILTINS:return None
-        if name=='orchestrator':return None  # one explicit namespace package
+    pending=set(ENTRYPOINTS);seen=set()
+    def member(name):
+        if name in BUILTINS or name=='orchestrator':return True
         found=modules.get(name)
-        if found is None:
-            if attribute:
-                base,_,symbol=name.rpartition('.')
-                if base in BUILTINS:return None
-                parent=modules.get(base)
-                exports=set()
-                if parent and parent[0].endswith('.py'):
-                    if parent[0] not in exports_by_path:
-                        parent_raw=read(parent[0])
-                        if len(parent_raw)>MAX_PY_BYTES:
-                            unresolved.add('SOURCE_ANALYSIS_BOUND:'+parent[0])
-                        else:
-                            parent_tree,_=syntax(parent_raw)
-                            for node in parent_tree.body:
-                                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):exports.add(node.name)
-                                elif isinstance(node,ast.Assign):exports.update(t.id for t in node.targets if isinstance(t,ast.Name))
-                                elif isinstance(node,ast.AnnAssign) and isinstance(node.target,ast.Name):exports.add(node.target.id)
-                                elif isinstance(node,(ast.Import,ast.ImportFrom)):
-                                    exports.update(a.asname or a.name.split('.')[0] for a in node.names)
-                        exports_by_path[parent[0]]=frozenset(exports)
-                    exports=exports_by_path[parent[0]]
-                if symbol not in exports:unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name)
-            else:unresolved.add('MISSING_MODULE:'+name)
-            return None
+        if found is None:return False
         # Importing a child executes every non-namespace parent __init__.
         for count in range(1,len(name.split('.'))):
             parent='.'.join(name.split('.')[:count])
-            if parent!='orchestrator' and (parent not in modules or not modules[parent][1]):unresolved.add('MISSING_PACKAGE:'+parent)
+            if parent!='orchestrator' and (parent not in modules or not modules[parent][1]):
+                unresolved.add('MISSING_PACKAGE:'+parent);return False
             elif parent in modules:pending.add(parent)
-        pending.add(name);return found[0]
-    pending=set(ENTRYPOINTS);seen=set()
+        pending.add(name);return True
+    exports=_Exports(modules,files,snapshot,read,member,unresolved,bounded)
+    def resolve(name,attribute=False,origin=None):
+        if attribute:
+            base,_,symbol=name.rpartition('.')
+            if symbol=='*':
+                if not member(base) or exports.star(base) is None:
+                    unresolved.add(origin+':STAR_IMPORT_UNRESOLVED')
+                return modules[base][0] if base in modules else None
+            # Even uncertain publication may attempt an exact child import.
+            # Keep inspecting its source dependencies; queuing is not export
+            # proof and must not hide earlier dynamic-import/code findings.
+            if name in modules:member(name)
+            value=exports.proof(base,symbol) if member(base) else None
+            if value is None:
+                unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name);return None
+            # Exact child imports load the child. Aliases are supplied by their
+            # separately checked parent imports, not invented native attributes.
+            if value==('MODULE',name) and name in modules:return modules[name][0]
+            return modules[base][0] if base in modules else None
+        if not member(name):unresolved.add('MISSING_MODULE:'+name);return None
+        return modules[name][0] if name in modules else None
     while pending:
         module=pending.pop()
         if module in seen:continue
@@ -218,14 +422,11 @@ def analyze(tree,snapshot,closure,binding,provenance):
             info=modules.get(parent)
             if info is None or not info[1]:unresolved.add('MISSING_PACKAGE:'+parent)
             else:edges.add(info[0]);pending.add(parent)
-        raw=read(path)
         if path.endswith('.py'):
-            if len(raw)>MAX_PY_BYTES:
-                unresolved.add('SOURCE_ANALYSIS_BOUND:'+path);derived[path]=edges;continue
-            names,issues=imports(raw,module,package)
+            names,issues=exports.source_imports(module)
             unresolved.update(path+':'+v for v in issues)
             for name,attribute in names:
-                target=resolve(name,attribute)
+                target=resolve(name,attribute,path)
                 # The strict graph forbids self edges. A module importing its
                 # own package is not an omitted distinct dependency.
                 if target and target!=path:edges.add(target)
@@ -248,7 +449,7 @@ def analyze(tree,snapshot,closure,binding,provenance):
     for path,edges in derived.items():
         for target in edges-declared[path]:unresolved.add('DECLARED_EDGE_MISSING:'+path+':'+target)
     tree.recheck(snapshot)
-    result={'version':1,'closure_sha256':closure_sha,'snapshot_sha256':i.digest(snapshot),
+    result={'version':1,'export_rule_version':EXPORT_RULE_VERSION,'closure_sha256':closure_sha,'snapshot_sha256':i.digest(snapshot),
             'status':'UNRESOLVED' if unresolved else 'STATIC_METADATA_VERIFIED',
             'issues':sorted(unresolved),'derived':{k:sorted(v) for k,v in sorted(derived.items())},
             'native':native,'runtime_loader':'UNPROVEN','qualified':False}

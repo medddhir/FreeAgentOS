@@ -93,6 +93,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="independent_closure"):
             IndependentClosureCases().cases()
 
+        from test_privilege_exports import ExportCases
+        with self.subTest(case="source_bound_exports"):
+            ExportCases().cases()
+
         from test_supervisor_bundle import ConcreteBundleCases
         with self.subTest(case="concrete_supervisor_bundle"):
             ConcreteBundleCases().cases()
