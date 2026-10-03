@@ -1535,3 +1535,100 @@ proof, stress preparation, policy, B7 and B11 regressions passed. Final
 freeagent-test passed518 tests in286.954s, RESULT=PASS, exit0. Final diff and
 whitespace checks passed. No real stress or privileged backend was executed;
 recording PASS cannot qualify isolation/readiness.
+
+### B6 durable campaign guard preparation — recording only
+
+`campaign.py` adds a strict version1 authorization contract and the explicitly
+RecordingCampaignGuard adapter. No real approval issuer, service activation,
+RPC, installation command, campaign harness or reset/delete/relabel operation
+exists. REAL_VALIDATION contracts cannot be opened by this adapter. All test
+approval records are disposable recording fixtures; none approves this machine
+or Stage3.1D. Linux authentication, client tokens, validation opt-in, task/model
+output, source documents and booleans grant no campaign authority.
+
+The contract binds campaign/owner/enrollment IDs, exact source commit, current
+policy identity, package/runtime/executable hashes, fixed fixture source hash,
+build recipe/toolchain/provenance hashes, installation identity, qualified-target
+identity, reviewed action/rollback plan hashes, inventory identity and all three
+fixed probe-envelope hashes. Digests are identities, not proof that provenance,
+rollback, inventory or target qualification exists. Missing fields/invalid types,
+unsupported version, expired/future approval and mismatched expected identities
+fail closed; there are no prerequisite defaults. Recording fixtures use fake
+identities explicitly. The bounded validity window is at most3600 seconds using
+wall time for approval (independent of unchanged monotonic worker leases).
+
+The owner boundary requires a future explicit administrator/project-owner review
+and a protected root-owned approval write to root-owned enrolled storage. The
+expected contract must be produced by the reviewed deterministic harness from
+verified B9/B10/B12 artifacts, not controller RPC/config/model input. Filesystem
+ownership is the trust boundary; no cryptographic signature was invented. A
+privileged/root compromise or malicious process sharing the storage owner's UID
+is outside this filesystem boundary. Production installation/package ownership,
+trusted review issuance and actual provenance/target verification remain absent;
+consequently real activation remains impossible. The old installation permit
+is not upgraded to campaign approval and the service is not integrated here.
+
+Recording storage uses pinned directory FDs, private0700 directories,0600 regular
+single-link files, UID/GID verification, no-follow opens, bounded8192-byte strict
+JSON/duplicate rejection and inode/ctime/size checks. The approval binds its exact
+storage device/inode/UID/GID: copying it to a new directory does not create a new
+campaign slot. Approval replacement and parent/lock substitution are rejected.
+An exclusive nonblocking flock on a permanent private lock serializes claimants;
+its named inode is checked against the held FD. All storage names are code-owned,
+never RPC paths. Advisory locking cannot defend malicious privileged storage
+owners; restrictive production ownership is required before live use.
+
+Attempt definition: successful exclusive creation of reserved.json is the point
+of no retry. Before any campaign adapter side effect, directory fsync preserves
+that intent, bounded writes and file/directory fsync persist RESERVED; consumption
+then exclusively creates consumed.json and repeats that ordering. CONSUMED binds
+the exact reservation device/inode/ctime/size and complete contract/claim identity.
+Only after both durable operations, approval revalidation and exact pair parsing
+does this live instance return a non-executing RecordingAttempt. Append-only
+exclusive creation replaces mutable atomic replacement: empty/partial reservation
+or consumption is retained and blocks a new claim; it is never overwritten or
+removed. Failure before slot creation is NOT_ATTEMPTED and has no campaign effect.
+The failed live instance is blocked; a later explicit fresh caller can claim only
+if no durable slot exists. There is no automatic retry. Power-loss durability
+requires a filesystem honoring file/directory fsync; recording fault injection
+is not proof of the eventual target filesystem.
+
+Restart with RESERVED, CONSUMED, corrupt, partial, symlinked or ambiguous state
+never restores a ticket or retries the campaign. The guard has no resume path.
+The read-only cleanup_context exposes only bound campaign/installation/claim
+identity and attempt state, always retry_authorized=false/execution_enabled=false.
+It never terminates a process or manipulates a resource. Expired approval need
+not prevent reading a valid bound cleanup context; policy mismatch/ambiguous
+ownership still blocks and preserves evidence. Actual scoped recovery belongs
+to the existing resource journals and future B9, not this attempt ledger.
+
+The narrow B8 interface, recording_probe, requires the exact ticket issued by
+this live guard, a consumed matching pair, current approval validity/policy and
+a fixed PreparedProbe validated by the existing B8 plan parser against its
+ProofExpectation. Owner/policy/executable and selector/envelope digest must match
+the contract. Only the exact RecordingDriver is accepted; Linux drivers and
+real execution remain disabled. Each of three selectors has an exclusive durable
+probe marker before recording delivery, so repeat delivery is blocked across
+restart. Any delivery error revokes the live ticket; no campaign continuation
+or retry follows automatically. No stress gate FD, process, mount or cgroup is
+created by this interface. A cleanup context cannot mint or restore this ticket.
+
+B6 remains PARTIAL: executable campaign sequencing, verified prerequisite inputs,
+reviewed owner issuance, and end-to-end service/launcher integration are missing.
+B8 remains PARTIAL and real enforcement UNPROVEN. B9/B10/B12 must supply reviewed
+rollback, immutable inventory/provenance and qualified target evidence before
+real authorization can exist. Production leases, authentication, framing,
+attribution and isolation integration are unchanged. Doctor stays UNPROVEN;
+Stage3.1D remains NOT AUTHORIZED.
+
+Verification: ten guard case groups passed, covering concurrent claims; binding
+and missing-prerequisite rejection; actual authenticated Linux-mode client without
+owner approval; before/after reservation/consumption loss; six fsync boundaries;
+partial write, corrupt/oversized/duplicate JSON; replaced approval/reservation/lock,
+copied storage, symlink/hardlink and ownership/mode errors; expiry; restart;
+read-only cleanup and once-only B8 recording delivery. Affected fixed B8 gate,
+assembly, collection and authoritative policy regressions passed. Final
+freeagent-test:518 tests in412.397s, RESULT=PASS, exit0. Final diff, whitespace,
+compilation and static execution/deletion review passed. These checks do not
+establish real owner approval, production filesystem power-loss durability,
+privileged cleanup or kernel isolation. No real approval was issued.

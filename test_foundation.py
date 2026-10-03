@@ -70,6 +70,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="security_assembly"):
             SecurityAssemblyCases().cases()
 
+        from test_privilege_campaign import CampaignGuardCases
+        with self.subTest(case="campaign_guard"):
+            CampaignGuardCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)
