@@ -81,6 +81,9 @@ class FoundationTests(unittest.TestCase):
         from test_privilege_inventory import InventoryCases
         with self.subTest(case="installation_inventory"):
             InventoryCases().cases()
+        from test_privilege_installed_identity import InstalledIdentityCases
+        with self.subTest(case="installed_identity_preparation"):
+            InstalledIdentityCases().cases()
 
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:

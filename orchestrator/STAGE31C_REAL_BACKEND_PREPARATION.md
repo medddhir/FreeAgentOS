@@ -2121,3 +2121,132 @@ B10 preparation remains PARTIAL for the installed identity, dependency-tree,
 credential lifecycle, compiled provenance and real-removal gaps listed above.
 No new backend/campaign activation, B8 stress execution, real approval or
 Stage3.1D authorization occurred. Only the existing authorized suite fixtures ran.
+
+### B10 installed-identity registration and dependency observation preparation
+
+Baseline2225403ea04d08193c16c4ef1e391f8f04dad889. Recording/unprivileged staging
+only; Stage3.1D NOT AUTHORIZED. New installed_identity.py is packaged as Python
+source and included in B2's explicit policy-source identity. Old policy-bound
+records are rejected, never overwritten, migrated or relabelled.
+
+TRUST GAP: ReceiptStore requires an externally retained trustworthy receipt inode/
+digest, but previously no registration bound that proof to fresh dependencies,
+target and inventory/provenance. RecordingRegistration now models that contract.
+The production expectation is fixed UID0/GID0, directory0700/file0600, with
+root-owned non-writable ancestry and separately protected registration identity.
+Only a future explicit administrator-owned installation transaction may publish
+protected installed observations. protected_profile rejects caller-relaxed
+expectations, and returns qualified=false even for the exact required profile.
+There is NO real publisher, approval issuer or configurable production owner.
+The staging adapter uses temporary current-UID storage and remains distinctly
+RECORDING_REGISTRATION, qualified=false, installed_observed=false, execution and
+removal disabled. Even root executing tests does not change that distinction.
+Client tokens, Linux flags and receipts alone confer no installation authority.
+
+DEPENDENCY DESIGN: The existing service uses an approved venv/bin/python launcher,
+package policy/helper sources, static synthetic runtime binaries, minimal runtime
+marker and tmp/run/home/dev/workspace/proc directories. It does not require a
+host-wide recursive dependency scan or ldd/import execution. An exact reviewed
+manifest names those required files/directories, unit/C fixtures, and representative
+external-base stdlib dependencies used by the helper(json/pathlib/argparse/threading/socket/
+hashlib/ast/ctypes). Optional extra dependencies are confined to reviewed Python
+3.12 library/metadata paths or runtime lib/lib64 shared libraries; additional
+programs, credential/approval/attempt files, aliases, traversal and duplicate or
+unsorted nodes reject. Static ELF build provenance and completeness of a minimal
+Python/native dependency closure still need build verification. A declared tree
+is not proof that its dependency closure is sufficient to execute.
+
+Only one registered temporary installation anchor is inspected, with no RPC path
+or executable discovery API. Exact child sets reject unlisted files/directories;
+every declared dependency is required. Ancestry inside the anchor must match
+reviewed0755 directory/0644 or0755 regular-file modes and current staging UID/GID.
+secure_open uses existing openat2 BENEATH/NO_SYMLINKS/NO_MAGICLINKS/NO_XDEV, failing
+closed; descriptors are pinned/CLOEXEC and never exec-inherited. No real mounts,
+qualification probes or capability changes occur. The public /tmp ancestry is
+not represented as protected production ancestry. The staging python_base view
+represents a separately registered external interpreter base (/usr in the
+reference design), not copied standard-library files inside the venv. It reads
+only synthetic staging; no discovery/traversal of the real host base occurs.
+Actual base ownership and pyvenv/base selection still require protected build/
+installation integration. This staging view does not propose changing that layout.
+
+Bounds:1024 nodes,240-character paths,16MiB per dependency,128MiB cumulative
+content,10 monotonic seconds, and the unchanged256KiB canonical report/registration
+bound. Reads use64KiB chunks; traversal and directory membership are bounded,
+and all directory FDs close on ordinary/failure paths. A combined registration
+that exceeds the existing report limit rejects even below the node limit.
+These new dependency-observation limits do not enlarge inventory limits, B7/B8,
+frames, leases or resource policy. Python3.12 path schema reflects the current
+Ubuntu24.04 reference design; other interpreter layouts require reviewed schema
+work and are not declared qualified. Credential contents are neither inventoried
+in this tree nor read/hashed/exported; existing receipt credential metadata is
+transitively bound without copying token bytes.
+
+REGISTRATION BINDING: exact installation/enrollment/owner/source/policy,
+inventory digest, trusted receipt identity, artifact/build provenance, declared
+target digest, manifest and fresh dependency metadata/content hashes. Launcher,
+synthetic/security executables, unit, C fixtures, marker and policy sources must
+match existing inventory identities. Target digest is a recording B12 input,
+not an observed qualified-machine assertion. Manifest review comes from trusted
+build policy in this recording adapter, never model/tool/client RPC input.
+
+FRESHNESS: pinned anchor and parent directory FDs; before/after file identities,
+named identities, full directory membership and fresh receipt/artifact/tree
+rechecks. Registration rechecks before publication and after commit. A race may
+leave a persisted stale record, but publication/acceptance then fails closed and
+retains it. Acceptance always repeats observations; no stale receipt/registration
+substitutes for a fresh required dependency. Modification, inode replacement,
+unsafe ancestry, symlinks/mount crossing, mismatch or missing observations reject.
+No string path alone proves identity; caller claims never produce qualification.
+
+DURABILITY: reuse ReceiptStore's private FD/owner/mode/lock/read primitives in a
+separate private registered staging directory. Permanent receipt.lock excludes
+concurrent registrars. registration.pending uses exclusive0600 creation, complete
+bounded writes, file fsync, directory fsync, RENAME_NOREPLACE to registration.json,
+then directory fsync. Original/pending/conflicting records survive ambiguity;
+there is no reset/delete/retry-authority API. Trusted published identity is returned
+only after durability and fresh rechecks. Restart requires externally retained
+expected identity; corruption/truncation/version/schema/claim/replacement cannot
+match fresh canonical contract bytes. Wholesale owner replacement remains outside
+staging protection; production needs the separate root-protected registration
+anchor, not self-asserted record integrity. Power-loss durability is untested.
+
+B6/B9: RecordingRegistration.accept exposes a fresh non-qualifying prerequisite;
+registered_inventory_plan integrates it with existing receipt-bound inventory and
+owned recovery planning. Missing/replaced dependencies or registration reject.
+Recording claims remain single-attempt and cannot authorize Linux stress, real
+removal or zero residuals. Existing inventory-only APIs remain metadata/receipt
+preparation paths; real activation must require the future protected publisher
+and B6/B9/B12 evidence. No production service or worker loading path is cut over.
+
+B10 remains PARTIAL: actual administrator-owned publisher/protected ancestry and
+registration-identity storage, fully verified build/dependency closure(including
+external base interpreter/native dependencies), secure credential delivery/
+rotation/revocation, production consumer cutover and actual removal remain absent.
+No installed identities were issued. B6 campaign, B8 real enforcement, B9 real
+absence/rollback and B12 target qualification remain unproven. Doctor active
+isolation remains UNPROVEN. The two unowned cgroups were not inspected or touched
+in this milestone.
+
+Verification/review record: initial focused tables passed9.139s and the then-current
+full suite passed518 tests in278.276s. Layout review then corrected the stdlib view
+to the separately registered external Python base; focused tables passed9.127s,
+and that source passed518 tests in308.003s. A subsequent focused race check showed
+anchor mode changes followed by restoration were still accepted under inode-only
+checks. Final source now pins full immutable-anchor metadata(including ctime,
+size, UID/GID/mode); mode round-trips and add/remove history invalidate registration.
+New fault coverage also checks constructor-owned FD closure if anchor fstat fails.
+No published/uncertain record is deleted to repair a race.
+
+Final focused installed-identity/inventory/policy/campaign/rollback tables passed
+11.150s. The required unchanged suite on FINAL source passed518 tests in293.326s,
+RESULT=PASS, exit0; wall295.891s,124.109s conservative timeout headroom. Final log
+/tmp/freeagent-b10-installed-identity-anchor-final-required.log was created0600
+with O_EXCL, without changing the test environment/umask. Earlier passes did not
+substitute for validation of later source corrections. Diff/whitespace and source
+review found no new executable invocation, privileged activation or raw host RPC.
+The10s bound is cooperative per dependency observation, checked between bounded
+local reads; it is not a proof that kernel I/O cannot stall. Real protected storage,
+power-loss behavior, complete dependency closure and root installation remain
+unproven. Only existing authorized suite fixtures exercised isolation; no new
+privileged backend, campaign, stress mode, model or provider was activated.

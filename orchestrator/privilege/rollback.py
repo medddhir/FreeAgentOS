@@ -180,3 +180,12 @@ def inventory_plan(guard,journal,inventory,observed,*,receipt=None,receipt_ident
     if observer.plan!=inventory:raise p.BoundaryError('POLICY_REJECTED')
     proof=receipt.accept(receipt_identity,observer,observed,guard.expected)
     return {'recovery':make_plan(guard,journal),'inventory':proof,'removal_enabled':False}
+
+
+def registered_inventory_plan(guard,journal,inventory,observed,*,registration,registration_identity,
+                              receipt,receipt_identity,observer,dependencies,dependency_observation):
+    """B10 fresh recording registration input; no actual rollback/removal enablement."""
+    result=inventory_plan(guard,journal,inventory,observed,receipt=receipt,receipt_identity=receipt_identity,observer=observer)
+    result['registration']=registration.accept(registration_identity,receipt,receipt_identity,observer,observed,
+                                                guard.expected,dependencies,dependency_observation)
+    return result
