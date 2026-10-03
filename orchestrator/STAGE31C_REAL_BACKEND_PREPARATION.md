@@ -2348,3 +2348,133 @@ freeagent-test PASS518 tests in227.779s, RESULT=PASS, exit0; wall229.356s,
 190.644s conservative headroom. Private log /tmp/freeagent-b10-closure-required.log
 was created explicitly0600 without changing umask. Final diff/whitespace review
 passed. Only existing authorized suite fixtures ran; no new privileged validation.
+
+### B10 independent import/ELF metadata and bounded fixture comparison
+
+Baselinef1763914dfea5d21f6aa1dcdc4e7c6fddb74b0bb. Preparation only; Stage3.1D
+NOT AUTHORIZED. privilege/closure_verify.py and unprivileged fixture_build.py are installed Python
+package sources and explicitly bound by policy_sources; existing policy-bound
+records mismatch rather than being rewritten/relabelled. No service cutover.
+
+IMPORT ANALYSIS: closure_verify.analyze uses freshly checked FD-bound staged
+sources, never imports observed modules. Roots are actual service and child
+entrypoints plus encodings/importlib/site startup modules. Exact module resolution
+uses package/, python_base/lib/python3.12/, venv/lib/python3.12/ and lib-dynload;
+duplicate candidates reject qualification. Relative imports and package initializer
+edges are derived independently; from-import attributes require an independently
+visible top-level definition, not a caller-declared edge. CPython3.12 extension
+suffixes and native packages are included. Only orchestrator is a permitted
+namespace package. Every derived file dependency must be declared in the graph.
+Imports inside functions/conditional branches are conservatively included, not
+assumed unreachable. Star imports, nonliteral __import__/import_module, importlib
+file loaders and exec/eval sites remain unresolved. Native ctypes loads other than
+CDLL/PyDLL(None) are unresolved. Reflection/metaprogramming beyond these recognized
+patterns is not completely analyzable; no complete semantic-closure certificate
+is issued. Conditional exports not directly defined at module top level are
+conservatively unresolved. Fixed CPython builtin-module assumptions still require
+matching interpreter build evidence; they are not discovered by executing Python.
+No expansion to LangGraph/controller dependencies is attempted.
+
+NATIVE ANALYSIS: bounded direct ELF64 little-endian x86_64 parsing reads program
+headers, PT_INTERP and DT_NEEDED/string tables without readelf, ldd, dlopen or target
+execution. Each native/executable artifact is inspected. Loaders map only two
+explicit reference spellings to runtime/lib64/ld-linux-x86-64.so.2. Libraries must
+resolve uniquely among python_base/lib, runtime/lib and runtime/lib64; omission,
+ambiguity, foreign loader and missing graph edges remain unresolved. Unsupported
+RPATH/RUNPATH, NODEFLIB, audit/filter/auxiliary/config semantics reject metadata
+acceptance. No ld.so.cache, inherited LD_* search, arbitrary host lookup or silent
+fallback. Metadata parsing is not observation of runtime-loader behavior; that
+field stays UNPROVEN. Explicitly staged regular files remain required; symlink
+aliases do not become approved dependencies.
+
+BOUNDS: existing1024-node/4096-edge,16MiB/file,128MiB aggregate,256KiB report and
+cooperative10s observation bounds remain. Python AST source limit256KiB and100000
+nodes; ELF limit128 program headers,4096 dynamic records,1MiB string table and128
+needed libraries. Read/stat/scandir and AST/ELF work are bounded in size/count but
+cooperative deadlines are not hard guarantees against blocked kernel I/O or CPU
+work between checks. Fresh tree rechecks precede and follow analysis; replacement,
+content drift or missing files cannot reuse prior analysis.
+
+FIXED BUILDS: fixture_build.compare permits only the packaged synthetic_worker.c
+and security_probe.c sources, exact reviewed hashes and cc -static -O2. Sources
+are copied into a private disposable directory, built twice each, then compared;
+outputs are NEVER executed. Compiler resolves from fixed /usr/bin/cc to the
+root-owned non-writable GCC13 reference toolchain. cc1/as/ld, eight static/startup
+inputs and compiler-derived header paths are root/ancestry/identity/content checked
+before and after builds; compiler version/specs are hashed. Only fixed compiler
+inspection/preprocessing/build arguments exist; shell execution and caller flags,
+paths or executables are not accepted. No packages were installed/substituted.
+The host had GCC13.3.0 Ubuntu13.3.0-6ubuntu2~24.04.1 and required static archives.
+Two builds per fixture matched, with146 tool/header/library input identities.
+This establishes repeatability in the recorded environment, not universal
+reproducibility or complete compiler-runtime closure. Compiler shared-library,
+plugin and internal implicit input completeness is still a review gap.
+
+Compiler adapter limits:20s per command,64KiB combined output,64MiB per tool input,
+128MiB input aggregate,192 inputs,120s cooperative comparison budget; output ELF
+limit4MiB. Fixed source limit16KiB. Excess output/timeouts kill only the exact
+helper-created build process group and close/reap its pipes; no kill-by-name or
+protocol PID interface. Observation hashing/fsync can still block; whole-build
+budget is cooperative. Root-owned toolchain replacement by root is outside the
+normal-user trust boundary. Build output reads are FD-relative/no-follow with
+owner/type/link/size/named-identity checks. Uncertain build/inspection returns no
+verified prerequisite. Temporary trees are removed without touching installation
+or recovery evidence.
+
+INTEGRATION: StagingClosureRegistration._value retains fresh independent analysis
+alongside existing receipts/immutable preapproval identity, including unresolved
+findings. verified_prerequisite recomputes analysis, refuses UNRESOLVED, explicitly
+runs fixed comparison, matches exact compiler/recipe/build-record/source/output
+provenance, then freshly accepts registration. It accepts no caller PASS report.
+Even success remains RECORDING_STAGING, qualified=false, execution/removal disabled,
+reproducibility=UNPROVEN. Ordinary publication does not build anything or promote
+DECLARED graph membership. Build/source identities remain separate from generated
+receipt/approval/attempt bytes, preserving acyclic ordering. Real publisher,
+credentials, service/campaign consumer and removal adapters remain absent.
+
+ACTUAL GAP EVIDENCE: inspecting actual helper sources against the existing
+representative synthetic dependency tree returned UNRESOLVED, including missing
+encodings/importlib/site, collections/contextlib/dataclasses, fcntl/resource/select,
+subprocess and other stdlib members. Placeholder interpreter/library bytes do not
+pass ELF inspection. This is a diagnostic of the incomplete staging profile, not
+a native/WSL kernel qualification or proof about an installed supervisor runtime.
+Conservative dynamic/conditional analysis and interpreter builtin/native loading
+also prevent claiming complete semantic closure. A complete independently checked
+runtime tree still must be prepared before this prerequisite can pass for a real
+bundle. B10 therefore remains PARTIAL.
+
+Tests exercise synthetically complete metadata, omitted graph edges despite graph
+reachability, relative imports, missing package/module/attribute, dynamic import,
+native extension dependency, missing/ambiguous library and foreign loader, unsafe
+search metadata, malformed ELF, replacement, bounds, output overflow and process
+timeout. Fixed builds exercise source/provenance mismatch, differing outputs,
+matching repeatability with no authority, and no-follow output rejection. Existing
+inventory/registration contracts still reject incomplete verified prerequisites.
+No comparison-produced fixtures, stress modes, models or providers were executed.
+The unchanged required suite retains its existing unprivileged --observe fixture
+regression; it is not execution of comparison outputs. No enrollment, approval,
+service, privileged backend or unowned cgroup was touched. Doctor active
+isolation remains UNPROVEN. B6/B8/B9/B12 real integration/proof remain outstanding.
+
+Verification correction: initial required suite ran518 tests in232.840s and
+failed exactly the existing privilege.static prohibition on os.killpg in a
+privilege-package file. No assertions/security rules were changed. The fixed
+compile-only utility now lives in orchestrator/fixture_build.py, an unprivileged
+engineering module, not the privilege package. Its full source is independently
+bound through the explicit authoritative policy-source allowlist. The privilege
+package retains analysis and the explicit staging consumer; service/import paths
+do not build. Exact helper-created compiler-group timeout cleanup remains in
+user-space tooling. Static check plus closure/inventory/registration focused
+tables passed15.410s after the structural correction. The initial failed suite
+is not reported as verification success; final source requires a new full pass.
+
+Final verification: focused static/independent closure/build/inventory/registration
+checks PASS15.410s; final packaging byte-match PASS for orchestrator/fixture_build.py,
+privilege/closure_verify.py and privilege/build_closure.py. Required unchanged suite
+PASS518 tests in240.904s, RESULT=PASS, exit0; wall242.500s,177.500s conservative
+headroom. Final log /tmp/freeagent-b10-independent-closure-final-required.log was
+created0600 explicitly, without changing umask or timeout. Diff/whitespace review
+passed. The earlier static failure was resolved structurally, not by removing or
+weakening tests. Existing authorized full-suite fixtures only; comparison outputs
+were not executed and no stress/Stage3.1D activation occurred. This verifies
+preparation behavior, not complete installed/runtime closure or kernel enforcement.

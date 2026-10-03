@@ -19,6 +19,7 @@ MAX_TOTAL_BYTES = 4 * 1024 * 1024
 # definitions plus module-level bindings/statements (including aliases). Names are also
 # required in FILE mode, so empty/replaced modules cannot masquerade as policy.
 AUTHORITATIVE = MappingProxyType({
+    'fixture_build.py': ('FILE', ('FLAGS','compare','check_binding')),
     'roles/lease.py': ('FILE', ('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS','hard_cap_seconds','ActivityLease')),
     'roles/activity.py': ('FILE', ('MAX_RECORD_BYTES','MAX_STREAM_BYTES','MAX_EVENTS','MAX_PENDING','ActivityCapture')),
     'roles/broker_telemetry.py': ('FILE', ('COUNTER_MAX','BrokerTelemetry')),
@@ -47,7 +48,7 @@ AUTHORITATIVE = MappingProxyType({
 })
 # Explicit existing helper contract: no glob admitting arbitrary adjacent files.
 PRIVILEGE_SOURCES = tuple('privilege/'+name+'.py' for name in (
-    '__init__','backend','build_closure','campaign','child','client','evidence','execution','inventory','installed_identity','isolation','journal','kernel',
+    '__init__','backend','build_closure','campaign','child','closure_verify','client','evidence','execution','inventory','installed_identity','isolation','journal','kernel',
     'linux','policy','policy_sources','protocol','real_journal','recording','rollback','sealed',
     'security','security_assembly','security_capture','security_collection','security_observe','security_proof','service','socket_state','stress_gate','supervisor','validation'))
 NUMBERS = frozenset(('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS',

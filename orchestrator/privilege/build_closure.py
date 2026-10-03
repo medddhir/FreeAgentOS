@@ -85,5 +85,23 @@ class StagingClosureRegistration(n.RecordingRegistration):
         digest=validate(closure,tree.manifest,observer.plan['binding'],observer.plan['provenance'])
         intent=preapproval_identity(observer.plan,digest)
         value=super()._value(receipt,receipt_identity,observer,observed,contract,tree,snapshot)
-        value.update(closure=closure,closure_sha256=digest,preapproval_sha256=intent)
+        from .closure_verify import analyze
+        independent=analyze(tree,snapshot,closure,observer.plan['binding'],observer.plan['provenance'])
+        value.update(closure=closure,closure_sha256=digest,preapproval_sha256=intent,independent_closure=independent)
         return value
+
+    def verified_prerequisite(self,expected,receipt,receipt_identity,observer,observed,contract,tree,snapshot,closure):
+        """Fresh analysis + fixed repeat build, never accepts caller PASS reports.
+
+        No protected installation/campaign authority even when metadata matches.
+        Builds occur only on this explicit preparation call, never publish/import.
+        """
+        from .closure_verify import analyze
+        from ..fixture_build import compare, check_binding
+        analysis=analyze(tree,snapshot,closure,observer.plan['binding'],observer.plan['provenance'])
+        if analysis['status']!='STATIC_METADATA_VERIFIED':raise p.BoundaryError('POLICY_REJECTED')
+        prov=observer.plan['provenance']
+        builds=compare({'synthetic_worker.c':prov['synthetic_source_sha256'],'security_probe.c':prov['fixture_source_sha256']})
+        check_binding(builds,prov)
+        accepted=self.accept(expected,receipt,receipt_identity,observer,observed,contract,tree,snapshot,closure)
+        return accepted|{'analysis':analysis,'builds':builds,'reproducibility':'UNPROVEN'}
