@@ -1632,3 +1632,121 @@ freeagent-test:518 tests in412.397s, RESULT=PASS, exit0. Final diff, whitespace,
 compilation and static execution/deletion review passed. These checks do not
 establish real owner approval, production filesystem power-loss durability,
 privileged cleanup or kernel isolation. No real approval was issued.
+
+### B9 guarded offline rollback preparation — recording adapters only
+
+`rollback.py` supplies a separate offline RecordingRollback and
+RecordingAbsenceObserver. Neither connects to the supervisor nor executes OS
+operations. Exact recording adapter types are required; there is no real backend,
+RPC, command/PID/path/mount interface or installation-removal implementation.
+B9 remains PARTIAL and Stage3.1D remains NOT AUTHORIZED.
+
+The plan is derived from the existing strict ResourceJournal and B6 guard's
+read-only cleanup context. All entries, including RELEASED, are inspected. The
+plan binds campaign, contract, installation, enrollment, claim, owner, policy,
+run/handle/class/role, boot and scope/root device/inode identities. The fixed
+rollback recipe hash is a B6 prerequisite identity; it hashes policy and fixed
+operation/resource/bound constants, avoiding a circular dependency on the full
+campaign contract hash. This is a recording contract, not a verified real B6
+prerequisite. Missing/corrupt journals, changed bindings and ambiguous ownership
+block action and preserve original evidence. Policy identity is checked at plan
+creation; trusted installed code must be immutable throughout recovery. Every
+action rechecks exact resource-journal contents, campaign claim/contract and
+registered parent/lock identity rather than re-resolving raw host paths.
+
+Supported fake actions: terminate the owned scope, remove its recorded fixed
+mount recipe, remove its owned root, remove its empty owned scope. Each is fixed
+and ownership-checked again by the adapter at the mutation boundary. Scope
+termination precedes dependent deletion. Unknown process ownership, unsettled
+pre-attachment launch, live/unproven observers or descriptors block dependent
+cleanup; failed root/mount cleanup does not prevent independent scope cleanup
+when workers/descriptors are independently absent. Failure in one sandbox does
+not prevent independently proven actions in another. No raw PID is accepted;
+reap after parent death cannot be invented from an old PID or RELEASED label.
+
+The observer is a distinct read path over recorded fixture state, not executor
+return values. It verifies workers/descendants, observers, descriptors, mounts,
+root and scope separately. Absent is explicit; missing is UNKNOWN. Ownership,
+boot, inode/scope or path substitution fails closed. Pending/unproven collection
+forces observer/descriptor status UNKNOWN even if a fixture claims absence.
+A lost pre-attachment process reference forces worker status UNKNOWN. Actual
+pidfds do not survive helper death; old journals cannot reconstruct them. Real
+namespace membership, detached observers, orphan launchers and inaccessible FD
+state need separately reviewed independently owned observations. This module
+does not implement or simulate those as real proof.
+
+Scoped recorded cleanup can be CONFIRMED only when every applicable scoped
+observation is ABSENT. Installation-wide cleanup is always UNPROVEN,
+zero_residual=false and qualifying=false: socket retirement, permanent lock
+retirement, service stop/removal and installation deletion require B10 identity
+inventory and real observers. Service failure/stop is not absence proof. Existing
+B5 socket parent/ledger/inode, active-listener and permanent-lock rules remain
+mandatory; this executor neither unlinks the socket nor removes its lock. No
+recursive directory deletion or wildcard/host-wide scanning exists. Immutable
+packages, original resource ledgers, approval/attempt records and recovery audit
+files are never removed or re-labelled by this module.
+
+The bounded recording scope is the existing validation bundle's three sandboxes,
+not a change to production MAX_ACTIVE. Each explicit recovery round has at most
+four actions per scope and a ten-second monotonic decision deadline, checked
+between fake calls; no implicit retries. At most three rounds are allowed.
+No real blocking syscall deadline guarantee is claimed. Under the B6 permanent
+lock, INTENT, action intents and final result are append-only exclusive/fsynced
+files through the existing bounded private guard storage. At most42 audit files
+(three rounds times one intent/twelve actions/one result),8192 bytes each. Failed
+persistence or interruption leaves intent files; a later explicit round rechecks
+actual recorded presence before any repeat, never trusts SUCCESS markers. Already
+absent resources are skipped; ambiguous resources remain dirty/admission-fenced.
+Original journals/attempt files are unchanged. Partial/corrupt audit state cannot
+restore an attempt: existing round slots are occupied, and the guard can never
+claim again. Exhausted rounds require operator review, not deletion/reset.
+
+The independent result binds the same campaign/policy/recipe/resource plan and
+records source=INDEPENDENT_RECORDING. SCOPED_RECORDING_CLEAN describes only the
+recorded scoped subset; admission stays fenced and global cleanup remains
+UNPROVEN. Real resource adapters, crash-safe mount/namespace ownership, independent
+pidfd/process/observer evidence, B10 service/socket/file inventory and explicit
+owner authorization remain missing. B6 campaign execution, B8 real launch and
+B12 qualification are not implemented or made ready by these tests.
+
+B9 verification checkpoint: focused RollbackCases, CleanupProofCases,
+LauncherContainmentCases and CampaignGuardCases passed. Final whitespace and
+static forbidden-operation scans passed. The required freeagent-test run
+returned RESULT=TIMEOUT, EXIT_CODE=124 at its unchanged420-second limit.
+Repository-wide verification is incomplete; no B9 completion claim or commit
+is made. These changes remain an uncommitted preparation checkpoint.
+
+B9 timeout diagnosis follow-up: the prior captured runner output ended in
+test_unauthorized_new_file_cannot_verify after the preceding trusted-entrypoint
+test completed; it had no per-test timing. No leftover Python verification
+process was observed before the retry. Recent documented full passes were
+321.157s and412.397s. B9 case timings totaled57.601s with zero FD growth.
+Profiling the released/offline cases attributed6.651 of6.891s to24 policy_hash
+calls, primarily authoritative source parsing. make_plan redundantly computed
+the same recipe identity twice; it now validates one fresh identity and reuses
+it only within that plan construction. No cross-call cache or source validation
+was removed. The complete B9 case table then passed in42.594s with zero FD
+growth. No blocking waits, subprocess launch or kernel action exists in this
+recording path. The unchanged420s required suite is retried once after this
+measured correction; its result is recorded below.
+
+The first justified retry timed out at420.236s, reaching
+test_infinite_loop_times_out after preceding worker-resource cases passed.
+Bounded B9 profiling then confirmed repeated AST parsing as test-fixture
+overhead. B9 cases now use a64-entry exact-source-bytes parser cache confined
+to that table, cleared on exit. Every policy call still reads, type/structure
+validates and hashes authoritative sources. Changed bytes parse independently;
+invalid syntax rejects; cached and uncached identities are asserted equal.
+No production policy cache, test omission or assertion relaxation was added.
+The profiled table passed in17.800s, including228 source-identity calls; the
+final focused table passed in5.909s with zero FD growth. Required verification
+is rerun only after this measured correction, at the unchanged420s limit.
+
+Final B9 required verification passed:518 tests in388.176s; wall390.683s;
+RESULT=PASS, EXIT_CODE=0, unchanged420s limit. The private retry log is
+/tmp/freeagent-b9-verification-after-diagnosis.log (mode0600, outside Git).
+Final focused B9 cases passed in5.909s with zero FD growth. Final diff and
+whitespace review passed. B9 recording preparation is deterministically checked,
+but B9 remains PARTIAL: real adapters, B10 inventory, independent real-kernel
+absence observations and explicit owner authorization remain missing. No real
+rollback or privileged validation was executed; Stage3.1D is NOT AUTHORIZED.

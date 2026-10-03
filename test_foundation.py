@@ -74,6 +74,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="campaign_guard"):
             CampaignGuardCases().cases()
 
+        from test_privilege_rollback import RollbackCases
+        with self.subTest(case="offline_rollback"):
+            RollbackCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)
