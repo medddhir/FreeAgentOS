@@ -93,6 +93,10 @@ class FoundationTests(unittest.TestCase):
         with self.subTest(case="independent_closure"):
             IndependentClosureCases().cases()
 
+        from test_supervisor_bundle import ConcreteBundleCases
+        with self.subTest(case="concrete_supervisor_bundle"):
+            ConcreteBundleCases().cases()
+
     def config(self, text, env=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'config.toml'; path.write_text(text)

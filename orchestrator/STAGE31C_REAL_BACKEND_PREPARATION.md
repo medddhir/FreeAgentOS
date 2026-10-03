@@ -2478,3 +2478,121 @@ passed. The earlier static failure was resolved structurally, not by removing or
 weakening tests. Existing authorized full-suite fixtures only; comparison outputs
 were not executed and no stress/Stage3.1D activation occurred. This verifies
 preparation behavior, not complete installed/runtime closure or kernel enforcement.
+
+### B10 concrete supervisor-only candidate (preparation; unresolved)
+
+`orchestrator/supervisor_bundle.py:Candidate` now assembles one actual private
+temporary candidate using fixed Ubuntu24.04 x86_64 CPython3.12 roots. It never
+imports staged sources, executes the copied interpreter/fixtures, installs,
+enrolls, publishes protected identity, or grants campaign authority. Linux/Ubuntu
+metadata, fixed dpkg-query package versions and ELF metadata are checked before
+assembly. These observations do not independently prove the interpreter's runtime
+version/builtin table or loader behavior. The commit input is declared baseline
+provenance; observed source hashes/policy bind the working bytes, not an attestation
+that uncommitted bytes belong to that commit.
+
+Assembly opens fixed registered source roots with no-follow ancestry checks,
+copies bounded regular files through pinned openat2 descriptors, checks source
+identity again, and uses no caller executable/path or recursive host inventory.
+Import-derived module names must match a bounded identifier grammar. They select
+only exact `.py`, package init, or CPython312 extension names below the fixed
+stdlib/package roots. Missing modules remain findings. ELF-derived SONAMEs select
+only fixed Ubuntu multiarch libraries; the existing trusted tool-input validator
+pins their resolved regular artifact identities before copying. No ldd/dlopen or
+target execution occurs. The temporary candidate is removed on close; reports are
+separate private0600 diagnostic files, not credentials or runtime journals.
+
+The unchanged limits remain1024 manifest nodes,16MiB/file,128MiB tree/observation,
+4096 graph edges,256KiB AST source,100000 AST nodes, and256KiB reports. Assembly
+also uses the existing120-second cooperative build-comparison campaign bound.
+Observation retains its10-second cooperative bound. Filesystem open/read/stat
+can block between checks; none of these elapsed-time checks are a hard containment
+guarantee. Real qualification still needs separately supervised observations.
+
+Actual candidate:368 files,416 nodes,38,646,220 bytes. Host package metadata:
+python3.12-minimal/libpython3.12-stdlib3.12.3-1ubuntu0.17. Copied interpreter SHA256
+e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f.
+The interpreter's independently parsed ELF requires libc, libexpat, libm and libz;
+all are now staged with their transitive loader/library dependencies. There are34
+inspected native artifacts, with no unresolved ELF/library edges in this candidate.
+The startup set includes actual encodings, importlib, site, required extension
+artifacts and package/policy sources, rather than the former representative tree.
+
+The existing independent verifier returns UNRESOLVED with435 findings:
+59 missing module identities,310 unresolved imported attributes,26 star-import,
+19 dynamic-code,19 dynamic-import,1 dynamic-native, and1 source-analysis-bound
+finding. These are not435 proven absent runtime dependencies: builtin/frozen
+modules, native exports, guarded non-Linux paths, optional site hooks and aliases
+cannot be distinguished safely by the current profile. Concrete remaining groups:
+
+* Independently bind the actual interpreter builtin/frozen table (including
+  `_frozen_importlib`, `_ast`, `_socket`, `_codecs`, select and related entries)
+  and extension export semantics; missing files alone do not settle membership.
+* Resolve conditional non-Linux imports (`_winapi`, nt, msvcrt, winreg, java.lang,
+  `_scproxy`), conditional stdlib exports and `os.path` without blanket suppression.
+* Resolve dynamic startup/encoding/importlib/sysconfig/native loading and generated
+  Python code. Static metadata remains insufficient for those semantics.
+* Account explicitly for optional sitecustomize/usercustomize, tkinter and the
+  setuptools fallback. `/usr/lib/python3.12/sitecustomize.py` is a symlink outside
+  the allowed stdlib root and is rejected, not followed into configuration.
+* pydoc_data/topics.py is805508 bytes, beyond the unchanged256KiB AST limit.
+  Its conservative import path remains unresolved; the limit was not enlarged.
+* Validate relocation/runtime interpretation of the proposed venv/base projection
+  and startup configuration. No copied executable was run to prove this layout.
+
+The exact finite finding list is in `/tmp/freeagent-concrete-bundle-analysis.json`
+(126605 bytes); separate build, manifest and closure reports contain36506,62038
+and163892 bytes respectively. Each uses the existing bounded encoder and0600
+mode. The initial combined private diagnostic envelope is retained separately;
+it is not a bounded prerequisite/wire report or accepted authority input. The
+diagnostic records UNCOMMITTED_PREPARATION and its baseline; it is not installed
+authority.
+
+Two demonstrated analyzer corrections were made. Self-imports no longer generate
+self edges which the strict graph schema forbids. Parent export analysis now
+retains bounded immutable export sets only within one analysis, rather than
+re-reading/re-parsing a source for every imported symbol. Each new analysis still
+reads/hashes sources and checks snapshot identity before/after; no cross-call cache
+or stale-content exception was added. Over-bound source analysis is explicitly
+UNRESOLVED instead of aborting a useful bounded candidate report. No dynamic,
+builtin, native-export or platform uncertainty is silently accepted.
+
+Fixed fixture comparison exports only FD-checked matching output bytes through a
+private engineering seam to this candidate. Both fixtures matched two builds,
+with146 observed compiler/header/static-library inputs. Outputs were never run.
+This establishes repeatability in the recorded environment, not complete toolchain
+closure or universal reproducibility; compiler shared libraries/plugins and other
+implicit inputs still need independent verification. No packages were installed.
+
+`StagingClosureRegistration.candidate_prerequisite` is shared by candidate and
+existing receipt registration: it freshly recomputes independent analysis and
+rejects UNRESOLVED. Passing it alone would still return qualified=false,
+installed_observed=false, execution_enabled=false. No receipt, enrollment/token,
+approval or attempt is fabricated for this incomplete candidate. Immutable build
+-> pre-approval inventory -> protected receipt/registration -> approval -> attempt
+ordering remains unchanged. Real service/campaign consumers are not integrated.
+
+Deterministic tests cover actual copied membership, required interpreter/package/
+stdlib/native removal and replacement, fresh observation, no-follow reads,
+self-import correction, bounded source rejection and per-analysis export reuse.
+They exercise the staging prerequisite's rejection and non-authority flags.
+Packaging byte checks confirm the engineering assembler, builder, verifier,
+review-only service template and both fixed C sources are shipped. B10 remains
+PARTIAL for complete semantic closure, toolchain verification, protected publication,
+credentials and real consumer/removal integration. B6/B8/B9/B12 remain partial;
+doctor active isolation remains UNPROVEN; Stage3.1D remains NOT AUTHORIZED.
+
+Concrete-candidate verification: focused actual candidate tests PASS14.144s;
+additional per-analysis export-cache regression PASS; affected policy agreement,
+immutable closure, independent analyzer/build, inventory and registration tables
+PASS19.152s, plus existing privilege static check. The initial sandboxed policy
+IPC run could not bind its temporary socket; the same tests passed outside the
+sandbox without changing authentication/socket assertions. Packaging byte-match
+PASS using the actual pyproject package/package-dir/package-data mappings.
+Unchanged required freeagent-test PASS518 tests in356.517s, RESULT=PASS, exit0;
+wall360.168s, conservative59.832s headroom. Private log:
+`/tmp/freeagent-b10-concrete-bundle-required.log` (explicit0600; normal umask).
+Diff/whitespace review passed. No copied candidate/comparison executable was run;
+the unchanged suite retains its existing authorized unprivileged --observe fixture
+regression. No stress, privileged validation, service installation or production
+integration occurred. These passes verify preparation/rejection behavior only.

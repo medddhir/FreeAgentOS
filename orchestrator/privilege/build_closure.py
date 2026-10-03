@@ -81,6 +81,16 @@ class StagingClosureRegistration(n.RecordingRegistration):
 
     Separate preparation consumer; service and campaign authority are unchanged.
     """
+    @staticmethod
+    def candidate_prerequisite(tree,snapshot,closure,binding,provenance):
+        """Fresh candidate assessment shared with receipt registration.
+
+        Passing this gate alone is neither a receipt nor protected registration.
+        """
+        from .closure_verify import analyze
+        analysis=analyze(tree,snapshot,closure,binding,provenance)
+        if analysis['status']!='STATIC_METADATA_VERIFIED':raise p.BoundaryError('POLICY_REJECTED')
+        return {'analysis':analysis,'qualified':False,'installed_observed':False,'execution_enabled':False}
     def _value(self,receipt,receipt_identity,observer,observed,contract,tree,snapshot,closure):
         digest=validate(closure,tree.manifest,observer.plan['binding'],observer.plan['provenance'])
         intent=preapproval_identity(observer.plan,digest)
@@ -96,10 +106,8 @@ class StagingClosureRegistration(n.RecordingRegistration):
         No protected installation/campaign authority even when metadata matches.
         Builds occur only on this explicit preparation call, never publish/import.
         """
-        from .closure_verify import analyze
         from ..fixture_build import compare, check_binding
-        analysis=analyze(tree,snapshot,closure,observer.plan['binding'],observer.plan['provenance'])
-        if analysis['status']!='STATIC_METADATA_VERIFIED':raise p.BoundaryError('POLICY_REJECTED')
+        analysis=self.candidate_prerequisite(tree,snapshot,closure,observer.plan['binding'],observer.plan['provenance'])['analysis']
         prov=observer.plan['provenance']
         builds=compare({'synthetic_worker.c':prov['synthetic_source_sha256'],'security_probe.c':prov['fixture_source_sha256']})
         check_binding(builds,prov)

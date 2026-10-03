@@ -19,6 +19,7 @@ MAX_TOTAL_BYTES = 4 * 1024 * 1024
 # definitions plus module-level bindings/statements (including aliases). Names are also
 # required in FILE mode, so empty/replaced modules cannot masquerade as policy.
 AUTHORITATIVE = MappingProxyType({
+    'supervisor_bundle.py': ('FILE', ('Candidate','_read')),
     'fixture_build.py': ('FILE', ('FLAGS','compare','check_binding')),
     'roles/lease.py': ('FILE', ('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS','hard_cap_seconds','ActivityLease')),
     'roles/activity.py': ('FILE', ('MAX_RECORD_BYTES','MAX_STREAM_BYTES','MAX_EVENTS','MAX_PENDING','ActivityCapture')),

@@ -108,7 +108,7 @@ def _output(directory,name):
         os.close(root)
 
 
-def compare(expected):
+def compare(expected, *, _artifacts=None):
     """Reviewed fixture source hashes required; no caller argv/path/build flags."""
     p.keys(expected,SOURCES)
     if any(not p.identifier(v,64) for v in expected.values()):raise p.BoundaryError('POLICY_REJECTED')
@@ -161,6 +161,11 @@ def compare(expected):
                     outputs.append(hashlib.sha256(blob).hexdigest())
                 results[name]={'source_sha256':expected[name],'outputs':outputs,
                                'status':'REPEATABLE_IN_RECORDED_ENVIRONMENT' if outputs[0]==outputs[1] else 'DIFFERENT_OUTPUTS'}
+                # Private engineering seam: bytes come from the same checked FD
+                # reads used for comparison, never an executable/path supplied by
+                # a caller. Candidate assembly does not execute these bytes.
+                if _artifacts is not None and outputs[0]==outputs[1]:
+                    _artifacts[name]=blob
         finally:os.close(source_root)
         for name,value in inputs.items():
             if trusted_input(name)!=value:raise p.BoundaryError('JOURNAL_INVALID')

@@ -140,6 +140,9 @@ def analyze(tree,snapshot,closure,binding,provenance):
     files={v['path']:v for v in tree.manifest['nodes'] if v['type']=='file'}
     declared={v['path']:set(v['requires']) for v in closure['artifacts']}
     modules={};unresolved=set();derived={};native={};started=tree.clock();total=0
+    # Per-analysis bounded export sets, not cross-observation content caching.
+    # Concrete stdlib imports otherwise re-read/re-parse one parent per symbol.
+    exports_by_path={}
     def read(path):
         nonlocal total
         if tree.clock()-started>c.n.MAX_SECONDS:raise p.BoundaryError('BOUNDS_EXCEEDED')
@@ -178,13 +181,20 @@ def analyze(tree,snapshot,closure,binding,provenance):
                 parent=modules.get(base)
                 exports=set()
                 if parent and parent[0].endswith('.py'):
-                    parent_tree,_=syntax(read(parent[0]))
-                    for node in parent_tree.body:
-                        if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):exports.add(node.name)
-                        elif isinstance(node,ast.Assign):exports.update(t.id for t in node.targets if isinstance(t,ast.Name))
-                        elif isinstance(node,ast.AnnAssign) and isinstance(node.target,ast.Name):exports.add(node.target.id)
-                        elif isinstance(node,(ast.Import,ast.ImportFrom)):
-                            exports.update(a.asname or a.name.split('.')[0] for a in node.names)
+                    if parent[0] not in exports_by_path:
+                        parent_raw=read(parent[0])
+                        if len(parent_raw)>MAX_PY_BYTES:
+                            unresolved.add('SOURCE_ANALYSIS_BOUND:'+parent[0])
+                        else:
+                            parent_tree,_=syntax(parent_raw)
+                            for node in parent_tree.body:
+                                if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):exports.add(node.name)
+                                elif isinstance(node,ast.Assign):exports.update(t.id for t in node.targets if isinstance(t,ast.Name))
+                                elif isinstance(node,ast.AnnAssign) and isinstance(node.target,ast.Name):exports.add(node.target.id)
+                                elif isinstance(node,(ast.Import,ast.ImportFrom)):
+                                    exports.update(a.asname or a.name.split('.')[0] for a in node.names)
+                        exports_by_path[parent[0]]=frozenset(exports)
+                    exports=exports_by_path[parent[0]]
                 if symbol not in exports:unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name)
             else:unresolved.add('MISSING_MODULE:'+name)
             return None
@@ -210,11 +220,15 @@ def analyze(tree,snapshot,closure,binding,provenance):
             else:edges.add(info[0]);pending.add(parent)
         raw=read(path)
         if path.endswith('.py'):
+            if len(raw)>MAX_PY_BYTES:
+                unresolved.add('SOURCE_ANALYSIS_BOUND:'+path);derived[path]=edges;continue
             names,issues=imports(raw,module,package)
             unresolved.update(path+':'+v for v in issues)
             for name,attribute in names:
                 target=resolve(name,attribute)
-                if target:edges.add(target)
+                # The strict graph forbids self edges. A module importing its
+                # own package is not an omitted distinct dependency.
+                if target and target!=path:edges.add(target)
         derived[path]=edges
     # Every native artifact, not just declared/reachable executable edges.
     for path in files:
