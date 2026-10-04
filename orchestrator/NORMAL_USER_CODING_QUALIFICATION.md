@@ -249,3 +249,66 @@ this establishes recorded preparation behavior, not non-root compatibility,
 installed-package observation, functional/browser qualification or live authority.
 The next live qualification requirements and B10 PARTIAL / Stage31D unauthorized
 status in this plan remain unchanged.
+
+## Non-root source-layout recorded preparation qualification — 2026-10-04
+
+**Verified scope:** the explicit 30-file source selection from
+`f90850b7d65bbf457993eda9f56d31c2b93c8294`, invoked through
+`source/orchestrator/cli.py recorded-website` under account medhir, UID/GID
+1000/1000. The fixture used its separate venv based on `/usr/bin/python3.12`
+(Python 3.12.3, x86_64; recorded package version 3.12.3-1ubuntu0.17) and the
+38 pinned official wheels, including LangGraph 1.2.12. Interpreter identity:
+`e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f`.
+The wheel runtime is not asserted equivalent to the established editable
+LangGraph source commit `07b33185eab893be2ed031eedae52f09314bf77c`.
+
+The first attempt failed with exit 4 in an incomplete source fixture. Static
+inspection demonstrated that recorded broker content checking needed
+`roles.coding_units`, whose imports required `roles.tester` and
+`roles.repair_context`. Those three exact committed modules were added without
+application implementation changes. The original captured exception bytes were
+not retained: their hash cannot establish the precise original exception or
+prove that this omission was the only cause. The original failed result and
+staging artifacts remain historical evidence, unchanged.
+
+A separately authorized second attempt passed after that fixture repair:
+exit 0, elapsed 2.466301704 seconds, failure null, direct child reaped,
+qualification `SOURCE_LAYOUT_RECORDED_PREPARATION_ONLY`. The bounded retained
+capture was 1,751 bytes. Recorded status was PREPARATION_COMPLETE, model calls
+NONE and live_qualified false. Integrity-only verifier output is not a
+qualification verdict: the successful invocation and independent export
+checks were required. Existing evidence was inspected for this documentation;
+no qualification, tests, imports, installation or generated files were rerun.
+
+Fresh evidence inspection confirmed the exact four revised project/export
+files (`index.html`, `styles.css`, `app.js`, `README.md`), exclusive export plus
+`export.json`, UID/GID 1000/1000 directories at 0700 and regular single-link
+files at 0600. The heading/button revision and exact expected bytes matched;
+receipt equality and per-file hashes matched. Before/final snapshots differed,
+and independently recomputing the run/profile/contract/file-hash snapshot
+matched checks, disabled preview and receipt. Structural PASS remains distinct
+from functional/browser UNPROVEN. Artifacts are retained; direct-child reaping
+is not descendant-absence proof.
+
+Bounded evidence identities (SHA-256; private artifacts are not copied here):
+
+| Evidence | SHA-256 |
+|---|---|
+| Historical failed result | `53bd1e8d7ceaf2e821bf1e207b35da090111197e89294d6265613fe11775a379` |
+| V2 fixture manifest | `120bf851bc2c9bca6e442b16983681a7a9f98cfe12e6b86bce0648ae19041d1f` |
+| V2 source manifest | `5585f50a2a7a8a6fff23cf1932178d54dd366fa5411b3ee624c3df6b617aa01d` |
+| Offline wheel lock | `b4e4652a1b779179f01ee8b20e5c5029d72a86c5f41b0e679d6193df1439388a` |
+| Wheel provenance manifest | `061f23be9def87440ed693d6ee00716ebc5bfd35eb76e1728a8618b77390a92e` |
+| V2 qualification result (1,853 bytes) | `0de0035e36a512dbecf0cbdcf6198cccb5ff1fdd9a727884896e0e58ae9104ef` |
+| V2 capture (1,751 bytes) | `953aeb15f9bcbe50fa139d629eff916b03ef8701d99c1ac4a974da21b95548d8` |
+| Export receipt | `a8f25bfcaa4fcf1f2b85778ea54415628ff4bf7153e647aa12c85d9ddfebb7db` |
+| Final snapshot | `b7da177dce4f1342c75043d72d3150e9e9af680d6cad6a2c116067a904728498` |
+
+This verifies one normal-user **source-layout recorded preparation** with the
+identified selection/runtime; it does not qualify all users, source layouts or
+imports. Installed-package behavior, live building, provider access,
+preview/browser/functional qualification, hostile isolation, complete dynamic
+runtime closure and descendant absence remain UNPROVEN. Protected publication,
+credential lifecycle and real backend/removal integration remain incomplete.
+Historical root-run verification statements above retain their original scope.
+**B10: PARTIAL. STAGE31D_AUTHORIZED: NO.**
