@@ -2775,3 +2775,57 @@ No substantive sandbox/test/environment correction was needed. Final relevant
 three-file diff and whitespace inspection PASS; focused F1 preparation is verified
 by deterministic and required tests. F2 and broader B10 gaps remain pending; no
 Stage3.1D authorization, new privileged backend activation or production change.
+
+### B10 F2 import-child fallback versus attribute evidence
+
+Baseline5812f6dbb4a3a2cdcad41e504db9f9f2683e6fa2 reproduced F2 before editing
+using deterministic parsed staging sources: empty _export_pkg/__init__.py plus
+child.py containing value=1, service importing only _export_pkg then assigning
+good=_export_pkg.child, and the supervisor fixture importing good. Exact package/
+child manifest membership and declared dependency edges were included, with no
+other source publishing/importing the package child. The baseline incorrectly
+returned STATIC_METADATA_VERIFIED and staging admission, with qualified=false,
+installed_observed=false, execution_enabled=false. The contrast `from _export_pkg
+import child as good` also passed, legitimately using import-child behavior.
+
+The shared proof routine supplied exact package-child fallback to both import
+resolution and ordinary ast.Attribute expressions. Export rule version3 now uses
+an explicit import-child context only for from-import resolution, imported aliases
+and verified literal-__all__ star-import names. Ordinary attributes/expressions
+use source publication evidence only. Exact namespace child membership is also
+import-only. Per-observation proof/cache/cycle keys include the context, rule,
+source hash and pinned identity, so cached import positives cannot become attribute
+proofs. Merely queuing a module or having a child file is not publication evidence.
+No general runtime/import-order simulator, whitelist or broader expression language
+was introduced. Unknown initialization/order remains unresolved; even another
+import in a source does not automatically establish global package attribute state.
+Existing taint, F1 effects, freshness, query/depth/source limits remain unchanged.
+Policy identity binds the verifier change; old policy mismatch handling remains.
+
+After repair the ordinary fixture and alias variants return UNRESOLVED and
+candidate_prerequisite rejects POLICY_REJECTED. Supported from-package imports
+retain both package and child edges. Explicit unconditional source publication
+through a separately resolved import remains supported; unsupported targets and
+initialization cycles reject. Literal __all__ can support an actual import-star
+without proving an ordinary package attribute. Missing child/replaced child tests,
+namespace attribute negatives and mixed cache-context tests pass. All accepted
+staging results remain non-qualified/non-authoritative. Full export/F1, independent
+analyzer, policy agreement and closure regressions PASS20.448s. No standalone full
+candidate assembly or finding-count measurement occurred; unchanged required suite
+retains its existing authorized fixtures. Prior sanitized snapshots are unchanged.
+
+F2's demonstrated static-acceptance defect is repaired for this bounded contract;
+this does not complete Python export semantics or B10. Builtin/frozen/native
+positive evidence, unsupported dynamic/initialization/order semantics, complete
+build/toolchain closure, protected publication, credentials and real consumer/
+removal integration remain gaps. Static proof does not establish successful runtime
+imports, complete closure, protected installation or real enforcement. Doctor
+active isolation UNPROVEN; Stage3.1D NOT AUTHORIZED. No model/provider, stress,
+privileged backend activation or production integration occurred.
+
+F2 required verification: unchanged freeagent-test PASS518 tests in256.352s,
+RESULT=PASS, exit0; wall257.792s, conservative162.208s headroom against420s.
+Private log `/tmp/freeagent-b10-f2-required.log` explicit0600; normal umask, no retry,
+assertion/limit/security changes. Final relevant three-file diff and whitespace
+review PASS. Deterministic F2 preparation is verified; broader B10/runtime proof
+and Stage3.1D authorization remain unchanged and unproven.

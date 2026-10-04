@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=2
+EXPORT_RULE_VERSION=3
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -243,18 +243,18 @@ class _Exports:
                 if base[1]==name and self.positions[self._key(name)].get(node.attr,position)>=position:return None
                 return self.proof(base[1],node.attr,depth+1,visiting)
         return None
-    def proof(self,name,symbol,depth=0,visiting=frozenset()):
+    def proof(self,name,symbol,depth=0,visiting=frozenset(),*,import_child=False):
         self.queries+=1;self.bounded()
         if type(symbol) is not str or not symbol.isidentifier() or len(symbol)>128:return None
         if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
             self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
         key=self._key(name)
-        # The sole declared namespace package has no __init__ source/hook.
-        # Only an exact manifest child can supply module membership here.
-        if name=='orchestrator' and name+'.'+symbol in self.modules and self.module(name+'.'+symbol):
+        # Exact child membership supports import syntax, never an ordinary
+        # attribute expression. No global import-order/publication simulation.
+        if import_child and name=='orchestrator' and name+'.'+symbol in self.modules and self.module(name+'.'+symbol):
             return ('MODULE',name+'.'+symbol)
         if key is None:return None  # builtin/frozen/native attribute evidence absent
-        query=(key,symbol)
+        query=(key,symbol,import_child)
         if query in visiting:
             self.unresolved.add('EXPORT_CYCLE_UNRESOLVED:'+name+'.'+symbol);return None
         if query in self.cache:return self.cache[query]
@@ -280,13 +280,13 @@ class _Exports:
             elif kind=='module':
                 if self.module(binding[2]) and self.module(binding[1]):value=('MODULE',binding[1])
             elif kind=='import':
-                if binding[1] and self.module(binding[1]):value=self.proof(binding[1],binding[2],depth+1,visiting)
+                if binding[1] and self.module(binding[1]):value=self.proof(binding[1],binding[2],depth+1,visiting,import_child=True)
             elif kind=='definition':
                 if binding[1] and all(self._expression(x,name,depth+1,visiting,at) for x in binding[2]):value=('VALUE',None)
         elif stars:
             # Unknown/dynamic star publication may shadow an earlier binding.
-            if len(candidates)==1:value=self.proof(candidates[0],symbol,depth+1,visiting)
-        elif self.modules[name][1]:
+            if len(candidates)==1:value=self.proof(candidates[0],symbol,depth+1,visiting,import_child=True)
+        elif import_child and self.modules[name][1]:
             child=name+'.'+symbol
             if child in self.modules and self.module(child):value=('MODULE',child)
         self.cache[query]=value;return value
@@ -307,7 +307,7 @@ class _Exports:
             if not isinstance(item,ast.Constant) or type(item.value) is not str or not item.value.isidentifier() or len(item.value)>128:return None
             names.append(item.value)
         if len(set(names))!=len(names):return None
-        if not all(self.proof(name,symbol,depth+1,visiting) for symbol in names):return None
+        if not all(self.proof(name,symbol,depth+1,visiting,import_child=True) for symbol in names):return None
         return tuple(names)
 
 
@@ -425,7 +425,7 @@ def analyze(tree,snapshot,closure,binding,provenance):
             # Keep inspecting its source dependencies; queuing is not export
             # proof and must not hide earlier dynamic-import/code findings.
             if name in modules:member(name)
-            value=exports.proof(base,symbol) if member(base) else None
+            value=exports.proof(base,symbol,import_child=True) if member(base) else None
             if value is None:
                 unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name);return None
             # Exact child imports load the child. Aliases are supplied by their

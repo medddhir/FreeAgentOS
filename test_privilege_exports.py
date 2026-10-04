@@ -85,6 +85,43 @@ class ExportCases(unittest.TestCase):
         self.check(b'good=1\n',b'from . import service\n','UNRESOLVED',{path:b'if flag:\n    import other as service\n'})
         self.check(b'good=1\n',b'from orchestrator import fixture_build\n','STATIC_METADATA_VERIFIED',{'package/orchestrator/fixture_build.py':b'good=1\n'})
         self.check(b'good=1\n',b'from orchestrator import absent\n','UNRESOLVED')
+    def case_package_import_is_not_attribute_publication(self):
+        init='python_base/lib/python3.12/_export_pkg/__init__.py'
+        child='python_base/lib/python3.12/_export_pkg/child.py'
+        extra={init:b'',child:b'value=1\n'}
+        ordinary=b'import _export_pkg\ngood=_export_pkg.child\n'
+        imported=b'from _export_pkg import child as good\n'
+        result=self.check(ordinary,b'from .service import good\n','UNRESOLVED',extra)
+        self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+        result=self.check(imported,b'from .service import good\n','STATIC_METADATA_VERIFIED',extra)
+        edges=result['derived']['package/orchestrator/privilege/service.py']
+        self.assertIn(init,edges);self.assertIn(child,edges)
+        self.assertIn(child,result['derived'])
+        self.check(imported,b'from .service import good\n','UNRESOLVED',{init:b''})
+        for alias in (b'import _export_pkg as pkg\ngood=pkg.child\n',
+                      b'import _export_pkg\nalias=_export_pkg.child\ngood=alias\n',
+                      b'from _export_pkg import child as imported\nimport _export_pkg\ngood=_export_pkg.child\n'):
+            # Even a cached import-like positive cannot establish publication
+            # for an attribute query. Cross-source import order is not simulated.
+            self.check(alias,b'from .service import good\n','UNRESOLVED',extra)
+        self.check(ordinary,b'from .service import good\n','STATIC_METADATA_VERIFIED',
+                   {init:b'import _export_pkg.child as child\n',child:b'value=1\n'})
+        self.check(b'from _export_pkg import *\ngood=child\n',b'from .service import good\n',
+                   'STATIC_METADATA_VERIFIED',{init:b'__all__=("child",)\n',child:b'value=1\n'})
+        self.check(ordinary,b'from .service import good\n','UNRESOLVED',
+                   {init:b'__all__=("child",)\n',child:b'value=1\n'})
+        self.check(ordinary,b'from .service import good\n','UNRESOLVED',
+                   {init:b'from sys import not_real as child\n',child:b'value=1\n'})
+        result=self.check(imported,b'from .service import good\n','UNRESOLVED',
+                          {init:b'from .child import value as child\n',child:b'from _export_pkg import child as value\n'})
+        self.assertTrue(any('EXPORT_CYCLE_UNRESOLVED' in x for x in result['issues']))
+        # Namespace-package membership has the same import-only boundary.
+        self.check(b'import orchestrator\ngood=orchestrator.fixture_build\n',b'from .service import good\n',
+                   'UNRESOLVED',{'package/orchestrator/fixture_build.py':b'value=1\n'})
+        with self.fixture(imported,b'from .service import good\n',extra) as (args,closure,root):
+            self.assertEqual(self.analyze(args,closure)['status'],'STATIC_METADATA_VERIFIED')
+            path=root/child;raw=path.read_bytes();path.unlink();path.write_bytes(raw);path.chmod(0o644)
+            with self.assertRaises(p.BoundaryError):self.analyze(args,closure)
     def case_literal_all_and_actual_star(self):
         for value in (b'("good",)',b'["good"]'):
             self.check(b'good=1\n__all__='+value+b'\n',b'from .service import *\n','STATIC_METADATA_VERIFIED')
