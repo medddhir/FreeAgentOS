@@ -3404,3 +3404,133 @@ logs and unexplained disk timing remain retained; these passes establish current
 regression verification, not historical causation, live website qualification,
 protected installed authority or real privilege isolation. B10 PARTIAL/N3 pending,
 Stage31D NOT AUTHORIZED. Live launch gates remain unchanged.
+
+## RPT-1 reconciliation — source correction, executable verification BLOCKED
+
+Baseline 3e0795014e4036a5cee868e102070abd1106f6cf on clean main. The
+pytest -q branch is confirmed and already exists in parent
+25f47236d81674d798d6c45a2e79247b711f9201; the candidate restored named
+unittest target output but omitted equivalent pytest reporting. This is a
+reporting gap, not demonstrated protected authority. workspace.test_discovery_count
+parses pytest summary counts; tester.tester_node checks baseline/final counts,
+protected inputs, exit and RESULT. Those checks do not attest every named test.
+
+The narrow change selects pytest -vv for target context and retains -q only
+for controller_entrypoint() executing in its own controller root. The protected
+script/layout boundary is reused, not replaced with project or ambient mode
+flags. unittest reporting, discovery, deadlines and 64KiB overflow rejection
+are unchanged. pytest.ini/conftest.py/pyproject.toml markers select the framework,
+not controller reporting. Project plugins/configuration may still affect pytest
+execution and terminal reports; -vv is a launch request, not an independent
+identity attestation. A stronger named-evidence acceptance gate is separate
+contract work, not included here. Exact pytest option interactions were not
+executably checked because its runtime is unavailable.
+
+Both established interpreters (.venv-orchestrator/bin/python3 and /usr/bin/python3)
+report No module named pytest. No installation or substitute interpreter was
+used. A fresh copied-runner target with pytest.ini and one named passing test
+was launched through /usr/bin/python3 before and after: COMMAND changed from
+-m pytest -q to -m pytest -vv, but both returned RESULT=FAIL/EXIT_CODE=1 with
+No module named pytest. Private evidence directories:
+/tmp/freeagent-rpt1-before-sq30w7uk and /tmp/freeagent-rpt1-after-1o0dz1u7.
+These executions establish selection and honest missing-runtime failure, not
+pytest named output, passing counts, errors, skips or configuration precedence.
+
+Available focused command: established interpreter -m unittest
+test_freeagent_test_runtime
+test_coding_units.CodingUnitTests.test_real_self_suite_discovers_stage_one_tests
+test_integrity_core.IntegrityGraphTests.test_existing_calculator_repair_regression
+test_integrity_core.IntegrityGraphTests.test_existing_calculator_workflow_regression
+test_integrity_core.IntegrityGraphTests.test_open_meteo_grounding_graph_regression
+test_integrity_core.IntegrityGraphTests.test_wrong_domain_docs_are_not_fetched -q.
+PASS22 in7.847s, wrapper9.727254s; private0600
+/tmp/freeagent-rpt1-focused.log SHA256
+7913d56488150ada5c1d213fec5c3cd0c7ceb1f13770380d8c5d6c3174184903.
+Includes actual compact-controller and verbose-target unittest subprocesses,
+all four original named-evidence integrity assertions, and deterministic pytest
+selection checks for each marker and misleading project layouts. Pytest success
+subprocess regressions remain BLOCKED, not skipped or replaced with a fake module.
+Affected command: established interpreter -m unittest
+test_disk_diagnostics.BoundedReportingTests
+test_workspace_isolation.WorkspaceIsolationTests.test_supported_test_discovery_summaries -q.
+PASS2 in0.697s, wrapper1.130586s; private0600
+/tmp/freeagent-rpt1-reporting-regressions.log. Existing actual unittest subprocess
+success/failure/error/skip/overflow checks and summary parser regressions pass;
+the runtime group's unchanged short injected deadline check also passes.
+Required-suite attempt and commit are withheld because those prerequisite
+regressions cannot be completed. No pre-required-run source manifest is claimed;
+there was no required run. Existing candidate PASS does not verify these new bytes.
+
+CAP-1 OPEN; N3 pending; B10 PARTIAL; live website execution unqualified.
+Historical disk-timeout causation remains unresolved. No Stage31D authorization,
+provider/model call, service change, installation, tag, push or deployment.
+
+## RPT-1 isolated executable verification (supersedes missing-fixture blocker)
+
+Explicit subsequent owner authorization permits a development-only external
+pytest fixture. /tmp/freeagent-rpt1-pytest-u56y3cq4/venv uses Python3.12.3,
+pytest8.3.5/iniconfig2.0.0/packaging24.2/pluggy1.5.0. Official PyPI version
+metadata supplied compatible Python requirements and wheel identities; downloaded
+wheels were checked against those SHA256 values before offline/no-deps install.
+Private provenance.json records exact URLs and hashes. Established runtimes,
+editable .pth files, production packaging and runtime selection were not changed.
+requirements-rpt1-fixture.lock pins all four wheel hashes; RPT1_VERIFICATION.md
+documents explicit temporary setup and the development-only prerequisite.
+test_pytest_reporting fails if that prerequisite is missing; it neither skips
+nor downloads. The fixture interpreter is passed only to developer tests.
+
+Actual baseline/current copied-runner comparison on one minimal pytest target:
+baseline runner SHA256 022250c1a45b78b222c907b27add8ba41b30fe1cbb20b2b2d6ff1fafdf175abf
+passes with a dot and 1 passed, without a named PASSED line; corrected SHA256
+939a072775c8383abbcb0c30bc8a6fb81d94a9ecd61a27049c359a18a73a9954
+passes with test_named.py::test_named_evidence PASSED and 1 passed.
+Private comparison evidence: /tmp/freeagent-rpt1-comparison-w8zw5qxp/evidence.json.
+Both are actual subprocess execution, not reviewer source inference.
+
+Focused command: established interpreter -m unittest test_pytest_reporting
+test_freeagent_test_runtime test_disk_diagnostics test_disk_allocation test_website
+test_coding_units.CodingUnitTests.test_real_self_suite_discovers_stage_one_tests
+test_workspace_isolation.WorkspaceIsolationTests.test_supported_test_discovery_summaries
+and all four original named-evidence IntegrityGraphTests from the prior section -q,
+with FREEAGENT_PYTEST_FIXTURE_PYTHON pointing at the isolated interpreter.
+PASS46 in13.876s, wrapper15.438033s; private0600
+/tmp/freeagent-rpt1-executable-focused.log SHA256
+b7f61d2119d8b9719919112203ddb021e0d54435e4b4e3fc8a3c4009de09a432.
+Actual pytest coverage includes each framework marker, misleading target layout,
+addopts=-q, named passing results, setup ERROR/assertion FAILED/SKIPPED and parsed
+counts, 70KB output rejection, injected short test-only deadline, compact synthetic
+controller and verbose target unittest. Tests use controlled environment/plugin
+autoload; arbitrary target plugins are not defeated or independently attested.
+Existing production limits, count/identity checks and cleanup remain unchanged.
+
+A bounded source-byte manifest precedes exactly one required invocation below.
+This binds recorded results to observed source bytes, not every dependency,
+runtime source read or independent protection/attestation. CAP-1 OPEN/N3 pending,
+B10 PARTIAL/live website unqualified/historical disk causation unresolved;
+Stage31D NOT AUTHORIZED. No reviewer launch, tag, push or deployment.
+
+RPT-1 required verification: exactly one /root/agent-stack/bin/freeagent-test
+invocation with the explicit development-fixture variable. Actual command:
+/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover.
+PASS545 tests in371.646s; wrapper373.610368s; RESULT=PASS/EXIT_CODE=0,
+no OUTPUT_TRUNCATED or timeout. Private0600 /tmp/freeagent-rpt1-required.log,
+7258bytes, SHA256
+2b46be1545ce5233de3f758a3dfbf06ca82036f9260d10b09a3a1220ce2347f5.
+Conservative whole-wrapper headroom against420s:46.389632s; exact runner
+interval is not separately measured. 64KiB capture/deadlines are unchanged.
+PolicyIdentityCases().cases() also passed before the required attempt.
+
+Pre-run private0600 /tmp/freeagent-rpt1-required-source-before.json SHA256
+cd504fe067f0b8bb41c1933a23839a2d2132a5db8e221fabeb0c20a6ba7c53b4
+contains193 selected tracked source/test/config/docs and explicit new files,
+2961963bytes (bounds1000 entries/2MiB per file/32MiB aggregate). Reads use
+no-follow regular file descriptors and stable identity/size/mtime/ctime checks;
+atime is excluded because reading can change it. All covered bytes/sizes/modes
+matched after the run. Private result JSON retains comparison and wrapper data.
+This does not attest every dependency/source read or exclude transient changes
+restored between observations. Only this result narrative was appended after
+that comparison; tested executable source, tests, pins and prerequisite docs
+are unchanged. Final diff/whitespace review is required before the local commit.
+RPT-1 reporting repair is verified within this fixture; arbitrary plugin output
+and independent named-test attestation remain outside the contract. CAP-1/N3,
+B10/live qualification and historical disk causation status remain as above.

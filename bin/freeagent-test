@@ -144,7 +144,10 @@ def detect():
             ).lower()
         )
     ):
-        return [sys.executable, "-m", "pytest", "-q"], "pytest"
+        # Match unittest's trusted reporting boundary. Project markers choose
+        # the framework, never the controller's compact reporting context.
+        reporting = "-q" if controller_entrypoint() and ROOT.resolve() == CONTROLLER_ROOT else "-vv"
+        return [sys.executable, "-m", "pytest", reporting], "pytest"
 
     # Python: unittest
     python_tests = (

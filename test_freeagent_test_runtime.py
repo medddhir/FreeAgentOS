@@ -190,8 +190,39 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
             repo = Path(directory)
             (repo / "pytest.ini").write_text("[pytest]\n")
             with patch.dict(self.globals, {"ROOT": repo}):
-                self.assertEqual(self.detect(), ([sys.executable, "-m", "pytest", "-q"],
+                self.assertEqual(self.detect(), ([sys.executable, "-m", "pytest", "-vv"],
                                                  "pytest"))
+
+    def test_pytest_markers_cannot_select_controller_reporting(self):
+        for marker, content in (("pytest.ini", "[pytest]\naddopts = -q\n"),
+                                ("conftest.py", "# pytest configuration\n"),
+                                ("pyproject.toml", "[tool.pytest.ini_options]\naddopts = '-q'\n")):
+            with self.subTest(marker=marker), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory)
+                (target / marker).write_text(content)
+                (target / "orchestrator").mkdir()
+                (target / "orchestrator" / "cli.py").write_text("# misleading controller marker\n")
+                (target / "bin").mkdir()
+                (target / "bin" / "freeagent-test").write_text("# misleading runner marker\n")
+                with patch.dict(self.globals, {"ROOT": target}):
+                    self.assertEqual(self.detect(),
+                                     ([sys.executable, "-m", "pytest", "-vv"], "pytest"))
+                copied = target / "protected" / "freeagent-test"
+                with patch.dict(self.globals, {"ROOT": target, "SCRIPT": copied,
+                                               "CONTROLLER_ROOT": copied.parents[1]}):
+                    self.assertEqual(self.detect(),
+                                     ([sys.executable, "-m", "pytest", "-vv"], "pytest"))
+
+    def test_pytest_controller_reporting_remains_compact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            controller = Path(directory)
+            (controller / "pytest.ini").write_text("[pytest]\n")
+            (controller / "orchestrator").mkdir()
+            (controller / "orchestrator" / "cli.py").write_text("# trusted layout fixture\n")
+            with patch.dict(self.globals, {"ROOT": controller, "CONTROLLER_ROOT": controller,
+                                           "SCRIPT": controller / "bin" / "freeagent-test"}):
+                self.assertEqual(self.detect(),
+                                 ([sys.executable, "-m", "pytest", "-q"], "pytest"))
 
     def test_node_runner_is_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:
