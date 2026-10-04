@@ -2936,3 +2936,69 @@ unchanged420s. Private log /tmp/freeagent-b10-r2-required.log explicit0600,
 normal umask, no retry or assertion/security/limit changes. Final scoped three-file
 diff and whitespace review PASS. This is deterministic preparation evidence only;
 repaired R1/R2 still requires independent review and real enforcement is UNPROVEN.
+
+### B10 N1 unrequested definition-time expression effects
+
+Baseline50b05956b9184d410d3ed1c81dfc95f745b96105 confirmed N1 using parsed
+staging sources, never by executing the reviewed hook. Service defined good=1,
+imported _export_hook and defined unrequested other(value: _export_hook.missing).
+Hook source imported sys and its __getattr__ deleted service.good. Consumer
+requested good. Precise declarations included service -> own initializer/hook,
+consumer -> own initializer/service and no hook file edge for builtin sys.
+An initial fixture omitted consumer -> service and correctly rejected that graph;
+after supplying that actual required edge, baseline returned
+STATIC_METADATA_VERIFIED with no issues and staging admission, qualified=false,
+installed_observed=false, execution_enabled=false. Independent hook reachability
+and __getattr__ source do not themselves prove annotation lookup safety.
+The eager annotation lookup could invoke the hook and delete good under Python
+semantics; this is inferred, not an executed mutation or runtime import proof.
+
+The effect walker recorded writes but did not conservatively reject an eager
+attribute/subscript lookup. Direct definitions only tainted immediate calls;
+proof of immediate expressions was otherwise demand-driven on the defined object.
+An unrequested object could therefore leave unrelated positive exports intact.
+Rule version6 carries an explicit definition-time context through the shared
+scope-aware effect walker. Calls, attributes and subscripts encountered in that
+context taint the module before export demand. Direct and control-flow definitions
+use immediate decorators/defaults/annotations/bases/keywords; lambda defaults use
+the same context. Nested expressions retain that context, while ordinary function
+and lambda bodies remain excluded from this walker. Decorator/complex-class
+rejection, unknown module-control-flow taint and other conservative policies are
+not relaxed. In particular, existing broad conservative unknown-statement checks
+can still reject a control-flow statement containing unsupported dormant syntax;
+this change does not interpret it or claim complete scope/execution semantics.
+
+The original witness now returns UNRESOLVED with
+IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good and the prerequisite
+rejects POLICY_REJECTED. Fixed tests cover positional/keyword defaults, positional/
+variadic parameter and return annotations, calls, attributes, subscripts, nested
+expressions, direct/conditional definitions, decorators/class inputs and lambda
+defaults. Hook-shaped __all__ replacement cannot retain the earlier star proof.
+Consumers request good/star exports rather than other. Literal definitions/defaults
+and existing dormant function/lambda-body positives remain supported with all
+staging authority flags false. Deferred-annotation semantics are not interpreted:
+unsupported cases are conservatively rejected, not described as eager execution.
+Source/hash/pinned-identity caches, import/attribute contexts, cycles, limits and
+R2 edges remain preserved; policy identity binds the changed source and old
+policy-mismatched journals remain rejected without relabeling/deletion.
+
+No candidate rebuild, finding-count refresh, reviewed-module execution, new fixture
+execution, model/provider call, stress campaign, installation, new privileged
+backend activation or production integration occurred. Existing required suite
+fixtures alone remain authorized. Doctor active isolation UNPROVEN and Stage3.1D
+NOT AUTHORIZED. B10 remains PARTIAL for unsupported static/dynamic/import-order
+semantics, builtin/frozen/native positive export evidence, complete build/toolchain
+closure, protected publication, credentials and real consumer/removal integration.
+Static rejection cannot establish successful runtime imports or real enforcement.
+Verification results follow when complete; historical disk-timeout uncertainty
+remains retained above and is not retrospectively resolved by this repair.
+
+N1 verification: original precise baseline witness STATIC_METADATA_VERIFIED ->
+UNRESOLVED/POLICY_REJECTED; integrated N1 recording table PASS. Export/F1/F2/R1/R2,
+independent analyzer, policy identity and closure focused groups PASS30.152s.
+Unchanged /root/agent-stack/bin/freeagent-test PASS518 tests in296.842s,
+RESULT=PASS, exit0; wall299.014s, conservative120.986s headroom against unchanged
+420s. Private log /tmp/freeagent-b10-n1-required.log explicit0600; normal umask,
+no required retry, assertion/timeout/production policy changes. Final scoped
+three-file diff and whitespace inspection PASS. Deterministic N1 preparation is
+verified; this is not semantic closure, protected authority or real enforcement.

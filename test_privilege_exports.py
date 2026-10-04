@@ -93,6 +93,69 @@ class ExportCases(unittest.TestCase):
                    b'from .service import good\n','STATIC_METADATA_VERIFIED')
         self.check(b'good=1\nif True:\n    class Other:\n        pass\n',
                    b'from .service import good\n','STATIC_METADATA_VERIFIED')
+    def case_unused_definition_time_effects(self):
+        hook='python_base/lib/python3.12/_export_hook.py'
+        service='package/orchestrator/privilege/service.py'
+        own_init='package/orchestrator/privilege/__init__.py'
+        hook_source=b'import sys\ndef __getattr__(name):\n    del sys.modules["orchestrator.privilege.service"].good\n    return 1\n'
+        def check(definition,expected='UNRESOLVED',star=False,deferred=False):
+            source=b'good=1\nimport _export_hook\n'+(b'__all__=("good",)\n' if star else b'')+definition
+            extra={hook:hook_source if not star else hook_source.replace(b'del sys.modules["orchestrator.privilege.service"].good',b'sys.modules["orchestrator.privilege.service"].__all__=("absent",)')}
+            future='python_base/lib/python3.12/__future__.py'
+            if deferred:
+                source=b'from __future__ import annotations\n'+source;extra[future]=b'annotations=1\n'
+            consumer=b'from .service import *\n' if star else b'from .service import good\n'
+            # Precise declarations, not the blanket ExportCases fixture: good is
+            # requested; the annotated/defaulted definition is deliberately not.
+            with IndependentClosureCases().fixture(service=source,child=consumer,extra=extra) as (_,args,closure,root):
+                rows={x['path']:x for x in closure['artifacts']}
+                rows[service]['requires']=sorted([own_init,hook]+([future] if deferred else []))
+                rows['package/orchestrator/privilege/child.py']['requires']=sorted([own_init,service])
+                rows[hook]['requires']=[]
+                if deferred:rows[future]['requires']=[]
+                result=self.analyze(args,closure)
+                self.assertEqual(result['status'],expected,result['issues'])
+                self.assertFalse(result['qualified'])
+                gate=lambda:c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                if expected=='UNRESOLVED':
+                    with self.assertRaises(p.BoundaryError) as error:gate()
+                    self.assertEqual(error.exception.code,'POLICY_REJECTED')
+                    if star:self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
+                    else:self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+                else:
+                    accepted=gate()
+                    for key in ('qualified','installed_observed','execution_enabled'):self.assertFalse(accepted[key])
+        definitions=(b'def other(value: _export_hook.missing):\n    pass\n',
+                     b'def other(value=_export_hook.missing):\n    pass\n',
+                     b'def other(*, value=_export_hook.missing):\n    pass\n',
+                     b'def other(value: _export_hook["missing"]):\n    pass\n',
+                     b'def other(value=_export_hook["missing"]):\n    pass\n',
+                     b'def other(value=_export_hook.missing()):\n    pass\n',
+                     b'def other() -> _export_hook.missing:\n    pass\n',
+                     b'def other(*args: _export_hook.missing, **kwargs: _export_hook.missing):\n    pass\n',
+                     b'def other(value: (_export_hook.missing,), /):\n    pass\n',
+                     b'other=lambda value=_export_hook.missing: value\n',
+                     b'other=lambda *, value=_export_hook["missing"]: value\n',
+                     b'@_export_hook.missing\ndef other():\n    pass\n',
+                     b'class Other(_export_hook.missing):\n    pass\n',
+                     b'class Other(metaclass=_export_hook.missing):\n    pass\n')
+        for definition in definitions:
+            check(definition)
+            nested=b'if True:\n'+b''.join(b'    '+line+b'\n' for line in definition.splitlines())
+            check(nested)
+        check(definitions[0],star=True)
+        check(b'if True:\n    def other(value: _export_hook.missing):\n        pass\n',star=True)
+        # Unsupported deferred annotation handling rejects conservatively, not
+        # on a claim that __future__.annotations performs this eager lookup.
+        check(definitions[0],deferred=True)
+        for definition in (b'def other(value=1, *, option=(1,None)) -> "int":\n    pass\n',
+                           b'class Other:\n    pass\n',
+                           b'def dormant():\n    return _export_hook.missing\n',
+                           b'other=lambda: _export_hook.missing\n',
+                           b'def other(value=lambda: _export_hook.missing):\n    pass\n',
+                           b'if True:\n    def dormant():\n        global good\n        del good\n',
+                           b'other=lambda value=(lambda: _export_hook.missing): value\n'):
+            check(definition,'STATIC_METADATA_VERIFIED')
     def case_definitions_assignments_aliases(self):
         for service in (b'good=1\n',b'good=(1,None,"text")\n',b'def good():\n    pass\n',b'class good:\n    pass\n',b'original=1\ngood=original\n',b'good: "int"=1\n',b'def good(value=1):\n    pass\n'):
             self.check(service,b'from .service import good\n','STATIC_METADATA_VERIFIED')

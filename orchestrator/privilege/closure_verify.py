@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=5
+EXPORT_RULE_VERSION=6
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -134,39 +134,43 @@ class _Exports:
             if self.stored_nodes>MAX_AST_NODES:raise p.BoundaryError('BOUNDS_EXCEEDED')
             if symbol in bindings:unsafe.add(symbol)
             bindings[symbol]=value;positions[symbol]=position
-        def effects(node):
+        def effects(node,*,definition_time=False):
             # Module-evaluated effects only. Function bodies remain dormant;
             # executable class bodies and implicit decorators are rejected.
             nonlocal tainted
-            pending=[node]
+            pending=[(node,definition_time)]
             while pending:
-                current=pending.pop()
+                current,eager=pending.pop()
                 self.bounded()
+                # Defaults/annotations may invoke hooks before any export is
+                # requested. Demand-driven proof of the definition is too late.
+                if eager and isinstance(current,(ast.Call,ast.Attribute,ast.Subscript)):
+                    tainted=True
                 if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                     unsafe.add(current.name)
                     if current.decorator_list or isinstance(current,ast.ClassDef) and not plain_class(current):
                         tainted=True
-                    pending.extend(immediate(current));continue
+                    pending.extend((value,True) for value in immediate(current));continue
                 if isinstance(current,ast.Lambda):
-                    pending.extend(current.args.defaults)
-                    pending.extend(x for x in current.args.kw_defaults if x is not None)
+                    pending.extend((value,True) for value in current.args.defaults)
+                    pending.extend((x,True) for x in current.args.kw_defaults if x is not None)
                     continue  # body writes belong to the dormant lambda scope
                 if isinstance(current,ast.ExceptHandler) and current.name:
                     # CPython binds then clears this string-valued target.
                     unsafe.add(current.name)
                 if isinstance(current,ast.NamedExpr):
                     unsafe.add(current.target.id)
-                    pending.append(current.value);continue
+                    pending.append((current.value,eager));continue
                 if isinstance(current,ast.comprehension):
                     # Iteration targets are comprehension-local; named expressions
                     # in evaluated iterables/filters still affect the outer scope.
-                    pending.append(current.iter);pending.extend(current.ifs);continue
+                    pending.append((current.iter,eager));pending.extend((x,eager) for x in current.ifs);continue
                 if isinstance(current,ast.Import):unsafe.update(a.asname or a.name.split('.')[0] for a in current.names)
                 if isinstance(current,ast.ImportFrom):
                     if any(a.name=='*' for a in current.names):unsafe.add('__getattr__')
                     unsafe.update(a.asname or a.name for a in current.names)
                 if isinstance(current,ast.Name) and isinstance(current.ctx,(ast.Store,ast.Del)):unsafe.add(current.id)
-                pending.extend(ast.iter_child_nodes(current))
+                pending.extend((value,eager) for value in ast.iter_child_nodes(current))
         def immediate(node):
             values=list(node.decorator_list)
             if isinstance(node,ast.ClassDef):
@@ -183,7 +187,7 @@ class _Exports:
             self.bounded()
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                 evaluated=immediate(node)
-                for value in evaluated:effects(value)
+                for value in evaluated:effects(value,definition_time=True)
                 valid=not node.decorator_list and not getattr(node,'type_params',[])
                 if node.decorator_list:tainted=True
                 if isinstance(node,ast.ClassDef):
