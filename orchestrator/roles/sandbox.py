@@ -311,9 +311,165 @@ def _event_values(path):
             if value.isdigit()}
 
 
+# Optional fixture diagnostics are observations, never boundary/cleanup proof.
+DISK_DIAGNOSTIC_FILE = "freeagent-disk-progress.jsonl"
+DIAGNOSTIC_BYTES = 8192
+DIAGNOSTIC_RECORDS = 40
+CPU_DIAGNOSTIC_KEYS = ("usage_usec", "user_usec", "system_usec", "nr_periods",
+                       "nr_throttled", "throttled_usec")
+
+
+def _diagnostic_read(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > DIAGNOSTIC_BYTES:
+            raise ValueError("DIAGNOSTIC_BOUNDS")
+        data = os.read(descriptor, DIAGNOSTIC_BYTES + 1)
+        if len(data) > DIAGNOSTIC_BYTES:
+            raise ValueError("DIAGNOSTIC_BOUNDS")
+        return data.decode("ascii")
+    finally:
+        os.close(descriptor)
+
+
+def _disk_sample(scope, workspace):
+    try:
+        values = dict(line.split() for line in _diagnostic_read(scope / "cpu.stat").splitlines())
+        cpu = {key: int(values[key]) for key in CPU_DIAGNOSTIC_KEYS}
+        if any(value < 0 or value >= 2 ** 63 for value in cpu.values()):
+            raise ValueError("DIAGNOSTIC_BOUNDS")
+        disk = os.statvfs(workspace)
+        return {"status": "OBSERVED", "monotonic": time.monotonic(), "cpu_stat": cpu,
+                "available_bytes": disk.f_bavail * disk.f_frsize,
+                "available_inodes": disk.f_favail}
+    except (OSError, ValueError, KeyError, UnicodeError):
+        return {"status": "UNAVAILABLE"}
+
+
+def _disk_progress(rootfs):
+    try:
+        text = _diagnostic_read(rootfs / "tmp" / DISK_DIAGNOSTIC_FILE)
+        if not text.endswith("\n"):
+            raise ValueError("DIAGNOSTIC_PARTIAL")
+        lines = text.splitlines()
+        if not 1 <= len(lines) <= DIAGNOSTIC_RECORDS:
+            raise ValueError("DIAGNOSTIC_BOUNDS")
+        records = []
+        for line in lines:
+            record = json.loads(line)
+            if (set(record) != {"phase", "monotonic", "written_bytes"}
+                    or record["phase"] not in ("test_start", "write", "complete", "write_error")
+                    or type(record["monotonic"]) not in (int, float)
+                    or not 0 <= record["monotonic"] < 2 ** 63
+                    or type(record["written_bytes"]) is not int
+                    or not 0 <= record["written_bytes"] <= 360 * MIB
+                    or records and (record["monotonic"] < records[-1]["monotonic"]
+                                    or record["written_bytes"] < records[-1]["written_bytes"])):
+                raise ValueError("DIAGNOSTIC_INVALID")
+            records.append(record)
+        return {"status": "CHILD_REPORTED", "records": records}
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return {"status": "MISSING_OR_INVALID"}
+
+
+def _cpu_delta(before, after):
+    if before.get("status") != "OBSERVED" or after.get("status") != "OBSERVED":
+        return None
+    delta = {key: after["cpu_stat"][key] - before["cpu_stat"][key]
+             for key in CPU_DIAGNOSTIC_KEYS}
+    return delta if all(value >= 0 for value in delta.values()) else None
+
+
+# Fixed owned-scope files only. Missing keys are None, never synthesized zeroes.
+MEMORY_GAUGES = ("anon", "file", "shmem")
+MEMORY_COUNTERS = ("pgfault", "pgmajfault", "pgscan", "pgsteal", "pgscan_direct",
+                   "pgsteal_direct", "workingset_refault_anon", "workingset_refault_file")
+MEMORY_EVENTS = ("low", "high", "max", "oom", "oom_kill", "oom_group_kill")
+MEMORY_DIAGNOSTIC_FILES = (
+    ("memory.current", "GAUGE_BYTES", None),
+    ("memory.peak", "HIGH_WATER_BYTES", None),
+    ("memory.events", "CUMULATIVE_EVENTS_HIERARCHICAL", MEMORY_EVENTS),
+    ("memory.events.local", "CUMULATIVE_EVENTS_LOCAL", MEMORY_EVENTS),
+    ("memory.stat", "MIXED_GAUGES_AND_COUNTERS", MEMORY_GAUGES + MEMORY_COUNTERS),
+    ("memory.pressure", "CUMULATIVE_STALL_MICROSECONDS", ("some", "full")),
+    ("memory.min", "CONFIGURED_BYTES", None),
+    ("memory.low", "CONFIGURED_BYTES", None),
+    ("memory.high", "CONFIGURED_BYTES", None),
+    ("memory.max", "CONFIGURED_BYTES", None),
+    ("memory.swap.max", "CONFIGURED_BYTES", None),
+    ("memory.oom.group", "CONFIGURED_BOOLEAN", None),
+)
+
+
+def _diagnostic_integer(value):
+    if not value.isascii() or not value.isdecimal() or not 0 <= int(value) < 2 ** 63:
+        raise ValueError("DIAGNOSTIC_BOUNDS")
+    return int(value)
+
+
+def _memory_sample(scope):
+    readings = []
+    for name, kind, keys in MEMORY_DIAGNOSTIC_FILES:
+        reading = {"file": name, "kind": kind, "start": time.monotonic()}
+        try:
+            text = _diagnostic_read(scope / name)
+            if keys is None:
+                value = text.strip()
+                values = {"value": "max" if kind == "CONFIGURED_BYTES" and value == "max"
+                          else _diagnostic_integer(value)}
+            elif name == "memory.pressure":
+                rows = {}
+                for line in text.splitlines():
+                    fields = line.split()
+                    if not fields or fields[0] not in keys or fields[0] in rows:
+                        raise ValueError("DIAGNOSTIC_INVALID")
+                    totals = [field[6:] for field in fields[1:] if field.startswith("total=")]
+                    if len(totals) != 1:
+                        raise ValueError("DIAGNOSTIC_INVALID")
+                    rows[fields[0]] = _diagnostic_integer(totals[0])
+                values = {key: rows.get(key) for key in keys}
+            else:
+                rows = {}
+                for line in text.splitlines():
+                    key, value = line.split()
+                    if key in keys:
+                        if key in rows:
+                            raise ValueError("DIAGNOSTIC_INVALID")
+                        rows[key] = _diagnostic_integer(value)
+                values = {key: rows.get(key) for key in keys}
+            reading.update(status="OBSERVED", values=values)
+        except (OSError, ValueError, UnicodeError):
+            reading.update(status="UNAVAILABLE", values=None)
+        reading["end"] = time.monotonic()
+        readings.append(reading)
+    return readings
+
+
+def _memory_deltas(before, after):
+    deltas = {}
+    for first, last in zip(before, after):
+        name = first["file"]
+        keys = (MEMORY_COUNTERS if name == "memory.stat" else
+                MEMORY_EVENTS if name in ("memory.events", "memory.events.local") else
+                ("some", "full") if name == "memory.pressure" else ())
+        if not keys:
+            continue  # Gauges, high-water marks and configured limits are not event counters.
+        values = {}
+        for key in keys:
+            initial = (first.get("values") or {}).get(key)
+            final = (last.get("values") or {}).get(key)
+            values[key] = (final - initial if name == last["file"] and
+                           type(initial) is int and type(final) is int and final >= initial else None)
+        deltas[name] = values
+    return deltas
+
+
 def _setup_and_exec(rootfs, workspace, venv):
     """Trusted PID-namespace init: own the cgroup, lease and complete cleanup."""
     rootfs, workspace, venv = Path(rootfs), Path(workspace), Path(venv)
+    diagnostic = os.environ.get("FREEAGENT_DISK_DIAGNOSTICS") == "1"
+    phases = {"setup_start": time.monotonic()} if diagnostic else None
     timeout = int(os.environ.get("FREEAGENT_SANDBOX_TIMEOUT", "150"))
     timeout = min(timeout, RESOURCE_POLICY["wall_timeout_seconds"])
     _mount(None, "/", flags=MS_REC | MS_PRIVATE)
@@ -350,9 +506,20 @@ def _setup_and_exec(rootfs, workspace, venv):
         command = ["/usr/sbin/chroot", "--userspec=65534:65534", str(rootfs), *env,
                    "/usr/bin/python3", "-c",
                    "import os,runpy; os.chdir('/workspace'); runpy.run_path('/opt/freeagent/freeagent-test', run_name='__main__')"]
+        if diagnostic:
+            phases["setup_complete"] = time.monotonic()
+            before = _disk_sample(scope, rootfs / "workspace")
+            memory_before = _memory_sample(scope)
+            phases["launch_start"] = time.monotonic()
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    start_new_session=True, preexec_fn=lambda: _apply_child_limits(scope, timeout))
+        if diagnostic:
+            phases["launch_return"] = time.monotonic()
         timeout_triggered = _read_bounded(process, timeout, capture)
+        if diagnostic:
+            phases["wait_return"] = time.monotonic()
+            after = _disk_sample(scope, rootfs / "workspace")
+            memory_after = _memory_sample(scope)
         cleanup = _stop_scope(scope, process, RESOURCE_POLICY["termination_grace_seconds"])
         _drain_ready(process, capture)
         memory_events = _event_values(scope / "memory.events")
@@ -378,6 +545,13 @@ def _setup_and_exec(rootfs, workspace, venv):
                     "output_total_bytes": capture.total_bytes, "resource_hits": hits,
                     "cgroup_status": "ENFORCED",
                     "controls": {name: "ENFORCED" for name in REQUIRED_CONTROLS}}
+        if diagnostic:
+            phases["result_collection"] = time.monotonic()
+            evidence["disk_diagnostics"] = {"schema_version": 1, "authority": "NONE",
+                "phases": phases, "before": before, "after": after,
+                "cpu_delta": _cpu_delta(before, after), "progress": _disk_progress(rootfs),
+                "memory": {"before": memory_before, "after": memory_after,
+                           "deltas": _memory_deltas(memory_before, memory_after)}}
         return {"exit_code": exit_code, "output": output, "evidence": evidence}
     finally:
         if process is not None and process.poll() is None:
@@ -390,11 +564,11 @@ def _setup_and_exec(rootfs, workspace, venv):
         mountpoint.rmdir()
 
 
-def run_isolated(workspace, run_dir, runner_sha256, timeout=150):
+def run_isolated(workspace, run_dir, runner_sha256, timeout=150, *, disk_diagnostics=False):
     control = Path(run_dir) / "controller"
     test_area = Path(tempfile.mkdtemp(prefix="test-copy-", dir=control))
     try:
-        return _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area)
+        return _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area, disk_diagnostics)
     finally:
         if test_area.exists() and shutil.rmtree.avoids_symlink_attacks:
             # The sandbox runs as nobody and may leave directories owned by
@@ -417,7 +591,7 @@ def run_isolated(workspace, run_dir, runner_sha256, timeout=150):
             shutil.rmtree(test_area)
 
 
-def _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area):
+def _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area, disk_diagnostics=False):
     run_dir = Path(run_dir)
     control = run_dir / "controller"
     runner = control / "freeagent-test"
@@ -447,6 +621,8 @@ def _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area)
            str(rootfs), str(workspace), str(python_prefix)]
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"),
            "PYTHONDONTWRITEBYTECODE": "1", "FREEAGENT_SANDBOX_TIMEOUT": str(timeout)}
+    if disk_diagnostics is True:
+        env["FREEAGENT_DISK_DIAGNOSTICS"] = "1"
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                start_new_session=True, env=env)
     capture = BoundedCapture(96 * 1024)

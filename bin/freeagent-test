@@ -23,15 +23,19 @@ TIMEOUT = 420 if ROOT.resolve() == Path(__file__).resolve().parents[1] else 180
 MAX_CAPTURE = 64 * 1024
 
 
+def controller_entrypoint():
+    """Match the installed script layout, not markers in the target project."""
+    return (SCRIPT == CONTROLLER_ROOT / "bin" / "freeagent-test" and
+            (CONTROLLER_ROOT / "orchestrator" / "cli.py").is_file())
+
+
 def bootstrap_controller_runtime():
     """Use the production controller runtime only for its installed entrypoint.
 
     The same runner is copied into isolated target sandboxes, where no
     controller venv exists and the sandbox-selected interpreter is required.
     """
-    if SCRIPT != CONTROLLER_ROOT / "bin" / "freeagent-test" or not (
-        CONTROLLER_ROOT / "orchestrator" / "cli.py"
-    ).is_file():
+    if not controller_entrypoint():
         return
     if not CONTROLLER_PYTHON.is_file():
         raise RuntimeError("ORCHESTRATOR_RUNTIME_UNAVAILABLE")
@@ -149,12 +153,15 @@ def detect():
     )
 
     if python_tests:
+        # Only the controller self-suite is compact. Target execution retains
+        # named-test evidence, including when invoked through this entrypoint.
+        reporting = [] if controller_entrypoint() and ROOT.resolve() == CONTROLLER_ROOT else ["-v"]
         return [
             sys.executable,
             "-m",
             "unittest",
             "discover",
-            "-v",
+            *reporting,
         ], "python-unittest"
 
     # Node / JS

@@ -1,6 +1,8 @@
 """Adversarial checks for the production resource-bounded sandbox."""
 
 import hashlib
+import inspect
+import json
 import shutil
 import sys
 import tempfile
@@ -10,6 +12,47 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT / "orchestrator"))
 from roles.sandbox import RESOURCE_POLICY, REQUIRED_CONTROLS, run_isolated
+
+
+def allocate_disk_demand(descriptor, on_covered):
+    """Fixed tmpfs capacity demand; fall back only after genuine ENOSPC."""
+    import errno
+    import os
+    import stat
+    demand = 60 * 1024 * 1024
+    try:
+        os.posix_fallocate(descriptor, 0, demand)
+    except AttributeError as exc:
+        raise RuntimeError("DISK_ALLOCATION_UNSUPPORTED") from exc
+    except OSError as exc:
+        if exc.errno in (errno.ENOSYS, errno.EOPNOTSUPP):
+            raise RuntimeError("DISK_ALLOCATION_UNSUPPORTED") from exc
+        if exc.errno != errno.ENOSPC:
+            raise
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= demand
+                or not 0 <= info.st_blocks * 512 <= demand):
+            raise RuntimeError("DISK_PARTIAL_ALLOCATION_INVALID")
+        # st_size/blocks do not prove where extents exist. Overwrite from zero;
+        # existing allocated pages are reused, not added to the logical demand.
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        block = b'x' * (1024 * 1024)
+        covered = 0
+        for _ in range(60):
+            amount = os.write(descriptor, block[:min(len(block), demand - covered)])
+            if not 0 < amount <= min(len(block), demand - covered):
+                raise RuntimeError("DISK_FALLBACK_WRITE_INVALID")
+            covered += amount
+            on_covered(covered)
+            if covered == demand:
+                return
+        raise RuntimeError("DISK_FALLBACK_INCOMPLETE")
+    else:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_size != demand
+                or info.st_blocks * 512 != demand):
+            raise RuntimeError("DISK_ALLOCATION_NOT_BACKED")
+        on_covered(demand)
 
 
 class ResourceSandboxTests(unittest.TestCase):
@@ -25,12 +68,12 @@ class ResourceSandboxTests(unittest.TestCase):
         shutil.copyfile(ROOT / "bin/freeagent-test", runner)
         self.runner_hash = hashlib.sha256(runner.read_bytes()).hexdigest()
 
-    def execute(self, body, *, timeout=3):
+    def execute(self, body, *, timeout=3, disk_diagnostics=False, helpers=""):
         (self.workspace / "test_attack.py").write_text(
-            "import os, signal, subprocess, sys, time, unittest\n"
+            "import os, signal, subprocess, sys, time, unittest\n" + helpers + "\n"
             "class Attack(unittest.TestCase):\n"
             " def test_attack(self):\n" + "".join("  " + line + "\n" for line in body.splitlines()))
-        return run_isolated(self.workspace, self.run_dir, self.runner_hash, timeout=timeout)
+        return run_isolated(self.workspace, self.run_dir, self.runner_hash, timeout=timeout, disk_diagnostics=disk_diagnostics)
 
     def assert_clean(self, result):
         evidence = result["evidence"]
@@ -128,9 +171,28 @@ class ResourceSandboxTests(unittest.TestCase):
 
     def test_workspace_disk_ceiling(self):
         result = self.execute(
-            "for index in range(6):\n"
-            " with open('/workspace/growth-%d.bin' % index, 'wb') as file:\n"
-            "  for _ in range(60): file.write(b'x' * (1024 * 1024))", timeout=6)
+            "import json\n"
+            "written = 0\n"
+            "def progress(phase):\n"
+            " with open('/tmp/freeagent-disk-progress.jsonl', 'a') as diagnostic:\n"
+            "  diagnostic.write(json.dumps(dict(phase=phase, monotonic=time.monotonic(), written_bytes=written)) + '\\n')\n"
+            "progress('test_start')\n"
+            "try:\n"
+            " for index in range(6):\n"
+            "  base = written\n"
+            "  def covered(offset):\n"
+            "   nonlocal written\n"
+            "   previous = written\n"
+            "   written = base + offset\n"
+            "   if offset == 60 * 1024 * 1024 or written // (10 * 1024 * 1024) > previous // (10 * 1024 * 1024): progress('write')\n"
+            "  with open('/workspace/growth-%d.bin' % index, 'wb', buffering=0) as file:\n"
+            "   allocate_disk_demand(file.fileno(), covered)\n"
+            "except OSError:\n"
+            " progress('write_error')\n"
+            " raise\n"
+            "else: progress('complete')", timeout=6, disk_diagnostics=True,
+            helpers=inspect.getsource(allocate_disk_demand))
+        print("DISK_FIXTURE_DIAGNOSTICS=" + json.dumps(result['evidence'].get('disk_diagnostics'), sort_keys=True))
         self.assert_clean(result)
         self.assertIn("No space left on device", result["output"])
         self.assertNotEqual(result["result"], "PASS")

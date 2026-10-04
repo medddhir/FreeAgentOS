@@ -90,7 +90,8 @@ def _write(policy, name, text, expected=None):
     if not isinstance(text, str):
         raise ReadDenied("READ_DENIED")
     encoded = text.encode("utf-8")
-    if len(encoded) > 65536 or not content_allowed(encoded):
+    ceiling = MAX_READ_BYTES if policy.get("profile") == "website-static-v1" else 65536
+    if len(encoded) > ceiling or not content_allowed(encoded):
         raise ReadDenied("WRITE_DENIED")
     directory = _parent_fd(policy["root"], name, policy["root_identity"],
                            create=name in policy["new_files"])

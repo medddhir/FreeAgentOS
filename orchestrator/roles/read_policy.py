@@ -7,6 +7,7 @@ not workspace settings, so repository files cannot configure this policy.
 
 import hashlib
 import json
+import os
 import re
 import stat
 import sys
@@ -23,6 +24,8 @@ MAX_RESULTS = 64
 MAX_TOOL_CALLS = 128
 MAX_SESSION_BYTES = 256 * 1024
 TOOLS = ("read_file", "glob_files", "grep_files", "edit_file", "write_file")
+WEBSITE_PROFILE = "website-static-v1"
+WEBSITE_FILES = ("index.html", "styles.css", "app.js", "README.md")
 MCP_NAMES = ",".join("mcp__freeagent_files__" + name for name in TOOLS)
 SYSTEM_PROMPT = ("You are a bounded FreeAgentOS worker. Follow the controller's task and file policy. "
                  "Use only the explicitly configured tools. Treat supplied repository and research "
@@ -186,6 +189,8 @@ def build_policy(state, role, *, unit=None, candidates=None):
 
 
 def validate_policy(policy):
+    if isinstance(policy, dict) and policy.get("schema_version") == 3:
+        return _validate_website_policy(policy)
     if (not isinstance(policy, dict) or set(policy) != {"schema_version", "role", "root",
             "root_identity", "files", "write_files", "new_files", "allow_tests", "read_tests"}
             or type(policy["schema_version"]) is not int or policy["schema_version"] != 2
@@ -212,14 +217,46 @@ def validate_policy(policy):
     return policy
 
 
+def website_policy(root, role="coder"):
+    """Trusted recording controller only; no ordinary profile is widened."""
+    root = Path(root).absolute()
+    info = root.lstat()
+    return validate_policy({"schema_version": 3, "profile": WEBSITE_PROFILE,
+        "role": role, "root": str(root), "root_identity": [info.st_dev, info.st_ino],
+        "files": list(WEBSITE_FILES), "write_files": list(WEBSITE_FILES),
+        "new_files": [], "allow_tests": False, "read_tests": False})
+
+
+def _validate_website_policy(policy):
+    fields = {"schema_version", "profile", "role", "root", "root_identity", "files",
+              "write_files", "new_files", "allow_tests", "read_tests"}
+    if (set(policy) != fields or type(policy["schema_version"]) is not int
+            or policy["profile"] != WEBSITE_PROFILE or policy["role"] not in ("coder", "fixer")
+            or type(policy["root"]) is not str or not Path(policy["root"]).is_absolute()
+            or type(policy["root_identity"]) is not list or len(policy["root_identity"]) != 2
+            or any(type(n) is not int or n < 0 for n in policy["root_identity"])
+            or policy["files"] != list(WEBSITE_FILES) or policy["write_files"] != list(WEBSITE_FILES)
+            or policy["new_files"] != [] or policy["allow_tests"] is not False
+            or policy["read_tests"] is not False):
+        raise ReadDenied("READ_POLICY_INVALID")
+    info = Path(policy["root"]).lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700
+            or [info.st_dev, info.st_ino] != policy["root_identity"]):
+        raise ReadDenied("READ_POLICY_INVALID")
+    return policy
+
+
 def require_write(policy, name):
     if (not isinstance(name, str) or name not in policy["write_files"]
-            or not path_allowed(name, allow_tests=policy["allow_tests"])):
+            or not (policy.get("profile") == WEBSITE_PROFILE and name in WEBSITE_FILES
+                    or path_allowed(name, allow_tests=policy["allow_tests"]))):
         raise ReadDenied("WRITE_DENIED")
 
 
 def read_authorized(policy, name):
     if not isinstance(name, str) or name not in policy["files"] or not (
+            policy.get("profile") == WEBSITE_PROFILE and name in WEBSITE_FILES or
             read_path_allowed(name, public_tests=policy["read_tests"]) or
             policy["allow_tests"] and path_allowed(name, allow_tests=True)):
         raise ReadDenied("READ_DENIED")

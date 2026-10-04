@@ -202,7 +202,7 @@ class CodingUnitTests(unittest.TestCase):
 
     def test_real_self_suite_discovers_stage_one_tests(self):
         runner = runpy.run_path(str(ROOT / "bin/freeagent-test"))
-        self.assertEqual(runner["detect"](), ([sys.executable, "-m", "unittest", "discover", "-v"],
+        self.assertEqual(runner["detect"](), ([sys.executable, "-m", "unittest", "discover"],
                                                 "python-unittest"))
         suite = unittest.TestLoader().discover(str(ROOT), pattern="test*.py")
         def test_ids(node):

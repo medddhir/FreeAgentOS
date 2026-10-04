@@ -3081,3 +3081,326 @@ RESULT=PASS, exit0; wall287.095s, conservative132.905s headroom against unchange
 no required retry or assertion/membership/timeout/security changes. Final scoped
 three-file diff/whitespace review PASS. This is deterministic N2 preparation only;
 B10 remains PARTIAL, independent review pending and real enforcement UNPROVEN.
+
+## Website-v1 deterministic product preparation (separate from Stage31D)
+
+See WEBSITE_V1.md for the authoritative product scope, local-free / future managed
+paid-services model, complete supplied reuse catalog, selected pins/notices and
+recorded workflow. The new LangGraph website slice uses the existing file broker
+with an exact four-file schema-3 policy; ordinary profiles and production graph
+behavior remain unchanged. Preview/browser/live coding are disabled, structural
+recording checks are non-qualifying and complete rehearsal exports are explicitly
+PREPARATION_ONLY. No supervisor assurance gate or privileged backend is changed.
+
+N3 remains source-traced and pending reproduction: ordinary Assign.value and
+AnnAssign.value use the non-strict effect-walker context; an unrequested attribute
+lookup may preserve another stale proof. No hook is executed and no analyzer fix
+or independent-review acceptance is claimed. B10 remains PARTIAL. N2 review and
+historical disk-timeout uncertainty are preserved. The authoritative policy hash
+changes with broker-policy source changes; old journals are not rewritten or
+relabeled. Doctor active isolation UNPROVEN; Stage31D NOT AUTHORIZED.
+
+Website-v1 verification BLOCKED: affected focused regressions PASS96 (30.176s),
+policy identity cases PASS, final website cases PASS7 (0.438s). One unchanged
+required suite returned RESULT=FAIL/exit1: 525 tests in415.030s, wall417.962s.
+The sole failure was existing test_workspace_disk_ceiling: expected disk-exhaustion
+text, observed RESULT=TIMEOUT/EXIT_CODE=124. All website cases passed. This was
+not the required runner's 420s timeout. Root cause remains unresolved; historical
+uncertainty is preserved. Private explicit0600 log is documented in WEBSITE_V1.md.
+No retry, weakened assertion/limit, unrelated sandbox change or commit. Scoped
+website preparation remains uncommitted; live execution and Stage31D unauthorized.
+
+## Disk-fixture diagnostics and bounded reporting (uncommitted diagnostic milestone)
+
+Original required run: /tmp/freeagent-website-v1-required-4hdk7z9z.log,
+SHA-256 dac402d68a03cf2233c7c2f66e77f2ee92a1cd5ea95ee646e194e01cdaa7b840.
+525 tests, 415.030s, reported wall417.962s, exit1. Two independent failures:
+the disk fixture's six-second inner deadline, and outer OUTPUT_TRUNCATED=true.
+The latter also blocks PASS under the unchanged 64KiB capture gate. Historical
+CPU-quota causation remains unproven; the earlier isolated passes do not explain
+that failure.
+
+The optional controller-selected disk_diagnostics flag observes only this owned
+sandbox. Two bounded no-follow CLOEXEC reads of its cpu.stat (six fixed counters)
+and two statvfs samples occur immediately before launch and after the existing
+wait returns, before termination. Six monotonic phase timestamps distinguish
+setup, launch, wait return and result collection. There is no polling task,
+thread, additional process or new path/PID RPC. Regular-file diagnostic reads
+are bounded to8192bytes; unavailable/malformed observations carry no authority
+and do not change timeout precedence, resource classification or cleanup checks.
+Local filesystem reads are cooperative observations, not hard timing guarantees.
+
+The fixed disk fixture adds test-start, every10MiB successful-write and terminal
+records to its namespace-private /tmp/freeagent-disk-progress.jsonl, outside the
+256MiB tested workspace. At most38 records are generated for the unchanged six
+files/360MiB attempted workload; parsing permits at most40 records/8192bytes.
+Records are explicitly CHILD_REPORTED, separate from supervisor-observed counters
+and space. Truncated/non-monotonic/out-of-bounds records remain invalid. Nothing
+in this channel grants permissions or establishes isolation/cleanup proof.
+Instrumentation adds JSON/import, scratch I/O, timestamp and counter-read overhead;
+its runtime is not an uninstrumented comparison. Namespace-launch/import phases
+before setup_start and detailed scheduler/reclaim attribution remain unavailable.
+
+Required runner changes only unittest discovery's verbosity: remove -v, retain
+same discovery, dot/skip/count reporting, failures/errors/tracebacks, exit status,
+420s controller/180s target deadlines and64KiB rejection. Runtime/discovery tests
+update that exact legitimate command expectation. Copied runner hashes are freshly
+computed and checked as before; old runner identities are not silently accepted.
+Sandbox source is an authoritative policy-hash input, so this source change alters
+policy identity; mismatch protection is unchanged. No journals are manipulated.
+
+Focused checks: established interpreter -m unittest test_disk_diagnostics
+ test_freeagent_test_runtime
+ test_coding_units.CodingUnitTests.test_real_self_suite_discovers_stage_one_tests -q
+PASS19 in0.923s (wrapper2.438s), private0600 log
+/tmp/freeagent-disk-diagnostics-focused.log. Includes success/failure/error/skip,
+overflow rejection, bounded/no-follow parsing, descriptor closure, syntax-only
+fixture generation and unchanged timeout/capture limits. No full suite was run.
+
+Exactly one authorized fixture invocation:
+/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest
+ test_resource_sandbox.ResourceSandboxTests.test_workspace_disk_ceiling
+FAIL1 in6.184s (wrapper6.287s), original ENOSPC assertion still fails; prior cleanup
+assertions pass. Private0600 /tmp/freeagent-disk-diagnostics-one-fixture.log,
+SHA-256 a4a185e5bf8e5fc30bede3fdeda623514e1bcc448b9f5bd9e93785e1958aa981.
+Setup9.855ms; launch27.879ms; wait6.000994s; wait-to-result22.983ms.
+Owned CPU deltas: usage3030057us, user76613us, system2953444us,
+periods60/throttled60, throttled2835584us. Workspace before268431360bytes/
+19998inodes; near timeout18808832bytes/19994inodes available. Child reports start
+and23 write checkpoints, last230MiB; no terminal record. Throttling is demonstrated
+for this new run, not a controlled causal comparison. Disk was not exhausted at
+the near-timeout observation; intervening writes before termination remain possible.
+No quota/deadline/workload/assertion change or retry is justified by these data.
+
+Required-suite gate remains BLOCKED (not rerun). Website preparation remains
+uncommitted; B10 PARTIAL, N3 pending, Stage31D NOT AUTHORIZED. No staging/commit,
+service changes, stress campaign or privileged-backend activation occurred.
+
+Additional affected policy-identity regression group: PolicyIdentityCases().cases()
+PASS (wrapper1.436s); private0600 /tmp/freeagent-disk-diagnostics-policy.log.
+Includes source mutation, agreement/mismatch, journal mismatch and packaging
+checks using temporary/fake resources; no real journals or installed backend.
+
+## Owned memory/reclaim diagnostic extension (preparation, no correction applied)
+
+Only roles/sandbox.py, test_disk_diagnostics.py and this document changed in this
+follow-up. All earlier website/reporting/diagnostic work is retained. The optional
+schema-1 diagnostic object now includes memory observations; no authority consumer
+uses it. Twelve fixed files in the helper-created fixture scope are read before
+launch and after the existing wait, before cleanup: memory.current/peak,
+memory.events/events.local, memory.stat, memory.pressure, memory.min/low/high/max,
+memory.swap.max and memory.oom.group. Reads retain no-follow, CLOEXEC, regular-file,
+nonblocking-open and8192byte bounds; no arbitrary scope/path input or polling is
+introduced. Missing files/keys are UNAVAILABLE/null, not fabricated zeroes.
+
+Sampling order is explicit in the ordered readings; each has monotonic start/end.
+Within a snapshot CPU then workspace space are sampled first, followed by the
+12 memory files in the order above. Samples are sequential, not atomic. Each
+memory snapshot reads at most96KiB; two snapshots at most192KiB of input.
+Fixed-field output remains bounded: tests with maximum permitted integers bound
+the paired memory report/deltas below12KiB; this run's complete CPU/memory/progress
+diagnostic object was8028bytes. Existing8192byte/40record progress bounds and
+64KiB runner capture/rejection remain unchanged. Unsupported PSI fields/averages
+are not interpreted; only some/full cumulative total microseconds are selected.
+
+Semantics: memory.current is an instantaneous hierarchical charged-memory gauge;
+memory.peak is the scope's high-water mark since creation (this diagnostic never
+resets it). Anon/file/shmem are byte gauges; shmem is included in file, not added
+to it. After child exit anon may already have been freed. pgfault/pgmajfault,
+pgscan/pgsteal/direct variants and workingset_refault_anon/file are cumulative
+counts, with scan/steal in pages. memory.events includes descendant events;
+events.local is local only. PSI some measures intervals with at least one task
+stalled on memory, full intervals when all non-idle tasks stall; totals are wall
+microseconds, not CPU use, and overlap other timing measures. Configuration is
+read-only evidence, not enforcement proof. Counter decreases yield null deltas;
+gauges, peaks and limits are never treated as cumulative events.
+
+Focused unprivileged command: established interpreter -m unittest
+ test_disk_diagnostics -q, PASS7 in0.267s (wrapper0.475s), private0600
+/tmp/freeagent-memory-diagnostics-focused.log. Covers gauge/counter distinctions,
+missing/reset counters, malformed/oversized/symlinked inputs, sampling order and
+report bounds alongside prior reporting/progress/FD regressions.
+
+Exactly one fixture command: /root/agent-stack/.venv-orchestrator/bin/python3
+ -m unittest test_resource_sandbox.ResourceSandboxTests.test_workspace_disk_ceiling
+PASS1 in5.187s (wrapper5.283s), original ENOSPC/resource-hit/cleanup assertions
+unchanged. No retry. Private0600 /tmp/freeagent-memory-diagnostics-one-fixture.log,
+SHA256 c751dcd4598d2c6480019dd641a2dbb6ab2c052b0bc0617dfb0dfe3e1c2d4119.
+Setup24.781ms, launch31.831ms, wait4.756437s, collection1.229ms. Memory reads spanned
+4.342ms before/0.420ms after; first after read began246us after wait returned.
+CPU deltas: usage2415912us, user111385us, system2304527us; periods48/throttled47,
+throttled2205612us. Memory.current0->269447168bytes; peak0->285790208bytes.
+After: anon0, file268476416, shmem268435456bytes. Events/events.local all selected
+deltas0. Stat deltas: pgfault4753, pgmajfault1, workingset_refault_file10,
+workingset_refault_anon0, all selected scan/steal counters0. PSI some/full both
+331366us. Limits: min/low0, high=max, max536870912bytes, swap.max0, oom.group1.
+Workspace free268431360->0bytes, inodes19998->19993. Child-reported progress:
+27records, terminal write_error at268435456 reported bytes. This scalar counts
+completed calls rather than exact partial-write accounting; ENOSPC and full
+space are independently observed through existing result/assertion paths.
+
+Memory stalls are demonstrated for this run; selected scope reclaim and crossing
+its memory limit are not demonstrated. Zero counters cannot exclude transient,
+ancestor/global or unselected mechanisms. High system CPU plausibly includes
+allocation/zeroing/copy work; no kernel-call attribution or controlled comparison
+proves its split. Instrumentation adds JSON, scratch I/O and observation overhead;
+a passing instrumented run does not explain the original timeout or clear the
+required-suite gate. Historical causation remains unresolved.
+
+Engineering recommendation (NOT implemented): make aggregate-capacity testing
+explicit rather than depending on copying256MiB within a half-CPU six-second
+window. Use six fixed60MiB capacity demands (360MiB planned, each below128MiB),
+with reviewed tmpfs-backed posix_fallocate reservation; reject unsupported behavior
+rather than substitute sparse truncation. Because failed reservation may undo
+partial allocation, retain a strictly bounded write fallback within that same
+60MiB file demand to consume the remaining partial capacity and obtain ENOSPC.
+Do not count reservation plus fallback twice as additional file demand. Preserve
+256MiB capacity, deadlines, quotas, original full-space/resource-hit and cleanup
+assertions. Acceptance requires real allocated space (not sparse file size),
+explicit ENOSPC, applicable per-file bounds, and successful existing assertions
+within unchanged limits; fake failure cases must cover allocation rollback and
+fallback exhaustion. This proposed correction needs separate authorization and
+verification; no performance guarantee or root-cause proof is claimed.
+
+Required-suite status remains BLOCKED, not rerun. No staging/commit/tag/push,
+service change, model/provider call, stress campaign or Stage31D validation.
+
+## Aggregate-capacity fixture correction (uncommitted, required verification pending)
+
+The fixed six60MiB demands (360MiB planned),256MiB workspace,128MiB per-file limit,
+all CPU/memory/process controls, six-second deadline, ENOSPC/full-space/resource-hit
+and cleanup assertions remain unchanged. Only the fixture's allocation mechanism
+changes; no production enforcement/classification code changes in this milestone.
+
+allocate_disk_demand first calls posix_fallocate(fd,0,60MiB). A successful call
+must produce a regular file with exactly60MiB logical size and60MiB backing
+(st_blocks*512) under the supported tmpfs contract; sparse/unbacked success fails.
+Only genuine ENOSPC enables fallback. Missing API, ENOSYS/EOPNOTSUPP and unexpected
+errors fail explicitly. Failed reservation's bounded metadata is checked, but
+size/block counts are not assumed to locate a contiguous allocated prefix.
+Fallback seeks to zero and overwrites/reuses retained extents in that same file.
+At most60 writes of at most1MiB, clipped to remaining demand, cover at most60MiB;
+short writes advance by actual returned count. Zero/invalid writes and incomplete
+bounded fallback fail; original errors propagate. No invented ENOSPC or timeout
+acceptance. Logical coverage never adds partial reservation and fallback twice.
+Progress's legacy written_bytes field now reports accounted per-file logical
+coverage (including backed reservations), explicitly CHILD_REPORTED, not copied
+payload bytes or independent allocation proof. Fixed callback checkpoints remain
+within existing40record/8192byte bounds. Trusted helper source is copied into the
+existing generated test fixture; no new command/path/PID interface is exposed.
+
+Focused checks: established interpreter -m unittest test_disk_allocation
+ test_disk_diagnostics test_freeagent_test_runtime test_website
+ test_coding_units.CodingUnitTests.test_real_self_suite_discovers_stage_one_tests -q
+PASS32 in1.799s, wrapper3.574s; private0600
+/tmp/freeagent-capacity-correction-focused.log. Mocked allocation tests establish
+algorithm bounds/error handling, not actual filesystem enforcement. Affected
+PolicyIdentityCases().cases() PASS, wrapper1.589s, private0600
+/tmp/freeagent-capacity-correction-policy.log.
+
+Exactly one corrected isolated fixture: established interpreter -m unittest
+ test_resource_sandbox.ResourceSandboxTests.test_workspace_disk_ceiling
+PASS1 in1.967s, wrapper2.133s. Private0600
+/tmp/freeagent-capacity-correction-one-fixture.log SHA256
+22e7ced96dc5a37b4ef2b58edfd45bf297a97beabd120ff16b8fb0d17f199733.
+Actual tmpfs/runtime supported backed60MiB reservations. Four reservation
+checkpoints, then bounded fallback on fifth demand and genuine ENOSPC. Supervisor
+observed0 available bytes/19993inodes, resource-hit and all cleanup assertions
+passed. Accounted child coverage268431360bytes excludes fixture metadata; it is
+not promoted to authority. CPU usage823272us (user145746/system677525),17periods/
+16throttled,734391us throttled. This run does not establish universal performance
+or causation of earlier timeouts. Historical original required-run timeout and
+output overflow, prior instrumented FAIL and memory-instrumented PASS remain
+separate retained evidence. No limits, assertions or deadlines were relaxed.
+
+Exactly one combined-worktree required invocation is now authorized after these
+passes: /root/agent-stack/bin/freeagent-test. Nonverbose discovery retains scope,
+420s deadline,64KiB capture and overflow rejection. Final result recorded below
+when available; no rerun is authorized. No staging/commit/tag/push/deployment or
+Stage31D authorization.
+
+Combined-worktree required result: /root/agent-stack/bin/freeagent-test, exactly
+one invocation, RESULT=FAIL/EXIT_CODE=1.536 tests in381.551s; wrapper383.223073s.
+Private0600 /tmp/freeagent-capacity-correction-required.log SHA256
+221a77b9c3cec34837431f3511e3f94c3e8be71b0124d94d24bf206855e39cf1.
+Log10874bytes; OUTPUT_TRUNCATED absent, so bounded-capture overflow did not occur.
+No runner timeout: conservative36.776927s margin using whole-wrapper duration
+against420s; actual runner deadline starts later, its exact interval unrecorded.
+
+Four failures share one reporting-contract cause: removing -v globally also
+removed successful named-test output from copied target runners. Calculator
+workflow/repair regressions (test_integrity_core.py:495) still require
+ test_ten_percent_discount in test_output; research/wrong-domain regressions
+(:564) still require test_uses_automatic_timezone. Their target suites actually
+reported PASS (four/five tests), but these preserved named-evidence assertions
+failed. They must not be weakened. The corrected disk fixture was not a failure;
+website regressions passed focused and have no failures in this required run.
+
+Gate remains BLOCKED despite corrected-capacity and no-overflow observations.
+No retry or source fix followed the failed required check. Smallest next correction
+requires separating compact controller self-suite reporting from copied-target
+verbose reporting, preserving existing named-test evidence, assertions, discovery,
+64KiB rejection and deadlines. This correction is not implemented in this milestone.
+All previous website work remains uncommitted. Earlier disk timing causation is
+still unresolved; successful current capacity testing does not establish its cause.
+
+## Reporting-context separation (uncommitted, single required attempt pending)
+
+The global removal of unittest -v broke legitimate target execution evidence,
+not target functional outcomes: four integrity assertions required executed test
+names. Historical required log/SHA and failures above remain preserved.
+
+The runner now shares controller_entrypoint() with its unchanged runtime bootstrap
+contract: canonical SCRIPT at CONTROLLER_ROOT/bin/freeagent-test plus the existing
+CONTROLLER_ROOT/orchestrator/cli.py layout marker. Only that entrypoint executing
+from its own controller root uses compact unittest discovery. Copied target
+runners, and the controller entrypoint executing in a target directory, use -v.
+Target-project markers are never substituted for script-root markers. There is
+no model/project/environment reporting-mode flag. The existing trust assumption
+is the protected runner artifact and controller installation location; this
+layout predicate is not itself protected-installation qualification or authority.
+
+No discovery/exit/capture/deadline code is changed.64KiB overflow rejection remains
+fail closed;420s controller and180s target runner limits remain unchanged. Current
+runner bytes are freshly hashed/copied and checked under existing mechanisms;
+old identities are not bypassed. All named-evidence integrity assertions remain
+unchanged. No production sandbox or resource-policy correction is included.
+
+Focused command: established interpreter -m unittest test_freeagent_test_runtime
+ test_disk_diagnostics test_disk_allocation test_website
+ test_coding_units.CodingUnitTests.test_real_self_suite_discovers_stage_one_tests
+ test_integrity_core.IntegrityGraphTests.test_existing_calculator_repair_regression
+ test_integrity_core.IntegrityGraphTests.test_existing_calculator_workflow_regression
+ test_integrity_core.IntegrityGraphTests.test_open_meteo_grounding_graph_regression
+ test_integrity_core.IntegrityGraphTests.test_wrong_domain_docs_are_not_fetched -q
+PASS38 in12.280s, wrapper14.492s. Private0600
+/tmp/freeagent-reporting-separation-focused.log. Actual selection/launch coverage
+includes compact controller subprocess, copied target subprocess with misleading
+project markers, controller entrypoint in target cwd, failures/errors/skips and
+excess output. Four integrity regressions pass with original named-test assertions.
+Website, allocation and diagnostic unit checks pass; no standalone disk fixture
+rerun. PolicyIdentityCases().cases() also PASS (temporary/recording fixtures).
+
+Exactly one /root/agent-stack/bin/freeagent-test invocation follows these passes;
+its final result is recorded below. No retries, staging, commit/tag/push/deployment,
+Stage31D authorization, live provider/model calls or service changes. Historical
+disk-timeout causation remains unresolved and is not claimed fixed.
+
+Final combined-worktree required verification: /root/agent-stack/bin/freeagent-test,
+exactly one invocation, RESULT=PASS/EXIT_CODE=0. Actual discovery command:
+/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover.
+538 tests in392.041s; wrapper394.176523s. Private0600
+/tmp/freeagent-reporting-separation-required.log SHA256
+57f12f2c2e183d2842dc6bb10e15373f5e9e9f28b6ec8f054bbc93c21d9c53c9.
+Log7262bytes, OUTPUT_TRUNCATED absent; no timeout. Whole-wrapper measurement gives
+conservative25.823477s margin against420s; exact runner interval begins after
+process creation and is not separately logged. No capture/deadline enlargement.
+All four integrity regressions pass with original named-test evidence assertions;
+website, disk-capacity, allocation and diagnostic regressions pass in this combined
+worktree. Affected policy group PASS (wrapper1.484s), private0600
+/tmp/freeagent-reporting-separation-policy.log. Final scoped diff/whitespace review
+passed. No standalone disk rerun, required retry, staging or commit. Prior failed
+logs and unexplained disk timing remain retained; these passes establish current
+regression verification, not historical causation, live website qualification,
+protected installed authority or real privilege isolation. B10 PARTIAL/N3 pending,
+Stage31D NOT AUTHORIZED. Live launch gates remain unchanged.

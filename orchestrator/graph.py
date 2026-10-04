@@ -432,3 +432,9 @@ def build_graph(*, model_profiles=None):
 
 
 graph = build_graph()
+
+
+def build_website_graph(adapter):
+    """Separate recorded product preparation; production graph remains unchanged."""
+    from website import workflow_graph
+    return workflow_graph(adapter, StateGraph, START, END)

@@ -78,7 +78,46 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
                                          if key != "FREEAGENT_TEST_BOOTSTRAP_ATTEMPTED"})
             self.assertEqual(result.returncode, 0, result.stdout[-500:] + result.stderr[-500:])
             self.assertIn("RESULT=PASS", result.stdout)
-            self.assertIn("COMMAND=" + str(interpreter) + " -m unittest discover -v", result.stdout)
+            self.assertIn("COMMAND=" + str(interpreter) + " -m unittest discover\n", result.stdout)
+            self.assertNotIn("test_interpreter (", result.stdout)
+
+    def test_copied_target_reports_executed_names_despite_project_markers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            control = root / 'controller'
+            target = root / 'target'
+            control.mkdir(); target.mkdir()
+            copied = control / 'freeagent-test'
+            shutil.copyfile(RUNNER, copied)
+            # Project markers cannot impersonate the script's controller layout.
+            (target / 'orchestrator').mkdir()
+            (target / 'orchestrator' / 'cli.py').write_text('# untrusted marker\n')
+            (target / 'pyproject.toml').write_text('unittest_reporting = "compact"\n')
+            (target / 'test_named.py').write_text(
+                'import unittest\nclass Named(unittest.TestCase):\n'
+                ' def test_execution_evidence(self): self.assertTrue(True)\n')
+            result = subprocess.run([sys.executable, str(copied)], cwd=target,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout[-500:])
+            self.assertIn(' -m unittest discover -v', result.stdout)
+            self.assertIn('test_execution_evidence (test_named.Named.test_execution_evidence) ... ok',
+                          result.stdout)
+            self.assertIn('RESULT=PASS', result.stdout)
+
+    def test_controller_entrypoint_in_target_directory_preserves_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            (target / 'test_named.py').write_text(
+                'import unittest\nclass Named(unittest.TestCase):\n'
+                ' def test_execution_evidence(self): self.assertTrue(True)\n')
+            result = subprocess.run([str(RUNNER)], cwd=target,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stdout[-500:])
+            self.assertIn('COMMAND=' + str(ROOT / '.venv-orchestrator/bin/python3') +
+                          ' -m unittest discover -v', result.stdout)
+            self.assertIn('test_execution_evidence (test_named.Named.test_execution_evidence) ... ok',
+                          result.stdout)
+
 
     def test_shell_launch_missing_venv_fails_nonzero(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -143,7 +182,7 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
                 execv.assert_not_called()
 
     def test_unittest_uses_current_interpreter(self):
-        self.assertEqual(self.detect(), ([sys.executable, "-m", "unittest", "discover", "-v"],
+        self.assertEqual(self.detect(), ([sys.executable, "-m", "unittest", "discover"],
                                          "python-unittest"))
 
     def test_pytest_uses_current_interpreter(self):
