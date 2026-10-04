@@ -3841,3 +3841,77 @@ separately scoped diagnosis should measure relevant required-run group timing
 before authorizing another full attempt, preserving membership/assertions/bounds.
 No performance or test-coverage change is justified by this timeout alone.
 N3 independent review PENDING, B10 PARTIAL, Stage31D NOT AUTHORIZED.
+
+### 2026-10-04 — current N3-S1 preparation verification status
+
+**Preparation verification PASSED.** Candidate
+`2396590aa3ecf18cdb4a14c7648e3c1597ee5d9d` preserves the N3-S1 repair and bounded
+development diagnostics. The earlier BLOCKED/uncommitted narrative above records
+the historical timeout attempt; it is not the current verification status.
+The project owner reports independent N3-S1 and development-observer source
+reviews passed, with no demonstrated issue undermining the required-suite PASS.
+Those reviews are historical, owner-reported evidence; no review was launched
+or tests rerun for this documentation correction.
+
+The subsequent single authorized required invocation was
+`/root/agent-stack/bin/freeagent-test` from the repository root, selecting
+`/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover` through
+the unchanged established runtime boundary. The documented existing external
+pytest development fixture was reused without installation. Authoritative
+markers: **560 tests, 388.010 seconds, OK, RESULT=PASS, EXIT_CODE=0**. Wrapper wall
+time was 390.336157531 seconds; no timeout or output truncation occurred.
+The runner retained its 420-second deadline and 64 KiB capture rejection.
+
+Evidence was rechecked locally in `/tmp/freeagent-required-progress-tn8gzr8a`:
+
+- `required.log` SHA-256:
+  `6f32220d199c48a988bd60dc9c14afef491a68075fca4d8897ead69f4c5eb9fc`.
+- `progress.jsonl` SHA-256:
+  `29bd94e9c1a8c9ec4014b2e77a405a7a69e07bb6d53f0db6c5ea110eb10dd926`.
+- `source-before.json` SHA-256:
+  `bbd386d34c402a8b84c3fc2303cacc9873f55ce390efc904470c9e54313ee045`.
+
+The observer completed with PROCESS_END, no diagnostic error and no unmatched
+test/subcase intervals: 3,480 records, 505,345 bytes. Its 564 observed test
+intervals include four deliberately nested synthetic unittest cases in
+`ControllerProgressTests.test_actual_unittest_results_and_subcases`. Their
+intentional FAIL/ERROR/SKIP records do not contradict the authoritative 560-test
+OK result. Observer outcome totals are not controller-suite failure counts.
+
+Timing provenance was reconciled directly against the recorded events and
+unchanged source. `test_foundation.py:FoundationTests.test` creates the labelled
+subtest contexts; `devtools/controller_progress/progress.py:instrument` wraps
+`TestCase.subTest` and emits paired SUBCASE_START/SUBCASE_END sequence identities.
+The local summary subtracts their monotonic timestamps:
+
+| Label / invoked group | Sequence identity | Inclusive context duration |
+|---|---:|---:|
+| installed_identity_preparation / InstalledIdentityCases().cases() | 499 | 4.669930835s |
+| independent_closure / IndependentClosureCases().cases() | 517 | 6.277247866s |
+| source_bound_exports / ExportCases().cases() | 524 | 65.023110585s |
+
+These are required-process subtest observations, **not export_timing.py output**.
+They include nested preparation, execution and teardown. Context exit is not
+proof of successful execution; no additive or exclusive-cost interpretation is
+claimed. The required-suite PASS does not depend on these auxiliary timings.
+
+All 203 selected implementation/test/configuration/documentation files matched
+the recorded pre/post-run bytes, sizes and modes when rechecked before this
+correction. The manifest includes tracked files and seven explicitly selected
+development diagnostic files; it excludes ignored installed runtimes, external
+pytest dependency bytes and unselected material. It is selected-source binding,
+not independent dependency or read-set attestation. Only this Stage31C document
+and the controller-progress README change afterward; implementation/tests and
+the original evidence records remain unchanged. No raw logs were exported.
+
+Current-invocation cleanup observations recorded normal observer shutdown,
+wrapper reaping, subsequent runner/unittest PID absence, and no matching test
+processes or known fixture leftovers at postflight. They do not prove historical
+timeout cleanup or global zero residuals. Historical disk/required-timeout
+causation and historical cleanup uncertainty remain unresolved.
+
+**B10 remains PARTIAL; STAGE31D_AUTHORIZED: NO.** Static preparation verification
+does not establish runtime/dynamic closure, protected installation, credential
+or real consumer/removal integration, live website qualification or kernel
+enforcement. No implementation, tests, policy, quotas, deadlines or authority
+gates changed in this documentation milestone. No tag, push or deployment.
