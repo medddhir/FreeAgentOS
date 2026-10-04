@@ -161,6 +161,63 @@ class ExportCases(unittest.TestCase):
             result=self.check(b'good=1\n'+declaration,b'from .service import *\n','UNRESOLVED')
             self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in issue for issue in result['issues']))
         self.check(b'from sys import not_real as good\n__all__=("good",)\n',b'from .service import *\n','UNRESOLVED')
+    def case_package_star_dependency_edges(self):
+        init='python_base/lib/python3.12/_export_pkg/__init__.py'
+        child='python_base/lib/python3.12/_export_pkg/child.py'
+        service='package/orchestrator/privilege/service.py'
+        own_init='package/orchestrator/privilege/__init__.py'
+        @contextlib.contextmanager
+        def precise(source=b'from _export_pkg import *\n',initializer=b'__all__=("child",)\n',include_child=True,extra=None):
+            files={init:initializer};files.update(extra or {})
+            if include_child:files[child]=b'value=1\n'
+            # Use the underlying fixture directly, never ExportCases' blanket
+            # source declarations. Reachability via the existing interpreter root
+            # must not mask a missing importing-source edge.
+            with IndependentClosureCases().fixture(service=source,child=b'import sys\n',extra=files) as (_,args,closure,root):
+                rows={x['path']:x for x in closure['artifacts']}
+                rows[service]['requires']=sorted([own_init,init])
+                rows[init]['requires']=[]
+                if include_child:
+                    rows[child]['requires']=[init]
+                    self.assertIn(child,rows['venv/bin/python']['requires'])
+                yield args,closure,root,rows
+        def admission(args,closure):
+            return c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+        with precise() as (args,closure,root,rows):
+            result=self.analyze(args,closure)
+            self.assertEqual(result['derived'][service],sorted([own_init,init,child]))
+            self.assertEqual(result['derived'][init],[])
+            self.assertIn(child,result['derived'])
+            self.assertEqual(result['issues'],['DECLARED_EDGE_MISSING:'+service+':'+child])
+            with self.assertRaises(p.BoundaryError) as error:admission(args,closure)
+            self.assertEqual(error.exception.code,'POLICY_REJECTED')
+            rows[service]['requires']=sorted([own_init,init,child])
+            accepted=admission(args,closure)
+            self.assertEqual(accepted['analysis']['status'],'STATIC_METADATA_VERIFIED')
+            for key in ('qualified','installed_observed','execution_enabled'):self.assertFalse(accepted[key])
+            path=root/child;raw=path.read_bytes();path.unlink()
+            with self.assertRaises(p.BoundaryError):admission(args,closure)
+            path.write_bytes(raw);path.chmod(0o644)
+            with self.assertRaises(p.BoundaryError):admission(args,closure)
+        for kwargs in ({'include_child':False},{'initializer':b'__all__=compute()\n'},
+                       {'initializer':b'__all__=("absent",)\n'}):
+            with precise(**kwargs) as (args,closure,root,rows):
+                result=self.analyze(args,closure)
+                self.assertEqual(result['status'],'UNRESOLVED')
+                self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
+                with self.assertRaises(p.BoundaryError):admission(args,closure)
+        # A re-export changes the name, not the underlying module dependency.
+        wrapper='python_base/lib/python3.12/_export_wrapper.py'
+        with precise(b'from _export_wrapper import *\n',extra={wrapper:b'from _export_pkg import *\nrenamed=child\n__all__=("renamed",)\n'}) as (args,closure,root,rows):
+            rows[service]['requires']=sorted([own_init,wrapper])
+            rows[wrapper]['requires']=sorted([init,child])
+            result=self.analyze(args,closure)
+            self.assertEqual(result['derived'][service],sorted([own_init,wrapper,child]))
+            self.assertEqual(result['derived'][wrapper],sorted([init,child]))
+            self.assertEqual(result['issues'],['DECLARED_EDGE_MISSING:'+service+':'+child])
+            with self.assertRaises(p.BoundaryError):admission(args,closure)
+            rows[service]['requires']=sorted([own_init,wrapper,child])
+            self.assertEqual(admission(args,closure)['analysis']['status'],'STATIC_METADATA_VERIFIED')
     def case_unsupported_publication(self):
         for service in (b'if flag:\n    good=1\n',b'good=1\nif flag:\n    good=2\n',b'good=1\ndel good\n',
                         b'good=1\ngood=2\n',b'good: int\n',b'good: not_real=1\n',b'good=later\nlater=1\n',

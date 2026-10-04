@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=4
+EXPORT_RULE_VERSION=5
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -424,22 +424,32 @@ def analyze(tree,snapshot,closure,binding,provenance):
         if attribute:
             base,_,symbol=name.rpartition('.')
             if symbol=='*':
-                if not member(base) or exports.star(base) is None:
+                names=exports.star(base) if member(base) else None
+                targets={modules[base][0]} if base in modules else set()
+                if names is None:
                     unresolved.add(origin+':STAR_IMPORT_UNRESOLVED')
-                return modules[base][0] if base in modules else None
+                else:
+                    # Import-star's verified from-list can import package
+                    # children. Inspection/queueing is not a graph edge: bind
+                    # resolved module objects (including aliases) to the caller.
+                    for exported in names:
+                        value=exports.proof(base,exported,import_child=True)
+                        if value and value[0]=='MODULE' and value[1] in modules:
+                            targets.add(modules[value[1]][0])
+                return targets
             # Even uncertain publication may attempt an exact child import.
             # Keep inspecting its source dependencies; queuing is not export
             # proof and must not hide earlier dynamic-import/code findings.
             if name in modules:member(name)
             value=exports.proof(base,symbol,import_child=True) if member(base) else None
             if value is None:
-                unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name);return None
+                unresolved.add('IMPORT_ATTRIBUTE_UNRESOLVED:'+name);return set()
             # Exact child imports load the child. Aliases are supplied by their
             # separately checked parent imports, not invented native attributes.
-            if value==('MODULE',name) and name in modules:return modules[name][0]
-            return modules[base][0] if base in modules else None
-        if not member(name):unresolved.add('MISSING_MODULE:'+name);return None
-        return modules[name][0] if name in modules else None
+            if value==('MODULE',name) and name in modules:return {modules[name][0]}
+            return {modules[base][0]} if base in modules else set()
+        if not member(name):unresolved.add('MISSING_MODULE:'+name);return set()
+        return {modules[name][0]} if name in modules else set()
     while pending:
         module=pending.pop()
         if module in seen:continue
@@ -457,10 +467,10 @@ def analyze(tree,snapshot,closure,binding,provenance):
             names,issues=exports.source_imports(module)
             unresolved.update(path+':'+v for v in issues)
             for name,attribute in names:
-                target=resolve(name,attribute,path)
+                targets=resolve(name,attribute,path)
                 # The strict graph forbids self edges. A module importing its
                 # own package is not an omitted distinct dependency.
-                if target and target!=path:edges.add(target)
+                edges.update(targets-{path})
         derived[path]=edges
     # Every native artifact, not just declared/reachable executable edges.
     for path in files:
@@ -477,6 +487,7 @@ def analyze(tree,snapshot,closure,binding,provenance):
                 if len(candidates)!=1:unresolved.add('LIBRARY_UNRESOLVED:'+path+':'+library)
                 else:edges.add(candidates[0])
             derived.setdefault(path,set()).update(edges)
+    if sum(map(len,derived.values()))>c.MAX_EDGES:raise p.BoundaryError('BOUNDS_EXCEEDED')
     for path,edges in derived.items():
         for target in edges-declared[path]:unresolved.add('DECLARED_EDGE_MISSING:'+path+':'+target)
     tree.recheck(snapshot)

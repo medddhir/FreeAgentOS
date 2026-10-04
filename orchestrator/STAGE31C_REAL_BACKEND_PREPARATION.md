@@ -2880,3 +2880,59 @@ Private log `/tmp/freeagent-b10-r1-required.log` explicit0600, normal umask, no 
 assertion/limit/security changes. Final relevant three-file diff and whitespace
 review PASS. R1 preparation is deterministically verified; R2 remains pending,
 combined review is not claimed passed and B10/real enforcement remain incomplete.
+
+### B10 R2 package-star derived dependency propagation
+
+Baseline d88d4dbcbfca3c152df65400dd92945837cf3996 confirmed R2 before
+editing. Parsed staging sources used an initializer with literal __all__=("child",),
+a child source with value=1 and service source from _export_pkg import *.
+Precise metadata declared service -> own package initializer and _export_pkg
+initializer, but neither service nor initializer -> child. The existing fixture
+interpreter-root edges made the child independently reachable; no blanket source
+edge declarations masked the omitted dependency. Baseline inspected the child
+but derived only the service's initializer edges, returned STATIC_METADATA_VERIFIED
+and admitted staging with qualified=false, installed_observed=false and
+execution_enabled=false. No reviewed source was executed.
+
+The scalar resolve result discarded dependencies obtained through supported
+star proofs. Rule version5 returns bounded target sets, preserving the importing
+source -> initializer edge and adding importing source -> resolved module artifact
+edges. This matches direct from-package child import's importing-source edge
+contract. Literal __all__ alone does not prove the initializer imports its child,
+so no invented initializer -> child edge is added. Inspection/queueing does not
+substitute for an edge. Module identities carried by verified aliases/re-exports
+are propagated, rather than guessed from the exported spelling. Self edges remain
+excluded by the existing graph contract. Derived edges independently enforce the
+unchanged4096-edge ceiling; source/query/depth/entry/frame/resource bounds remain
+unchanged. Existing source/hash/pinned-identity freshness, ordinary-attribute versus
+import-child proof/cache/cycle contexts, literal __all__ verification and conservative
+unsupported semantics remain intact. Policy identity binds this source change;
+old mismatched journals remain rejected without rewriting/relabeling/deletion.
+
+After repair the same witness derives service -> own initializer, package
+initializer and child, reports DECLARED_EDGE_MISSING for service -> child and
+candidate_prerequisite rejects POLICY_REJECTED. Adding that exact declaration
+permits only staging STATIC_METADATA_VERIFIED with all authority flags false.
+Focused tests cover independent child reachability, precise declarations,
+missing/replaced child, unsupported/dynamic/unverified __all__, and renamed
+module re-export dependency propagation. Export/F1/F2/R1, independent analyzer,
+policy agreement and closure regression groups PASS in24.879s. Required suite
+verification is recorded below when complete. No full candidate rebuild or
+finding-count refresh is performed outside the existing required fixtures.
+
+R2 is deterministically repaired for this supported static contract; repaired
+R1/R2 source has not yet passed independent review. B10 remains PARTIAL for
+unresolved static/dynamic/import-order semantics, builtin/frozen/native positive
+export evidence, complete toolchain/build closure, protected publication,
+credentials and real consumer/removal integration. Static graph correctness
+proves neither successful runtime imports nor complete closure, protected
+installation or enforcement. Doctor active isolation UNPROVEN; Stage3.1D NOT
+AUTHORIZED. No model/provider calls, stress campaign, new privileged backend
+activation, installation or production integration.
+
+R2 required verification: unchanged /root/agent-stack/bin/freeagent-test PASS518
+in259.486s, RESULT=PASS, exit0; wall261.045s, conservative158.955s headroom against
+unchanged420s. Private log /tmp/freeagent-b10-r2-required.log explicit0600,
+normal umask, no retry or assertion/security/limit changes. Final scoped three-file
+diff and whitespace review PASS. This is deterministic preparation evidence only;
+repaired R1/R2 still requires independent review and real enforcement is UNPROVEN.
