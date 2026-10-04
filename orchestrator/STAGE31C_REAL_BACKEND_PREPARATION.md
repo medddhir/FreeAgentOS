@@ -2829,3 +2829,54 @@ Private log `/tmp/freeagent-b10-f2-required.log` explicit0600; normal umask, no 
 assertion/limit/security changes. Final relevant three-file diff and whitespace
 review PASS. Deterministic F2 preparation is verified; broader B10/runtime proof
 and Stage3.1D authorization remain unchanged and unproven.
+
+### B10 R1 nested-definition conservative rejection
+
+Baseline5d4abed3ea9e097604ffdee93c9a799db6578842 reproduced all three R1
+witnesses before editing, using parsed deterministic staging fixtures only.
+A: nested class body with global good/del good; B: nested @erase definition whose
+decorator deletes global good without ast.Call syntax; C: nested class body
+replacing global __all__ before actual import-star. All incorrectly returned
+STATIC_METADATA_VERIFIED and staging admission with qualified=false,
+installed_observed=false, execution_enabled=false. No reviewed module executed.
+
+The effect walker skipped nested function/class bodies after recording their
+name and immediate expressions, but omitted the direct-definition decorator and
+complex-class rejection checks. Class bodies execute during definition and
+decorators invoke implicitly; merely excluding them as a dormant function scope
+was unsound. Rule version4 now applies existing whole-module taint for decorated
+nested definitions and non-plain nested classes. A shared plain-class predicate
+keeps direct/nested rules aligned. Class/decorator execution is not interpreted;
+conditions are not simulated. Ordinary uncalled function/lambda bodies remain
+outside effect traversal. Immediate defaults/annotations/decorators/bases/keywords
+retain conservative scanning. No accepted expression language, whitelist, import
+ordering model, resource/transport/source/query bound or security default broadened.
+F1 effects, F2 import-versus-attribute/cache/cycle contexts and pinned source/hash
+freshness remain preserved. Policy identity binds this source change; old mismatch
+rejection remains unchanged.
+
+All A/B/C witnesses now return UNRESOLVED; candidate_prerequisite rejects
+POLICY_REJECTED. Nested if/for/while/try contexts, implicit decorators, bases and
+metaclass keywords are exercised. Unsupported definitions inside dormant function
+bodies and supported plain-class/function cases preserve module positives. Full
+export/F1/F2, independent analyzer, policy agreement and closure regressions
+PASS25.991s. Accepted staging results remain non-qualified/non-authoritative.
+No standalone full candidate assembly/build/analysis or finding-count refresh was
+performed; unchanged required suite retains its existing authorized fixtures.
+
+R2 is pending separate reproduction/repair: the review predicts package-star
+child lookup can omit a derived dependency edge despite inspecting the child.
+It is not claimed confirmed or repaired by R1. The combined repair review is not
+claimed passed. B10 remains PARTIAL for R2, unresolved static/dynamic/order
+semantics, builtin/frozen/native positive evidence, complete toolchain closure,
+protected publication, credentials and real consumer/removal integration. Static
+correctness does not prove runtime imports, complete closure, root installation
+or enforcement. Doctor active isolation UNPROVEN; Stage3.1D NOT AUTHORIZED. No
+model/provider, stress, new privileged backend activation or production change.
+
+R1 required verification: unchanged freeagent-test PASS518 tests in273.230s,
+RESULT=PASS, exit0; wall275.011s, conservative144.989s headroom against420s.
+Private log `/tmp/freeagent-b10-r1-required.log` explicit0600, normal umask, no retry,
+assertion/limit/security changes. Final relevant three-file diff and whitespace
+review PASS. R1 preparation is deterministically verified; R2 remains pending,
+combined review is not claimed passed and B10/real enforcement remain incomplete.

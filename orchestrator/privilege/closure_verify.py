@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=3
+EXPORT_RULE_VERSION=4
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -135,14 +135,17 @@ class _Exports:
             if symbol in bindings:unsafe.add(symbol)
             bindings[symbol]=value;positions[symbol]=position
         def effects(node):
-            # Module-scope effects only: function/class internals have their own
-            # scopes and are not unconditional module publication.
+            # Module-evaluated effects only. Function bodies remain dormant;
+            # executable class bodies and implicit decorators are rejected.
+            nonlocal tainted
             pending=[node]
             while pending:
                 current=pending.pop()
                 self.bounded()
                 if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                     unsafe.add(current.name)
+                    if current.decorator_list or isinstance(current,ast.ClassDef) and not plain_class(current):
+                        tainted=True
                     pending.extend(immediate(current));continue
                 if isinstance(current,ast.Lambda):
                     pending.extend(current.args.defaults)
@@ -173,6 +176,9 @@ class _Exports:
             values += [x.annotation for x in (node.args.vararg,node.args.kwarg) if x and x.annotation is not None]
             if node.returns is not None:values.append(node.returns)
             return values
+        def plain_class(node):
+            return not node.bases and not node.keywords and all(
+                isinstance(x,ast.Pass) or isinstance(x,ast.Expr) and isinstance(x.value,ast.Constant) for x in node.body)
         for position,node in enumerate(tree.body):
             self.bounded()
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
@@ -181,7 +187,7 @@ class _Exports:
                 valid=not node.decorator_list and not getattr(node,'type_params',[])
                 if node.decorator_list:tainted=True
                 if isinstance(node,ast.ClassDef):
-                    plain=not node.bases and not node.keywords and all(isinstance(x,ast.Pass) or isinstance(x,ast.Expr) and isinstance(x.value,ast.Constant) for x in node.body)
+                    plain=plain_class(node)
                     if not plain:tainted=True
                     valid=valid and plain
                 else:

@@ -67,6 +67,32 @@ class ExportCases(unittest.TestCase):
                         b'other=lambda: (good := 2)\n',
                         b'other=[good for good in (1,)]\n'):
             self.check(b'good=1\n'+dormant,b'from .service import good\n','STATIC_METADATA_VERIFIED')
+    def case_nested_definition_rejection_and_dormant_scope(self):
+        delete=b'class Other:\n    global good\n    del good\n'
+        decorated=b'@erase\ndef other():\n    pass\n'
+        erase=b'def erase(function):\n    global good\n    del good\n    return function\n'
+        wrap=lambda header,body:header+b''.join(b'    '+line+b'\n' for line in body.splitlines())
+        result=self.check(b'good=1\n'+wrap(b'if True:\n',delete),
+                          b'from .service import good\n','UNRESOLVED')
+        self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+        for header in (b'if True:\n',b'for item in (1,):\n',b'while False:\n',b'try:\n'):
+            suffix=b'except ValueError:\n    pass\n' if header==b'try:\n' else b''
+            for body in (delete,decorated,b'class Other(Base):\n    pass\n',
+                         b'class Other(metaclass=Meta):\n    pass\n'):
+                self.check(b'good=1\n'+erase+wrap(header,body)+suffix,
+                           b'from .service import good\n','UNRESOLVED')
+        replace=b'class Other:\n    global __all__\n    __all__=("absent",)\n'
+        self.check(b'good=1\n__all__=("good",)\n'+wrap(b'if True:\n',replace),
+                   b'from .service import *\n','UNRESOLVED')
+        # Unsupported definitions in dormant function bodies are not evaluated
+        # merely by defining the enclosing function.
+        for body in (delete,decorated,wrap(b'if True:\n',delete),wrap(b'if True:\n',decorated)):
+            self.check(b'good=1\n'+erase+wrap(b'def dormant():\n',body),
+                       b'from .service import good\n','STATIC_METADATA_VERIFIED')
+        self.check(b'good=1\nif True:\n    def dormant():\n        global good\n        del good\n',
+                   b'from .service import good\n','STATIC_METADATA_VERIFIED')
+        self.check(b'good=1\nif True:\n    class Other:\n        pass\n',
+                   b'from .service import good\n','STATIC_METADATA_VERIFIED')
     def case_definitions_assignments_aliases(self):
         for service in (b'good=1\n',b'good=(1,None,"text")\n',b'def good():\n    pass\n',b'class good:\n    pass\n',b'original=1\ngood=original\n',b'good: "int"=1\n',b'def good(value=1):\n    pass\n'):
             self.check(service,b'from .service import good\n','STATIC_METADATA_VERIFIED')
