@@ -180,7 +180,7 @@ class ExportCases(unittest.TestCase):
         self.check(b'from _export_target import absent as good\n',b'from .service import good\n','UNRESOLVED',extra)
         self.check(b'from absent_target import original as good\n',b'from .service import good\n','UNRESOLVED')
     @contextlib.contextmanager
-    def ordinary_rhs_fixture(self,rhs,*,star=False,hook_source=None):
+    def ordinary_rhs_fixture(self,rhs,*,star=False,hook_source=None,safe_alias=False):
         service='package/orchestrator/privilege/service.py'
         child='package/orchestrator/privilege/child.py'
         own_init='package/orchestrator/privilege/__init__.py'
@@ -188,15 +188,84 @@ class ExportCases(unittest.TestCase):
         action=(b'sys.modules["orchestrator.privilege.service"].__all__=("absent",)' if star
                 else b'del sys.modules["orchestrator.privilege.service"].good')
         raw=hook_source if hook_source is not None else b'import sys\ndef __getattr__(name):\n    '+action+b'\n    return 1\n'
-        source=b'good=1\nimport _export_hook\n'+(b'__all__=("good",)\n' if star else b'')+rhs
+        safe='python_base/lib/python3.12/_export_safe.py'
+        extra={hook:raw}
+        if safe_alias:extra[safe]=b'safe=(1,)\n'
+        source=b'good=1\n'+(b'import _export_safe as current\n' if safe_alias else b'')+b'import _export_hook\n'+(b'__all__=("good",)\n' if star else b'')+rhs
         with IndependentClosureCases().fixture(service=source,
                 child=b'from .service import *\n' if star else b'from .service import good\n',
-                extra={hook:raw}) as (_,args,closure,root):
+                extra=extra) as (_,args,closure,root):
             rows={x['path']:x for x in closure['artifacts']}
-            rows[service]['requires']=sorted([own_init,hook])
+            rows[service]['requires']=sorted([own_init,hook]+([safe] if safe_alias else []))
             rows[child]['requires']=sorted([own_init,service])
             rows[hook]['requires']=[]
+            if safe_alias:rows[safe]['requires']=[]
             yield args,closure,root
+    def case_comprehension_shadowing_is_not_module_alias_evidence(self):
+        expressions=(
+            '[current.safe for current in (_export_hook,)]',
+            '[current.safe for current in current.safe]',
+            '{current.safe for current in (_export_hook,)}',
+            '{current.safe: 1 for current in (_export_hook,)}',
+            '{1: current.safe for current in (_export_hook,)}',
+            '(current.safe for current in (_export_hook,))',
+            '(current.safe for current in current.safe)',
+            '[1 for current in (_export_hook,) if current.safe]',
+            '[1 for current in (_export_hook,) for item in (current.safe,)]',
+            '[1 for item in (1,) if current.safe for current in (_export_hook,)]',
+            '[[1 for item in current.safe] for current in (_export_hook,)]',
+            '[[current.safe for current in (_export_hook,)] for item in (1,)]',
+            '[current.safe for current, item in ((_export_hook, 1),)]',
+            '(1 for current in (_export_hook,) if current.safe)',
+            '(1 for current in (_export_hook,) for item in (current.safe,))')
+        for expression in expressions:
+            for annotated in (False,True):
+                for star in (False,True):
+                    rhs=(('other: "object" = ' if annotated else 'other = ')+expression+'\n').encode()
+                    with self.ordinary_rhs_fixture(rhs,star=star,safe_alias=True) as (args,closure,root):
+                        result=self.analyze(args,closure)
+                        self.assertEqual(result['status'],'UNRESOLVED',expression)
+                        self.assertEqual(result['export_rule_version'],9)
+                        self.assertIn('RHS_EFFECT_UNRESOLVED:orchestrator.privilege.service',result['issues'])
+                        if star:self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
+                        else:self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+                        self.assertEqual(result['derived']['package/orchestrator/privilege/service.py'],sorted([
+                            'package/orchestrator/privilege/__init__.py',
+                            'python_base/lib/python3.12/_export_safe.py','python_base/lib/python3.12/_export_hook.py']))
+                        with self.assertRaises(p.BoundaryError) as error:
+                            c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                        self.assertEqual(error.exception.code,'POLICY_REJECTED')
+    def case_comprehension_enclosing_scope_and_dormant_controls(self):
+        expressions=(
+            '[1 for current in current.safe]',
+            '(1 for current in current.safe)',
+            '[current.safe for item in (1,)]',
+            '{current.safe for item in (1,)}',
+            '{1: current.safe for item in (1,)}',
+            '(current.safe for item in (1,))',
+            '[1 for item in (1,) if current.safe]',
+            '[1 for item in (1,) for later in current.safe]',
+            '[[1 for current in current.safe] for item in (1,)]',
+            '[1 for good in (1,)]',
+            '[lambda: current.safe for current in (_export_hook,)]')
+        for expression in expressions:
+            for star in (False,True):
+                with self.ordinary_rhs_fixture(('other='+expression+'\n').encode(),star=star,safe_alias=True) as (args,closure,root):
+                    accepted=c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                    self.assertEqual(accepted['analysis']['status'],'STATIC_METADATA_VERIFIED',expression)
+                    for key in ('qualified','installed_observed','execution_enabled'):self.assertFalse(accepted[key])
+        for rhs in (b'other=[1 for current in (_export_hook,)]\nlater=current.safe\n',
+                    b'def dormant():\n    other=[current.safe for current in (_export_hook,)]\n',
+                    b'other=lambda: [current.safe for current in (_export_hook,)]\n'):
+            with self.ordinary_rhs_fixture(rhs,safe_alias=True) as (args,closure,root):
+                self.assertEqual(self.analyze(args,closure)['status'],'STATIC_METADATA_VERIFIED')
+        # The generator's outer iterable is evaluated at creation, even though
+        # body work is deferred. Unsupported target writes stay fail-closed.
+        for rhs in (b'other=(1 for item in _export_hook.missing)\n',
+                    b'other=[1 for current.safe in (1,)]\n',
+                    b'other=[lambda value=current.safe: 1 for current in (_export_hook,)]\n'):
+            with self.ordinary_rhs_fixture(rhs,safe_alias=True) as (args,closure,root):
+                self.assertEqual(self.analyze(args,closure)['status'],'UNRESOLVED')
     def case_ordinary_rhs_effects_are_not_demand_driven(self):
         for rhs in (b'other=_export_hook.missing\n',
                     b'other: "int"=_export_hook.missing\n',
@@ -208,7 +277,7 @@ class ExportCases(unittest.TestCase):
                 with self.ordinary_rhs_fixture(rhs,star=star) as (args,closure,root):
                     result=self.analyze(args,closure)
                     self.assertEqual(result['status'],'UNRESOLVED',result['issues'])
-                    self.assertEqual(result['export_rule_version'],8)
+                    self.assertEqual(result['export_rule_version'],9)
                     if star:self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
                     else:self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
                     with self.assertRaises(p.BoundaryError) as error:
@@ -272,7 +341,7 @@ class ExportCases(unittest.TestCase):
             if name=='orchestrator.privilege.service' and symbol=='alias':
                 for query in resolver.cache:
                     if query[0]==resolver._key(name) and query[1]=='alias':
-                        self.assertEqual(query[0][0],8)
+                        self.assertEqual(query[0][0],9)
                         phases.add(query[3])
             return value
         with patch.object(v._Exports,'proof',record):

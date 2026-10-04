@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=8
+EXPORT_RULE_VERSION=9
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -139,9 +139,9 @@ class _Exports:
             # Module-evaluated effects only. Function bodies remain dormant;
             # executable class bodies and implicit decorators are rejected.
             nonlocal tainted
-            pending=[(node,eager_expression,ordinary_rhs)]
+            pending=[(node,eager_expression,ordinary_rhs,frozenset())]
             while pending:
-                current,eager,rhs=pending.pop()
+                current,eager,rhs,local_bindings=pending.pop()
                 self.bounded()
                 # Defaults/annotations may invoke hooks before any export is
                 # requested. Demand-driven proof of the definition is too late.
@@ -155,32 +155,50 @@ class _Exports:
                     # of a binding subsequently requested by an importer.
                     self.entries+=1
                     if self.entries>MAX_EXPORT_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
-                    rhs_checks.append((current,position))
+                    rhs_checks.append((current,position,local_bindings))
                 if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                     unsafe.add(current.name)
                     if current.decorator_list or isinstance(current,ast.ClassDef) and not plain_class(current):
                         tainted=True
-                    pending.extend((value,True,False) for value in immediate(current));continue
+                    pending.extend((value,True,False,local_bindings) for value in immediate(current));continue
                 if isinstance(current,ast.Lambda):
-                    pending.extend((value,True,False) for value in current.args.defaults)
-                    pending.extend((x,True,False) for x in current.args.kw_defaults if x is not None)
+                    pending.extend((value,True,False,local_bindings) for value in current.args.defaults)
+                    pending.extend((x,True,False,local_bindings) for x in current.args.kw_defaults if x is not None)
                     continue  # body writes belong to the dormant lambda scope
                 if isinstance(current,ast.ExceptHandler) and current.name:
                     # CPython binds then clears this string-valued target.
                     unsafe.add(current.name)
                 if isinstance(current,ast.NamedExpr):
                     unsafe.add(current.target.id)
-                    pending.append((current.value,eager,rhs));continue
-                if isinstance(current,ast.comprehension):
-                    # Iteration targets are comprehension-local; named expressions
-                    # in evaluated iterables/filters still affect the outer scope.
-                    pending.append((current.iter,eager,rhs));pending.extend((x,eager,rhs) for x in current.ifs);continue
+                    pending.append((current.value,eager,rhs,local_bindings));continue
+                if isinstance(current,(ast.ListComp,ast.SetComp,ast.DictComp,ast.GeneratorExp)):
+                    # Only the outermost iterable uses the enclosing scope.
+                    # All targets are local throughout the remaining scope,
+                    # including references before a later target is bound.
+                    names=set()
+                    for generator in current.generators:
+                        for target in ast.walk(generator.target):
+                            self.bounded()
+                            if isinstance(target,ast.Name) and isinstance(target.ctx,ast.Store):names.add(target.id)
+                            elif isinstance(target,(ast.Attribute,ast.Subscript)):tainted=True
+                        if generator.is_async:tainted=True
+                    self.entries+=len(names)
+                    if self.entries>MAX_EXPORT_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
+                    inner=local_bindings|frozenset(names)
+                    for number,generator in enumerate(current.generators):
+                        pending.append((generator.iter,eager,rhs,local_bindings if number==0 else inner))
+                        pending.extend((value,eager,rhs,inner) for value in generator.ifs)
+                    values=(current.key,current.value) if isinstance(current,ast.DictComp) else (current.elt,)
+                    # Generator bodies/filters/later iterables are deferred.
+                    # Consumption is not modeled: conservatively validate them
+                    # as potential effects, without calling them eager execution.
+                    pending.extend((value,eager,rhs,inner) for value in values);continue
                 if isinstance(current,ast.Import):unsafe.update(a.asname or a.name.split('.')[0] for a in current.names)
                 if isinstance(current,ast.ImportFrom):
                     if any(a.name=='*' for a in current.names):unsafe.add('__getattr__')
                     unsafe.update(a.asname or a.name for a in current.names)
                 if isinstance(current,ast.Name) and isinstance(current.ctx,(ast.Store,ast.Del)):unsafe.add(current.id)
-                pending.extend((value,eager,rhs) for value in ast.iter_child_nodes(current))
+                pending.extend((value,eager,rhs,local_bindings) for value in ast.iter_child_nodes(current))
         def immediate(node):
             values=list(node.decorator_list)
             if isinstance(node,ast.ClassDef):
@@ -247,7 +265,7 @@ class _Exports:
             # a cross-module cycle while this module's RHS safety is unproven.
             self.checking_rhs.add(key)
             try:
-                if not all(self._expression(value,name,0,frozenset(),at) for value,at in rhs_checks):
+                if not all(self._expression(value,name,0,frozenset(),at,locals_) for value,at,locals_ in rhs_checks):
                     self.unresolved.add('RHS_EFFECT_UNRESOLVED:'+name)
                     result=(bindings,unsafe,stars,True)
                     self.indexes[key]=result
@@ -256,18 +274,19 @@ class _Exports:
     def source_imports(self,name):
         self._index(name)
         return self.imported[self._key(name)]
-    def _expression(self,node,name,depth,visiting,position):
+    def _expression(self,node,name,depth,visiting,position,local_bindings=frozenset()):
         self.queries+=1;self.bounded()
         if depth+len(self.checking_rhs)>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
             self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
         if isinstance(node,ast.Constant):return ('VALUE',None)
         if isinstance(node,(ast.List,ast.Tuple,ast.Set)):
-            return ('VALUE',None) if all(self._expression(x,name,depth+1,visiting,position) for x in node.elts) else None
+            return ('VALUE',None) if all(self._expression(x,name,depth+1,visiting,position,local_bindings) for x in node.elts) else None
         if isinstance(node,ast.Dict):
-            return ('VALUE',None) if all(k is not None and self._expression(k,name,depth+1,visiting,position)
-                and self._expression(v,name,depth+1,visiting,position) for k,v in zip(node.keys,node.values)) else None
+            return ('VALUE',None) if all(k is not None and self._expression(k,name,depth+1,visiting,position,local_bindings)
+                and self._expression(v,name,depth+1,visiting,position,local_bindings) for k,v in zip(node.keys,node.values)) else None
         if isinstance(node,ast.UnaryOp) and isinstance(node.op,(ast.UAdd,ast.USub)) and isinstance(node.operand,ast.Constant) and type(node.operand.value) in (int,float,complex):return ('VALUE',None)
         if isinstance(node,ast.Name):
+            if node.id in local_bindings:return None  # never borrow an enclosing module alias
             value=self.proof(name,node.id,depth+1,visiting)
             index=self._index(name);positions=self.positions.get(self._key(name),{})
             if node.id in positions:
@@ -275,7 +294,7 @@ class _Exports:
             if index and index[2] and all(at<position for _,at in index[2]):return value
             return None
         if isinstance(node,ast.Attribute):
-            base=self._expression(node.value,name,depth+1,visiting,position)
+            base=self._expression(node.value,name,depth+1,visiting,position,local_bindings)
             if base and base[0]=='MODULE':
                 if base[1]==name and self.positions[self._key(name)].get(node.attr,position)>=position:return None
                 return self.proof(base[1],node.attr,depth+1,visiting)

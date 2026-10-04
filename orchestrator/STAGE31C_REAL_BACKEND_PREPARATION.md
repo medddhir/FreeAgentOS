@@ -3724,3 +3724,120 @@ independent-review acceptance is not claimed. Existing website, RPT-1 and CAP-1
 regressions pass without changes to their code/contracts. The verified website
 preparation tag remains unchanged. B10 PARTIAL, live execution unqualified,
 historical disk-timeout causation unresolved and Stage31D NOT AUTHORIZED remain.
+
+
+## N3-S1 comprehension lexical context — focused preparation repair
+
+Baseline: `48e44687fb0c4a0bcc9fa2ad96061080c2d717b0`, main, clean.
+OmniRush's reported original N3 closure does not constitute acceptance of N3-S1
+or dependency-wide cache completion. N3 independent-review status remains PENDING.
+
+Four source-only witnesses reproduce against rule 8: plain/annotated assignment
+of `[current.safe for current in (_export_hook,)]`, consumed through an unrelated
+`good` export or actual star import. Service defines good, imports
+_export_safe as current and imports _export_hook; safe source defines safe=1;
+hook source's __getattr__ deletes good or replaces literal __all__. The hook was
+never imported/executed. Baseline analyzer returns STATIC_METADATA_VERIFIED with
+no findings; candidate_prerequisite accepts staging, while qualified,
+installed_observed and execution_enabled remain false. Hook mutation is inferred
+language behavior, distinct from executed static-analysis evidence.
+
+Precise declarations: service requires its package initializer, safe helper and
+hook helper; consumer requires initializer and service; safe helper has no import
+edge and hook's sys import needs no file edge under the existing builtin module
+profile. Descriptor-pinned fixture construction binds each artifact to its source
+hash and fresh object identity. No blanket declaration masks the result. The four
+post-repair reproductions use the same source bytes/layout as baseline; exact
+derived graphs remain unchanged. They return UNRESOLVED, RHS_EFFECT_UNRESOLVED
+and either IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good or
+STAR_IMPORT_UNRESOLVED; candidate_prerequisite raises POLICY_REJECTED.
+
+The old walker collected an attribute and module statement position without
+its lexical context. Proof therefore borrowed outer current's safe-helper alias
+for the comprehension-local current. Rule 9 carries immutable local-name sets
+with pending effects and RHS checks. A local Name is rejected before global
+proof/cache lookup; no local lookup acquires module-alias evidence. Successful
+unshadowed checks use existing source-bound module proof. Module proof keys keep
+rule/source hash/pinned identity/import context/provisional phase; no new local
+proof is cached and no dynamic comprehension interpreter is introduced.
+
+For list/set/dict comprehensions and generator expressions, the first iterable
+uses the enclosing context; elements, keys/values, filters and later iterables
+use a context containing all targets, including a later target referenced before
+binding. Nested comprehensions extend that context; their first iterable uses
+the parent context. Targets are not marked as unsafe module-global names.
+Unsupported attribute/subscript target writes and asynchronous comprehensions
+remain conservatively rejected. Local-name storage consumes the existing export
+entry budget; syntax/query/depth/cooperative time limits remain unchanged.
+
+Generator outer iterables are evaluated at construction; generator elements,
+filters and later iterables are deferred. The analyzer does not model consumption
+or completion, so it conservatively checks potential deferred lookups and rejects
+unsupported locals there too. This is not a claim that those expressions execute
+eagerly. Ordinary function/lambda bodies remain dormant; lambda defaults remain
+immediate and strict under the prior N1 rule. Supported safe unshadowed global
+attributes, outermost iterable lookups, aliases and unrelated module exports stay
+accepted only as staging metadata; requested comprehension-value proofs remain
+unsupported. No accepted expression language or runtime authority is expanded.
+
+Regressions cover the four witnesses, list/set/dict key/value and generator
+variants, elements/filters/later iterables, nested and destructured targets,
+references before later bindings, and global/local lookups of the same spelling.
+Positive controls cover outermost iterable shadowing, unshadowed attributes,
+targets that reuse unrelated global names, aliases after a comprehension, nested
+enclosing scope and dormant bodies. Original N3 and builtin/F1/F2/R1/R2/N1/N2,
+cache replacement, cycles, graph/freshness/bounds and admission regressions remain
+required. Sticky unresolved observations prevent qualifying analysis even if a
+foreign provisional/cache entry exists; dependency-wide cache completion is not
+claimed. Policy identity changes with this bound source; mismatched journals
+remain rejected without rewriting/deletion/relabeling.
+
+No candidate rebuild, findings refresh, hook execution, dependency installation
+or privileged backend/campaign execution. B10 remains PARTIAL: static metadata
+is not runtime/dynamic closure, protected publication, credential or real
+consumer/removal integration. Live website execution remains unqualified;
+historical disk-timeout causation stays unresolved. Stage31D NOT AUTHORIZED.
+
+Focused N3-S1 verification before the required attempt: established-controller
+static harness ExportCases().cases() passes all export cases (93.199s).
+An affected established-controller harness passes selected independent import,
+relative/native metadata, freshness/prerequisite and inspection-bound cases,
+PolicyIdentityCases and pre-approval receipt integration; its unittest segment
+passes 44 website/runtime/reporting/allocation/diagnostic tests. Combined affected
+harness wall time 17.450s. Existing documented isolated pytest prerequisite is
+reused without installation. No reviewed fixture module or hook is executed.
+
+
+### N3-S1 required attempt — BLOCKED, uncommitted
+
+Exactly one `/root/agent-stack/bin/freeagent-test` invocation, using the existing
+FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3
+prerequisite, timed out at the unchanged 420s runner limit. Actual command:
+`/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover`.
+RESULT=TIMEOUT, EXIT_CODE=124; wrapper wall 420.990973s; 669 captured bytes,
+no output truncation. No final unittest count/duration or per-test names/timings
+were emitted; compact partial progress does not identify the active test.
+No retry or timeout/coverage change was made. Focused successes do not clear
+this required verification gate. N3-S1 milestone status is BLOCKED/UNVERIFIED;
+three scoped source/test/documentation files remain uncommitted and unstaged.
+
+Required log SHA-256:
+`071148b14e9911e899f41fdd44d875c5c78470e20cddf109f938f0bf18212313`.
+Pre-run selected-source manifest SHA-256:
+`d25f0ec184baad0952e6d3ee3b53820e3a2913baac2ba41c40eb9c59636e3517`.
+193 tracked source/test/config/documentation files were captured with no-follow
+regular-file reads and before/after descriptor checks; limits 1,000 entries,
+2 MiB/file, 32 MiB aggregate. Post-run bytes/size/mode/object identities match
+all selected entries. This is selected-source binding, not dependency/read-set
+attestation. Only this timeout-result narrative was appended afterward; tested
+implementation/test bytes remain unchanged. Final scoped diff and whitespace
+checks passed, but no commit is permitted without required PASS.
+
+The focused export group measured 93.199s versus the previously recorded N3
+32.579s, with additional meaningful lexical-context cases. Required-run group
+and active-test timings are unavailable; this difference alone does not establish
+the timeout's cause or exclude contention/other slow groups. A subsequent
+separately scoped diagnosis should measure relevant required-run group timing
+before authorizing another full attempt, preserving membership/assertions/bounds.
+No performance or test-coverage change is justified by this timeout alone.
+N3 independent review PENDING, B10 PARTIAL, Stage31D NOT AUTHORIZED.
