@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=1
+EXPORT_RULE_VERSION=2
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -140,18 +140,44 @@ class _Exports:
             pending=[node]
             while pending:
                 current=pending.pop()
+                self.bounded()
                 if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
-                    unsafe.add(current.name);continue
+                    unsafe.add(current.name)
+                    pending.extend(immediate(current));continue
+                if isinstance(current,ast.Lambda):
+                    pending.extend(current.args.defaults)
+                    pending.extend(x for x in current.args.kw_defaults if x is not None)
+                    continue  # body writes belong to the dormant lambda scope
+                if isinstance(current,ast.ExceptHandler) and current.name:
+                    # CPython binds then clears this string-valued target.
+                    unsafe.add(current.name)
+                if isinstance(current,ast.NamedExpr):
+                    unsafe.add(current.target.id)
+                    pending.append(current.value);continue
+                if isinstance(current,ast.comprehension):
+                    # Iteration targets are comprehension-local; named expressions
+                    # in evaluated iterables/filters still affect the outer scope.
+                    pending.append(current.iter);pending.extend(current.ifs);continue
                 if isinstance(current,ast.Import):unsafe.update(a.asname or a.name.split('.')[0] for a in current.names)
                 if isinstance(current,ast.ImportFrom):
                     if any(a.name=='*' for a in current.names):unsafe.add('__getattr__')
                     unsafe.update(a.asname or a.name for a in current.names)
                 if isinstance(current,ast.Name) and isinstance(current.ctx,(ast.Store,ast.Del)):unsafe.add(current.id)
                 pending.extend(ast.iter_child_nodes(current))
+        def immediate(node):
+            values=list(node.decorator_list)
+            if isinstance(node,ast.ClassDef):
+                return values+list(node.bases)+[x.value for x in node.keywords]
+            values+=list(node.args.defaults)+[x for x in node.args.kw_defaults if x is not None]
+            values += [x.annotation for x in (*node.args.posonlyargs,*node.args.args,*node.args.kwonlyargs) if x.annotation is not None]
+            values += [x.annotation for x in (node.args.vararg,node.args.kwarg) if x and x.annotation is not None]
+            if node.returns is not None:values.append(node.returns)
+            return values
         for position,node in enumerate(tree.body):
             self.bounded()
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
-                immediate=[]
+                evaluated=immediate(node)
+                for value in evaluated:effects(value)
                 valid=not node.decorator_list and not getattr(node,'type_params',[])
                 if node.decorator_list:tainted=True
                 if isinstance(node,ast.ClassDef):
@@ -159,18 +185,17 @@ class _Exports:
                     if not plain:tainted=True
                     valid=valid and plain
                 else:
-                    immediate=list(node.args.defaults)+[x for x in node.args.kw_defaults if x is not None]
-                    immediate += [x.annotation for x in (*node.args.posonlyargs,*node.args.args,*node.args.kwonlyargs) if x.annotation is not None]
-                    immediate += [x.annotation for x in (node.args.vararg,node.args.kwarg) if x and x.annotation is not None]
-                    if node.returns is not None:immediate.append(node.returns)
-                    if any(isinstance(x,ast.Call) for value in immediate for x in ast.walk(value)):tainted=True
-                bind(node.name,('definition',valid,immediate))
+                    if any(isinstance(x,ast.Call) for value in evaluated for x in ast.walk(value)):tainted=True
+                bind(node.name,('definition',valid,evaluated))
             elif isinstance(node,ast.Assign):
+                effects(node.value)
                 if any(isinstance(x,ast.Call) for x in ast.walk(node.value)):tainted=True
                 for target in node.targets:
                     if isinstance(target,ast.Name):bind(target.id,('expression',node.value))
                     else:effects(target);tainted=True
             elif isinstance(node,ast.AnnAssign):
+                for value in (node.value,node.annotation):
+                    if value is not None:effects(value)
                 if any(isinstance(x,ast.Call) for value in (node.value,node.annotation) if value for x in ast.walk(value)):tainted=True
                 if isinstance(node.target,ast.Name):bind(node.target.id,('expression',node.value,node.annotation))
                 else:effects(node);tainted=True

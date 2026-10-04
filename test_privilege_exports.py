@@ -45,6 +45,28 @@ class ExportCases(unittest.TestCase):
         self.check(b'good=1\n',b'import sys\n','STATIC_METADATA_VERIFIED')
         self.check(b'from sys import not_real as good\n',b'from .service import good\n','UNRESOLVED')
         self.check(b'import sys as builtin\ngood=builtin.not_real\n',b'from .service import good\n','UNRESOLVED')
+    def case_module_binding_effects_and_dormant_scope(self):
+        # Both review fixtures are parsed, never executed. check() also exercises
+        # the real staging prerequisite's rejection/non-authority contract.
+        result=self.check(b'good=1\ntry:\n    raise ValueError\nexcept ValueError as good:\n    pass\n',
+                          b'from .service import good\n','UNRESOLVED')
+        self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+        result=self.check(b'good=1\n__all__=("good",)\nother=(__all__ := ("absent",))\n',
+                          b'from .service import *\n','UNRESOLVED')
+        self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
+        for effect in (b'other=((good := 2),)\n',b'other: "int"=(good := 2)\n',
+                       b'def other(value=(good := 2)):\n    pass\n',
+                       b'def other(value: (good := 2)):\n    pass\n',
+                       b'if flag:\n    def other(value=(good := 2)):\n        pass\n',
+                       b'other=lambda value=(good := 2): value\n',
+                       b'other=[(good := 2) for local in (1,)]\n'):
+            self.check(b'good=1\n'+effect,b'from .service import good\n','UNRESOLVED')
+        for dormant in (b'def other():\n    good=(good := 2)\n',
+                        b'def other():\n    try:\n        raise ValueError\n    except ValueError as good:\n        pass\n',
+                        b'def other():\n    global good\n    good=2\n',
+                        b'other=lambda: (good := 2)\n',
+                        b'other=[good for good in (1,)]\n'):
+            self.check(b'good=1\n'+dormant,b'from .service import good\n','STATIC_METADATA_VERIFIED')
     def case_definitions_assignments_aliases(self):
         for service in (b'good=1\n',b'good=(1,None,"text")\n',b'def good():\n    pass\n',b'class good:\n    pass\n',b'original=1\ngood=original\n',b'good: "int"=1\n',b'def good(value=1):\n    pass\n'):
             self.check(service,b'from .service import good\n','STATIC_METADATA_VERIFIED')

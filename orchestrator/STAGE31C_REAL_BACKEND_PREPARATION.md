@@ -2665,3 +2665,113 @@ headroom against420s. Private log `/tmp/freeagent-b10-source-exports-required.lo
 explicit0600; normal test umask. Final relevant diff and whitespace checks PASS.
 The unchanged suite's existing authorized fixtures remain distinct from this
 milestone's never-executed candidate/build outputs and prohibited stress modes.
+
+### B10 F1 module-evaluated binding effects (focused preparation repair)
+
+Baseline d5e13c2f3684090733c94062d4472abf4b2c7f05 reproduced both review
+fixtures before editing, by parsing deterministic staging sources without executing
+them. Fixture A (`good=1`, then `except ValueError as good`) incorrectly retained
+positive `good` evidence. Fixture B (literal __all__, then assignment containing
+`__all__ := ("absent",)`) incorrectly retained the earlier star-export list.
+Both returned STATIC_METADATA_VERIFIED and staging prerequisite admission with
+qualified=false, installed_observed=false, execution_enabled=false. Thus the defect
+was false static acceptance, not protected installation or campaign authorization.
+
+The old effect walker missed the string-valued exception target, including its
+implicit cleanup, and assignment handling did not inspect values for nested
+writes. Export rule version2 now marks exception targets unsafe and walks evaluated
+assignment values/annotations and definition defaults/annotations/decorators.
+Nested named-expression targets invalidate affected evidence even if the containing
+expression is unsupported. Effects remain conservative; exception execution or
+condition truth is not predicted. Function/lambda bodies remain dormant and are
+not module writes. Their immediately evaluated defaults are inspected; conditional
+definitions also expose those immediate effects. Comprehension iteration targets
+remain local while nested named-expression writes are tracked conservatively.
+Unsupported complex class publication and existing whole-module taint are preserved.
+The accepted expression language, builtin/native boundary, recursion/work/source
+bounds and pinned-read/hash/identity freshness contracts are not broadened.
+Policy identity binds the changed verifier bytes; old mismatched journals remain
+rejected without rewriting/relabeling. No production numerical policy changes.
+
+After repair Fixture A returns UNRESOLVED with
+IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good; Fixture B returns
+UNRESOLVED with STAR_IMPORT_UNRESOLVED. Both prerequisites reject POLICY_REJECTED.
+The focused table exercises these exact cases and nested writes in tuples,
+annotated assignments, definition defaults/annotations, conditional definitions,
+lambda defaults and comprehensions. Dormant function exception/walrus/global writes,
+lambda body writes and local comprehension iteration do not erase supported
+module evidence. Existing literal/alias/star positives remain staging-only;
+deletions/rebindings, hooks, cycles, bounds and cache/source replacements reject.
+Export, independent analyzer, policy agreement and closure regressions PASS20.295s.
+No standalone full candidate assembly/build/analysis was performed for this repair;
+the unchanged required suite retains its existing authorized fixture checks.
+
+F2 remains a separate pending reproduction/repair: package-child fallback may
+prove ordinary package.child attribute access without evidence of imported or
+published child state. F1 does not resolve that claim or complete the resolver.
+B10 remains PARTIAL for F2, builtin/native positive evidence, unsupported dynamic
+semantics, toolchain closure, protected publication, credentials and real
+consumer/removal integration. Static export correctness does not prove successful
+runtime imports, complete dependency closure, root installation or enforcement.
+Doctor active isolation UNPROVEN; Stage3.1D BLOCKED and NOT AUTHORIZED. No stress,
+model/provider, privileged backend activation or production integration occurred.
+
+F1 required verification remains BLOCKED: unchanged freeagent-test completed518
+ tests in366.999s (wall369.765s), exit1 / RESULT=FAIL, with one failure in the
+existing test_resource_sandbox.ResourceSandboxTests.test_workspace_disk_ceiling.
+It expected "No space left on device" but observed RESULT=TIMEOUT / EXIT_CODE=124
+under its unchanged six-second fixture deadline. Isolated representative execution
+with the suite interpreter and unchanged unittest method also failed (one test,
+7.113s; wall7.882s). Its preceding cleanup/isolation assertions passed. The focused
+F1/foundation checks passed; the disk test and production sandbox are unmodified.
+The cause of failure to reach disk exhaustion within the deadline is unresolved;
+no environmental or F1 causal explanation is asserted. No security limit/assertion
+was changed, no blind full-suite retry occurred and no commit was made. Private
+logs `/tmp/freeagent-b10-f1-required.log` and
+`/tmp/freeagent-b10-f1-disk-reproduction.log` were explicitly created0600 with normal
+umask. Existing authorized production-sandbox test fixtures ran; no new privileged
+backend or Stage3.1D validation was activated. Final relevant diff/whitespace
+inspection passed. Source changes remain uncommitted pending required PASS.
+
+F1 disk-failure follow-up: isolated committed baseline and active worktree were
+compared sequentially using the same .venv-orchestrator Python3.12.3 interpreter,
+normal umask0022 and fresh test-owned runtime state. A private temporary baseline
+contains only exact committed test_resource_sandbox.py, roles/__init__.py,
+roles/sandbox.py and bin/freeagent-test blobs; all four SHA256 values match active
+bytes. No parent Git metadata, pending F1 work, limits or host controls changed.
+Both unchanged representative tests now PASS: baseline1.268s (wall1.375s),
+active0.628s (wall0.772s). Baseline uses the installed test venv, not an independently
+rebuilt environment; sequential host load equivalence cannot be guaranteed.
+Private conditions/comparison/logs: `/tmp/freeagent-f1-disk-diagnosis-6okz7v8u/`.
+
+The prior failure came from _setup_and_exec's _read_bounded child wall deadline6s.
+The outer emergency18s and required-suite420s deadlines did not fire. The nested
+runner's target timeout180s was not reached. Test workload writes up to360MiB in
+six60MiB files against the fixed256MiB workspace tmpfs. No separate disk polling
+kills the writer: tmpfs rejects growth; statvfs accounts for disk exhaustion after
+owned scope termination/reaping. Timeout takes precedence in result classification.
+Prior retained evidence passed cleanup/remaining-process and enforced-control
+assertions before the output assertion; it did not retain progress or cgroup CPU
+counters, so exact earlier scheduling/throughput contention cannot be reconstructed.
+Current comparison has required capabilities/cgroup-v2 available and passes actual
+ENOSPC/disk-hit assertions. Host staging filesystem reports ext2/ext3; workspace
+filesystem remains the fixed private tmpfs. No permissions/umask restoration or
+configuration correction was performed. Current focused F1/export/analyzer/policy
+regressions PASS17.897s. No import/execution path from this representative fixture
+to the changed export resolver was found; passing baseline/active comparison does
+not establish the precise original transient cause or rule out full-suite load.
+The demonstrated return to passing unchanged representative conditions justifies
+one unchanged required-suite retry, not blind retries or a limit/assertion change.
+
+Follow-up verification clears the current F1 admission-to-commit blocker: the one
+justified unchanged required-suite retry PASS518 tests in263.232s, RESULT=PASS,
+exit0; wall265.232s, conservative154.768s headroom against420s. The previously failing
+disk-ceiling test is explicitly recorded ok. Private log
+`/tmp/freeagent-b10-f1-required-followup.log`0600; normal umask and unchanged limits.
+No concurrent verification jobs were present before the run. This does not identify
+the original timing cause or establish permanent immunity to resource contention.
+The previous FAIL/reproduction evidence remains retained and is not relabeled.
+No substantive sandbox/test/environment correction was needed. Final relevant
+three-file diff and whitespace inspection PASS; focused F1 preparation is verified
+by deterministic and required tests. F2 and broader B10 gaps remain pending; no
+Stage3.1D authorization, new privileged backend activation or production change.
