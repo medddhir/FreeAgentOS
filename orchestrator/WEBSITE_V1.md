@@ -257,3 +257,61 @@ of every resource; unowned cgroups were not inspected. Tests ran as UID 0 on
 Python 3.12.3, so normal-user and installed-package qualification remain unproven.
 Recorded structural preparation passed; live coding, preview/browser execution,
 B10 completion and Stage31D authorization remain blocked/deferred as before.
+
+## Recorded CLI failure reporting correction — 2026-10-04
+
+The candidate's post-Session WebsiteError reporting used cleanup NONE despite
+retaining the run. Baseline reproduction with a whitespace-padded heading left
+one run and four project files (exit 2, PROTECTED_CHECK_FAILED). A title of
+"Secret garden" triggered the existing broker filter after scaffolding: one run
+and four scaffold files remained, including an empty index.html, without export.
+The review claim that this code-phase failure leaves no run was contradicted.
+It previously exited 4 as an unexpected controller failure.
+
+Failure output now reports artifact_state NOT_CREATED only before constructor
+entry, RETAINED after successful creation and a successful current root identity
+check, or UNPROVEN when construction/identity cannot establish retention.
+workspace_cleanup is respectively NONE, RETAINED or UNPROVEN; cleanup_attempted
+is always false in this branch. Text output includes these same facts. No cleanup
+or deletion is performed. Expected broker ReadDenied reports BLOCKED with the
+fixed RECORDED_WEBSITE_POLICY_REJECTED code and exit 2; FILE_TOOL_INTERNAL remains
+an unexpected controller failure (exit 4). No user text or uncontrolled exception
+message is included. Failures never report preparation success.
+
+Known non-blocking restrictions are unchanged: the content filter can reject
+benign wording (including "Secret garden"); symlinked staging ancestors reject;
+leading/trailing whitespace is accepted by brief validation but protected checks
+compare stripped HTML text with exact confirmed text, so such headings/titles/
+buttons can fail. Whitespace behavior is not normalized by this correction.
+Programmatic imports can initialize the production graph before recorded dispatch;
+explicit CLI subprocess invocation avoids it. Import redesign is out of scope.
+Ownership, content policy, templates, bounds, fixed export and execution gates
+are unchanged. Normal-user compatibility and live qualification remain UNPROVEN;
+B10 PARTIAL, STAGE31D_AUTHORIZED NO. Verification results follow separately.
+
+Verification of this correction: focused CLI/website/broker checks passed (50 tests
+in 42.191s), followed by runtime/ordinary-entrypoint checks (19 tests in 9.385s).
+The one required invocation was `/root/agent-stack/bin/freeagent-test`, selecting
+`.venv-orchestrator/bin/python3 -m unittest discover`:
+**568 tests in 414.529s, OK, RESULT=PASS, EXIT_CODE=0**. Wrapper time 416.697s
+is distinct from the exact runner deadline interval. The 420s deadline and 64 KiB
+capture limit were unchanged; no timeout, output truncation or diagnostic failure.
+The existing pytest prerequisite was
+`FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`.
+The existing observer used
+`FREEAGENT_CONTROLLER_PROGRESS_DIR=/tmp/freeagent-cli-retention-required-dr2zrji8`
+and the fixed `/root/agent-stack/devtools/controller_progress` PYTHONPATH prefix.
+It recorded 572 completed intervals (including four intentional nested synthetic
+cases), no unmatched intervals and normal shutdown. Unittest's 568 count and
+runner markers are authoritative; nested observer outcomes are not suite failures.
+
+All 205 selected regular source files matched their pre-run bytes/modes afterward.
+Pre-run manifest SHA-256:
+`3215afe13d42ed653e99366526d1338218562caf4c3d55503456bf3ddc6da145`.
+Required-log SHA-256:
+`2d072ca03d98a791e4241983d02401bc71e0d0d2f999f7e3d23f3dddc5534784`.
+Only this result documentation was appended after comparison. This is source
+binding, not independent dependency/read-set attestation. Runner/unittest launch
+identities were absent after completion; this does not prove historical cleanup.
+Tests ran under development UID 0, not a normal-user qualification attempt.
+No review of the new correction is claimed; no commit/tag/push/deployment.

@@ -369,6 +369,7 @@ def _recorded_website(arguments):
     """Explicit preparation branch: no production configuration or live worker."""
     from website import ConfirmedBrief, Session, WebsiteError, recorded_site_adapter, workflow_graph
     from langgraph.graph import StateGraph, START, END
+    from roles.read_policy import ReadDenied
     parser = _Parser(prog="freeagent-run recorded-website",
                      description="Recorded preparation only: fixed website recordings, structural checks "
                      "and complete source export. No model calls or live preview/browser execution.")
@@ -379,6 +380,29 @@ def _recorded_website(arguments):
     parser.add_argument("--confirmed", required=True, action="store_true", help="Explicitly confirm brief/design and revision.")
     parser.add_argument("--json", action="store_true", help="Emit bounded machine-readable preparation result.")
     json_mode = "--json" in arguments
+    session = None
+    artifact_state = "NOT_CREATED"
+
+    def problem(status, code):
+        # A constructor failure may already have allocated an owned directory.
+        # No cleanup is attempted here; failed identity observation proves no absence.
+        state = artifact_state
+        if session is not None:
+            try:
+                session.assert_root()
+            except Exception:
+                state = "UNPROVEN"
+        cleanup = {"NOT_CREATED": "NONE", "RETAINED": "RETAINED", "UNPROVEN": "UNPROVEN"}[state]
+        response = {"status": status, "block_reason": code,
+                    "operation": "RECORDED_PREPARATION", "live_qualified": False,
+                    "workspace_cleanup": cleanup, "artifact_state": state,
+                    "cleanup_attempted": False}
+        _emit(response, json_mode)
+        if not json_mode:
+            print("WORKSPACE_CLEANUP=" + cleanup)
+            print("ARTIFACT_STATE=" + state)
+            print("CLEANUP_ATTEMPTED=false")
+
     try:
         args = parser.parse_args(arguments)
         value = args.staging_parent
@@ -391,7 +415,9 @@ def _recorded_website(arguments):
         brief = ConfirmedBrief(args.title, args.heading, args.button, args.revision_heading,
                                args.revision_button, args.design, args.confirmed)
         adapter = recorded_site_adapter(brief)
+        artifact_state = "UNPROVEN"
         session = Session(brief, parent)
+        artifact_state = "RETAINED"
         # Same factory used by graph.build_website_graph, without importing the
         # separate production graph and its configured model selection.
         result = workflow_graph(adapter, StateGraph, START, END).invoke({"session": session})
@@ -413,19 +439,25 @@ def _recorded_website(arguments):
             print("EXPORT=" + result["export"]["directory"])
         return 0
     except UsageError:
-        _problem("INVALID_INPUT", "RECORDED_WEBSITE_USAGE_INVALID", json_mode)
+        problem("INVALID_INPUT", "RECORDED_WEBSITE_USAGE_INVALID")
         return 3
+    except ReadDenied as exc:
+        if str(exc) == "FILE_TOOL_INTERNAL":
+            problem("CONTROLLER_ERROR", "RECORDED_PREPARATION_FAILED")
+            return 4
+        problem("BLOCKED", "RECORDED_WEBSITE_POLICY_REJECTED")
+        return 2
     except WebsiteError as exc:
-        _problem("BLOCKED", str(exc) if SAFE_CODE.fullmatch(str(exc)) else "WEBSITE_PREPARATION_REJECTED", json_mode)
+        problem("BLOCKED", str(exc) if SAFE_CODE.fullmatch(str(exc)) else "WEBSITE_PREPARATION_REJECTED")
         return 2
     except (OSError, ValueError):
-        _problem("BLOCKED", "WEBSITE_PREPARATION_INPUT_OR_PATH_INVALID", json_mode)
+        problem("BLOCKED", "WEBSITE_PREPARATION_INPUT_OR_PATH_INVALID")
         return 2
     except KeyboardInterrupt:
-        _problem("INTERRUPTED", "RECORDED_PREPARATION_INTERRUPTED", json_mode, "RETAINED")
+        problem("INTERRUPTED", "RECORDED_PREPARATION_INTERRUPTED")
         return 130
     except Exception:
-        _problem("CONTROLLER_ERROR", "RECORDED_PREPARATION_FAILED", json_mode, "RETAINED")
+        problem("CONTROLLER_ERROR", "RECORDED_PREPARATION_FAILED")
         return 4
 
 

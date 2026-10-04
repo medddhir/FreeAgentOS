@@ -106,3 +106,62 @@ with patch.object(foundation,'load_config',side_effect=AssertionError('config re
         self.assertEqual(result.returncode,0,result.stderr+result.stdout)
         exported=Path(json.loads(result.stdout)['export'])
         self.assertIn('Local &lt;script&gt; Studio',(exported/'index.html').read_text())
+
+    def test_failure_artifact_lifecycle_and_safe_reporting(self):
+        for case,expected_exit,state,reason in (
+                ('before',3,'NOT_CREATED','RECORDED_WEBSITE_USAGE_INVALID'),
+                ('check',2,'RETAINED','PROTECTED_CHECK_FAILED'),
+                ('policy',2,'RETAINED','RECORDED_WEBSITE_POLICY_REJECTED')):
+            for json_mode in (True,False):
+                with self.subTest(case=case,json=json_mode):
+                    parent=self.parent/(case+str(json_mode));parent.mkdir(mode=0o700)
+                    args=self.args.copy();args[args.index('--staging-parent')+1]=str(parent)
+                    if not json_mode:args.remove('--json')
+                    if case=='before':args.remove('--confirmed')
+                    if case=='check':args[args.index('--heading')+1]=' Build locally '
+                    if case=='policy':args[args.index('--title')+1]='Secret garden'
+                    result=self.run_cli(args)
+                    self.assertEqual(result.returncode,expected_exit,result.stderr+result.stdout)
+                    self.assertNotIn('PREPARATION_COMPLETE',result.stdout)
+                    self.assertNotIn('Secret garden',result.stdout+result.stderr)
+                    self.assertNotIn('Traceback',result.stderr)
+                    cleanup='NONE' if state=='NOT_CREATED' else 'RETAINED'
+                    if json_mode:
+                        value=json.loads(result.stdout)
+                        self.assertEqual(value['artifact_state'],state)
+                        self.assertEqual(value['workspace_cleanup'],cleanup)
+                        self.assertFalse(value['cleanup_attempted']);self.assertFalse(value['live_qualified'])
+                        self.assertEqual(value['block_reason'],reason)
+                        self.assertEqual(value['status'],'INVALID_INPUT' if case=='before' else 'BLOCKED')
+                    else:
+                        self.assertIn('ARTIFACT_STATE='+state,result.stdout)
+                        self.assertIn('WORKSPACE_CLEANUP='+cleanup,result.stdout)
+                        self.assertIn('CLEANUP_ATTEMPTED=false',result.stdout)
+                        self.assertIn('BLOCK_REASON='+reason,result.stdout)
+                    runs=list(parent.iterdir())
+                    if case=='before':self.assertEqual(runs,[])
+                    else:
+                        self.assertEqual(len(runs),1);self.assertFalse((runs[0]/'export').exists())
+                        self.assertEqual({p.name for p in (runs[0]/'project').iterdir()},
+                                         {'index.html','styles.css','app.js','README.md'})
+                        if case=='policy':
+                            self.assertEqual((runs[0]/'project/index.html').read_bytes(),b'')
+                        else:self.assertIn(b' Build locally ',(runs[0]/'project/index.html').read_bytes())
+
+    def test_partial_constructor_or_uncertain_identity_remains_unproven(self):
+        for case in ('partial_constructor','identity_failure','unexpected_before'):
+            with self.subTest(case=case):
+                parent=self.parent/case;parent.mkdir(mode=0o700)
+                args=self.args.copy();args[args.index('--staging-parent')+1]=str(parent)
+                code="import sys\nsys.path.insert(0,sys.argv.pop(1))\ncase=sys.argv.pop(1)\nimport cli,website\nfrom unittest.mock import patch\nif case=='partial_constructor':\n def fail(self,brief,parent):\n  from pathlib import Path\n  (Path(parent)/'partial-owned-run').mkdir(mode=0o700)\n  raise OSError('uncontrolled diagnostic must not escape')\n target=patch.object(website.Session,'__init__',fail)\nelif case=='identity_failure':\n target=patch.object(website.Session,'assert_root',side_effect=OSError('uncontrolled diagnostic must not escape'))\nelse:\n target=patch.object(website,'recorded_site_adapter',side_effect=RuntimeError('uncontrolled diagnostic must not escape'))\nwith target:\n raise SystemExit(cli.main())\n"
+                result=subprocess.run([str(PYTHON),'-c',code,str(ROOT/'orchestrator'),case,*args],
+                                      cwd=parent,capture_output=True,text=True,timeout=15)
+                value=json.loads(result.stdout)
+                self.assertEqual(result.returncode,4 if case=='unexpected_before' else 2)
+                expected='NOT_CREATED' if case=='unexpected_before' else 'UNPROVEN'
+                self.assertEqual(value['artifact_state'],expected)
+                self.assertEqual(value['workspace_cleanup'],'NONE' if expected=='NOT_CREATED' else 'UNPROVEN')
+                self.assertFalse(value['cleanup_attempted'])
+                self.assertNotIn('uncontrolled diagnostic',result.stdout+result.stderr)
+                self.assertNotIn('PREPARATION_COMPLETE',result.stdout)
+                self.assertEqual(len(list(parent.iterdir())),0 if case=='unexpected_before' else 1)
