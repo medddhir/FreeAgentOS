@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=7
+EXPORT_RULE_VERSION=8
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -109,6 +109,7 @@ class _Exports:
         self.unresolved=unresolved;self.bounded=bounded
         self.identities={row['path']:tuple(sorted(row['identity'].items())) for row in snapshot['nodes']}
         self.indexes={};self.cache={};self.imported={};self.positions={};self.entries=0;self.queries=0;self.stored_nodes=0
+        self.checking_rhs=set()
     def _key(self,name):
         found=self.modules.get(name)
         if found is None or not found[0].endswith('.py'):return None
@@ -124,7 +125,7 @@ class _Exports:
             self.imported[key]=([],[]);return None
         tree,nodes=syntax(raw)
         self.imported[key]=_imports(nodes,name,self.modules[name][1])
-        bindings={};unsafe=set();stars=[];tainted=False;positions={}
+        bindings={};unsafe=set();stars=[];tainted=False;positions={};rhs_checks=[]
         def bind(symbol,value):
             self.entries+=1
             if self.entries>MAX_EXPORT_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
@@ -134,43 +135,52 @@ class _Exports:
             if self.stored_nodes>MAX_AST_NODES:raise p.BoundaryError('BOUNDS_EXCEEDED')
             if symbol in bindings:unsafe.add(symbol)
             bindings[symbol]=value;positions[symbol]=position
-        def effects(node,*,eager_expression=False):
+        def effects(node,*,eager_expression=False,ordinary_rhs=False):
             # Module-evaluated effects only. Function bodies remain dormant;
             # executable class bodies and implicit decorators are rejected.
             nonlocal tainted
-            pending=[(node,eager_expression)]
+            pending=[(node,eager_expression,ordinary_rhs)]
             while pending:
-                current,eager=pending.pop()
+                current,eager,rhs=pending.pop()
                 self.bounded()
                 # Defaults/annotations may invoke hooks before any export is
                 # requested. Demand-driven proof of the definition is too late.
                 if eager and isinstance(current,(ast.Call,ast.Attribute,ast.Subscript)):
                     tainted=True
+                elif rhs and isinstance(current,(ast.Call,ast.Subscript)):
+                    tainted=True
+                elif rhs and isinstance(current,ast.Attribute):
+                    # A supported module alias may publish a source-proven
+                    # member. Verify every evaluated lookup, not only the RHS
+                    # of a binding subsequently requested by an importer.
+                    self.entries+=1
+                    if self.entries>MAX_EXPORT_ENTRIES:raise p.BoundaryError('BOUNDS_EXCEEDED')
+                    rhs_checks.append((current,position))
                 if isinstance(current,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                     unsafe.add(current.name)
                     if current.decorator_list or isinstance(current,ast.ClassDef) and not plain_class(current):
                         tainted=True
-                    pending.extend((value,True) for value in immediate(current));continue
+                    pending.extend((value,True,False) for value in immediate(current));continue
                 if isinstance(current,ast.Lambda):
-                    pending.extend((value,True) for value in current.args.defaults)
-                    pending.extend((x,True) for x in current.args.kw_defaults if x is not None)
+                    pending.extend((value,True,False) for value in current.args.defaults)
+                    pending.extend((x,True,False) for x in current.args.kw_defaults if x is not None)
                     continue  # body writes belong to the dormant lambda scope
                 if isinstance(current,ast.ExceptHandler) and current.name:
                     # CPython binds then clears this string-valued target.
                     unsafe.add(current.name)
                 if isinstance(current,ast.NamedExpr):
                     unsafe.add(current.target.id)
-                    pending.append((current.value,eager));continue
+                    pending.append((current.value,eager,rhs));continue
                 if isinstance(current,ast.comprehension):
                     # Iteration targets are comprehension-local; named expressions
                     # in evaluated iterables/filters still affect the outer scope.
-                    pending.append((current.iter,eager));pending.extend((x,eager) for x in current.ifs);continue
+                    pending.append((current.iter,eager,rhs));pending.extend((x,eager,rhs) for x in current.ifs);continue
                 if isinstance(current,ast.Import):unsafe.update(a.asname or a.name.split('.')[0] for a in current.names)
                 if isinstance(current,ast.ImportFrom):
                     if any(a.name=='*' for a in current.names):unsafe.add('__getattr__')
                     unsafe.update(a.asname or a.name for a in current.names)
                 if isinstance(current,ast.Name) and isinstance(current.ctx,(ast.Store,ast.Del)):unsafe.add(current.id)
-                pending.extend((value,eager) for value in ast.iter_child_nodes(current))
+                pending.extend((value,eager,rhs) for value in ast.iter_child_nodes(current))
         def immediate(node):
             values=list(node.decorator_list)
             if isinstance(node,ast.ClassDef):
@@ -198,13 +208,13 @@ class _Exports:
                     if any(isinstance(x,ast.Call) for value in evaluated for x in ast.walk(value)):tainted=True
                 bind(node.name,('definition',valid,evaluated))
             elif isinstance(node,ast.Assign):
-                effects(node.value)
+                effects(node.value,ordinary_rhs=True)
                 if any(isinstance(x,ast.Call) for x in ast.walk(node.value)):tainted=True
                 for target in node.targets:
                     if isinstance(target,ast.Name):bind(target.id,('expression',node.value))
                     else:effects(target);tainted=True
             elif isinstance(node,ast.AnnAssign):
-                if node.value is not None:effects(node.value)
+                if node.value is not None:effects(node.value,ordinary_rhs=True)
                 # Module annotation evaluation is not demand-driven publication.
                 # Deferred semantics remain unsupported/conservatively rejected.
                 effects(node.annotation,eager_expression=True)
@@ -227,13 +237,28 @@ class _Exports:
                 if any(isinstance(x,(ast.Call,ast.Attribute,ast.Subscript)) for x in ast.walk(node)):tainted=True
         if {'__getattr__','__dir__'} & (bindings.keys()|unsafe):tainted=True
         result=(bindings,unsafe,stars,tainted)
-        self.positions[key]=positions;self.indexes[key]=result;return result
+        self.positions[key]=positions;self.indexes[key]=result
+        if rhs_checks and not tainted:
+            if len(self.checking_rhs)>=MAX_EXPORT_DEPTH:
+                self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name)
+                result=(bindings,unsafe,stars,True);self.indexes[key]=result;return result
+            # Local module aliases must be available to the existing expression
+            # resolver, but provisional VALUE proofs must never escape through
+            # a cross-module cycle while this module's RHS safety is unproven.
+            self.checking_rhs.add(key)
+            try:
+                if not all(self._expression(value,name,0,frozenset(),at) for value,at in rhs_checks):
+                    self.unresolved.add('RHS_EFFECT_UNRESOLVED:'+name)
+                    result=(bindings,unsafe,stars,True)
+                    self.indexes[key]=result
+            finally:self.checking_rhs.remove(key)
+        return result
     def source_imports(self,name):
         self._index(name)
         return self.imported[self._key(name)]
     def _expression(self,node,name,depth,visiting,position):
         self.queries+=1;self.bounded()
-        if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
+        if depth+len(self.checking_rhs)>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
             self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
         if isinstance(node,ast.Constant):return ('VALUE',None)
         if isinstance(node,(ast.List,ast.Tuple,ast.Set)):
@@ -258,7 +283,7 @@ class _Exports:
     def proof(self,name,symbol,depth=0,visiting=frozenset(),*,import_child=False):
         self.queries+=1;self.bounded()
         if type(symbol) is not str or not symbol.isidentifier() or len(symbol)>128:return None
-        if depth>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
+        if depth+len(self.checking_rhs)>MAX_EXPORT_DEPTH or self.queries>MAX_EXPORT_QUERIES:
             self.unresolved.add('EXPORT_ANALYSIS_BOUND:'+name);return None
         key=self._key(name)
         # Exact child membership supports import syntax, never an ordinary
@@ -266,7 +291,8 @@ class _Exports:
         if import_child and name=='orchestrator' and name+'.'+symbol in self.modules and self.module(name+'.'+symbol):
             return ('MODULE',name+'.'+symbol)
         if key is None:return None  # builtin/frozen/native attribute evidence absent
-        query=(key,symbol,import_child)
+        checking=key in self.checking_rhs
+        query=(key,symbol,import_child,checking)
         if query in visiting:
             self.unresolved.add('EXPORT_CYCLE_UNRESOLVED:'+name+'.'+symbol);return None
         if query in self.cache:return self.cache[query]
@@ -301,6 +327,7 @@ class _Exports:
         elif import_child and self.modules[name][1]:
             child=name+'.'+symbol
             if child in self.modules and self.module(child):value=('MODULE',child)
+        if checking and value and value[0]!='MODULE':value=None
         self.cache[query]=value;return value
     def star(self,name,depth=0,visiting=frozenset()):
         self.queries+=1;self.bounded()

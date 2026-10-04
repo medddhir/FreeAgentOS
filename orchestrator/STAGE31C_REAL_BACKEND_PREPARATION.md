@@ -3619,3 +3619,108 @@ Final scoped diff and whitespace inspection precedes the focused local commit.
 CAP-1's helper postcondition is repaired and verified in the stated scope; no
 external-review acceptance, universal backing proof or historical timeout cause
 is claimed. N3 pending/B10 PARTIAL/Stage31D NOT AUTHORIZED remain unchanged.
+
+## N3 ordinary RHS effects — focused preparation repair
+
+Baseline: `13fc5575ce5caa83b38b429a6f326aab9e0b0dbf`, main, clean;
+`website-v1-recorded-preparation-verified` is preserved. This section supersedes
+the historical N3 pending-reproduction entries, without changing their evidence.
+
+Before editing, four pinned static fixtures reproduced acceptance: plain and
+literal-annotated `other = _export_hook.missing`, each consumed through `good`
+or actual `from .service import *`. The hook-shaped source deletes `good` or
+replaces `__all__`; it was parsed, never imported or executed. The inferred
+Python hook effects are separate from the executed analyzer evidence. Baseline
+analysis returned STATIC_METADATA_VERIFIED, no findings, and staging acceptance;
+qualified, installed_observed and execution_enabled all remained false.
+
+Declarations were selective: service requires its package initializer and
+`python_base/lib/python3.12/_export_hook.py`; consumer requires that initializer
+and service; hook requires no file edge for builtin sys. Derived edges matched
+those declarations before and after. No blanket declarations masked missing
+edges. Private baseline/after records retain the complete derived graphs.
+
+Assign.value and AnnAssign.value previously walked effects without eager lookup
+validation. Only a subsequently requested binding had its expression proved.
+The shared ordinary_rhs context now checks every evaluated attribute using the
+existing source-bound expression resolver; unknown calls/subscripts reject.
+Supported earlier module aliases and independently proved source members remain
+accepted. An unresolved attribute emits RHS_EFFECT_UNRESOLVED and taints the
+whole module, invalidating unrelated exports and literal star proofs.
+
+| Walker input | Context and supported treatment |
+| --- | --- |
+| Direct Assign.value / AnnAssign.value | ordinary_rhs: verify all evaluated source-bound attributes; reject unresolved lookups, calls and subscripts |
+| Direct definition decorators/defaults/annotations/bases/keywords | strict eager_expression; prior N1 conservative rejection unchanged |
+| Module AnnAssign.annotation | strict eager_expression; prior N2 rule unchanged |
+| Compound assignment target / non-name annotated assignment | unsupported target rejected; effect traversal cannot grant publication |
+| Unknown module statement/control flow | existing traversal plus whole-statement call/attribute/subscript rejection unchanged |
+| Nested definition immediate expressions | strict eager_expression; complex classes/decorators rejected by prior R1 rule |
+| Lambda defaults | strict eager_expression; lambda body remains dormant |
+| Named-expression values / evaluated comprehension inputs / other child expressions | propagate incoming context; existing binding-effect accounting unchanged |
+
+The resolver temporarily exposes indexed MODULE aliases while checking RHS
+safety, but never provisional VALUE exports. A separate cache phase prevents
+cross-module cycles from retaining unfinished positive evidence. Cache keys
+retain rule, source path/hash, pinned object identity and import-versus-attribute
+context; export rule advances 7 to 8. Active RHS-validation depth shares the
+existing recursion bound; extra checks consume existing entry/query/AST work
+budgets. No count, byte, transport or time bound is raised. Changed source bytes
+also change source-bound policy identity; policy-mismatched journals remain
+rejected without rewriting, deletion or relabeling.
+
+After repair all four witnesses are UNRESOLVED, with RHS_EFFECT_UNRESOLVED and
+either IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good or
+STAR_IMPORT_UNRESOLVED. candidate_prerequisite rejects with POLICY_REJECTED.
+Safe aliases still produce staging-only acceptance with all authority flags
+false. Tests cover unrequested plain/annotated attributes and subscripts,
+container lookups, control-flow placement, dormant bodies, safe aliases,
+provisional-value cycles, phase-separated caches and unchanged bounds. Existing
+builtin/F1/F2/R1/R2/N1/N2, freshness and graph regressions remain required.
+
+No reviewed hook/module execution, candidate rebuild or findings refresh is
+performed. Deferred/dynamic semantics, builtin/native attributes without positive
+evidence and general runtime import/order behavior remain unresolved. This is
+static preparation, not complete semantic closure or protected authority. B10
+remains PARTIAL: dynamic/runtime closure, protected publication, credential and
+real consumer/removal integration remain outstanding. Live website execution and
+doctor active isolation remain UNPROVEN; historical disk-timeout causation stays
+unresolved. Stage31D is NOT AUTHORIZED.
+
+### N3 verification and source binding
+
+Focused verification: `python3` static harness invoking `ExportCases().cases()`
+passed all export cases (32.579s), including prior builtin/F1/F2/R1/R2/N1/N2,
+source replacement, cycles and bounds. Established-controller harness invoking
+selected independent closure/freshness/bounds cases, PolicyIdentityCases, the
+pre-approval receipt and B6/B9 recording-consumer cases passed (5.143s).
+Established-controller unittest invocation for test_website,
+test_freeagent_test_runtime, test_pytest_reporting, test_disk_allocation and
+test_disk_diagnostics passed 44 tests (5.214s). No reviewed module or hook was
+executed; only the analyzer and existing authorized verification fixtures ran.
+
+Exactly one required invocation: `/root/agent-stack/bin/freeagent-test`, with
+FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3
+(the existing documented isolated fixture; no install/reinstall). Runner command:
+`/root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover`.
+549 tests, 321.928s; wrapper wall 323.320403s; RESULT=PASS, EXIT_CODE=0.
+No timeout/truncation; output 7,248 bytes under the unchanged 64 KiB bound.
+The 420s limit was unchanged; wrapper-wall difference is not an independent
+measurement of the runner's exact deadline start or every internal interval.
+Required log SHA-256:
+`57e606c2c8d53f2bdee7e00dde11a1e3dd4953120534db70557b6f99475abd97`.
+
+Pre-run selected-source manifest: 193 tracked source/test/config/documentation
+files, bounded to 1,000 entries, 2 MiB/file and 32 MiB aggregate, read no-follow
+with regular-file and before/after descriptor-identity checks. Manifest SHA-256:
+`6ec073d94fd617eb5335ba1b58a1ee0baae8041efd3c87b47d610b7755990be3`.
+Post-run comparison found no changed selected bytes, sizes, modes or object
+identities. This binds selected sources, not all dependencies or the complete
+runtime read set, and is not independent attestation. Only this result narrative
+was appended after comparison; tested source/test implementation is unchanged.
+
+N3 is repaired and deterministically verified in this bounded static scope;
+independent-review acceptance is not claimed. Existing website, RPT-1 and CAP-1
+regressions pass without changes to their code/contracts. The verified website
+preparation tag remains unchanged. B10 PARTIAL, live execution unqualified,
+historical disk-timeout causation unresolved and Stage31D NOT AUTHORIZED remain.

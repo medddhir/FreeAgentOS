@@ -179,6 +179,106 @@ class ExportCases(unittest.TestCase):
         self.check(b'import _export_target as target\ngood=target.original\n',b'from .service import good\n','STATIC_METADATA_VERIFIED',extra)
         self.check(b'from _export_target import absent as good\n',b'from .service import good\n','UNRESOLVED',extra)
         self.check(b'from absent_target import original as good\n',b'from .service import good\n','UNRESOLVED')
+    @contextlib.contextmanager
+    def ordinary_rhs_fixture(self,rhs,*,star=False,hook_source=None):
+        service='package/orchestrator/privilege/service.py'
+        child='package/orchestrator/privilege/child.py'
+        own_init='package/orchestrator/privilege/__init__.py'
+        hook='python_base/lib/python3.12/_export_hook.py'
+        action=(b'sys.modules["orchestrator.privilege.service"].__all__=("absent",)' if star
+                else b'del sys.modules["orchestrator.privilege.service"].good')
+        raw=hook_source if hook_source is not None else b'import sys\ndef __getattr__(name):\n    '+action+b'\n    return 1\n'
+        source=b'good=1\nimport _export_hook\n'+(b'__all__=("good",)\n' if star else b'')+rhs
+        with IndependentClosureCases().fixture(service=source,
+                child=b'from .service import *\n' if star else b'from .service import good\n',
+                extra={hook:raw}) as (_,args,closure,root):
+            rows={x['path']:x for x in closure['artifacts']}
+            rows[service]['requires']=sorted([own_init,hook])
+            rows[child]['requires']=sorted([own_init,service])
+            rows[hook]['requires']=[]
+            yield args,closure,root
+    def case_ordinary_rhs_effects_are_not_demand_driven(self):
+        for rhs in (b'other=_export_hook.missing\n',
+                    b'other: "int"=_export_hook.missing\n',
+                    b'other=_export_hook["missing"]\n',
+                    b'other: "int"=_export_hook["missing"]\n',
+                    b'other=(_export_hook.missing,)\n',
+                    b'other={"key": _export_hook.missing}\n'):
+            for star in (False,True):
+                with self.ordinary_rhs_fixture(rhs,star=star) as (args,closure,root):
+                    result=self.analyze(args,closure)
+                    self.assertEqual(result['status'],'UNRESOLVED',result['issues'])
+                    self.assertEqual(result['export_rule_version'],8)
+                    if star:self.assertTrue(any('STAR_IMPORT_UNRESOLVED' in x for x in result['issues']))
+                    else:self.assertIn('IMPORT_ATTRIBUTE_UNRESOLVED:orchestrator.privilege.service.good',result['issues'])
+                    with self.assertRaises(p.BoundaryError) as error:
+                        c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                    self.assertEqual(error.exception.code,'POLICY_REJECTED')
+                # Unknown module control flow retains its existing strict rule;
+                # it cannot evade the same rejection via an unrequested RHS.
+                self.check(b'good=1\nimport _export_hook\nif True:\n    '+rhs,
+                           b'from .service import good\n','UNRESOLVED',
+                           {'python_base/lib/python3.12/_export_hook.py':b'def __getattr__(name): return 1\n'})
+        for rhs in (b'other=lambda: _export_hook.missing\n',
+                    b'def dormant():\n    other=_export_hook.missing\n',
+                    b'def dormant():\n    other: "int"=_export_hook["missing"]\n'):
+            with self.ordinary_rhs_fixture(rhs) as (args,closure,root):
+                accepted=c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                self.assertEqual(accepted['analysis']['status'],'STATIC_METADATA_VERIFIED')
+                for key in ('qualified','installed_observed','execution_enabled'):self.assertFalse(accepted[key])
+    def case_ordinary_rhs_safe_aliases_and_context_cycles(self):
+        for rhs in (b'other=_export_hook.safe\n',b'other: "int"=_export_hook.safe\n',
+                    b'alias=_export_hook\nother=alias.safe\n',
+                    b'from _export_hook import safe as alias\nother=alias\n',
+                    b'other=(_export_hook.safe,)\n'):
+            with self.ordinary_rhs_fixture(rhs,hook_source=b'safe=1\n') as (args,closure,root):
+                accepted=c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+                self.assertEqual(accepted['analysis']['status'],'STATIC_METADATA_VERIFIED')
+                for key in ('qualified','installed_observed','execution_enabled'):self.assertFalse(accepted[key])
+                self.assertEqual(accepted['analysis']['derived']['package/orchestrator/privilege/service.py'],
+                                 sorted(['package/orchestrator/privilege/__init__.py','python_base/lib/python3.12/_export_hook.py']))
+        # A dependency must not cache a provisional VALUE from the module whose
+        # unrequested RHS is being checked. No target module/hook is executed.
+        source=b'from orchestrator.privilege.service import good as safe\n'
+        with self.ordinary_rhs_fixture(b'other=_export_hook.safe\n',hook_source=source) as (args,closure,root):
+            rows={x['path']:x for x in closure['artifacts']}
+            rows['python_base/lib/python3.12/_export_hook.py']['requires']=sorted([
+                'package/orchestrator/privilege/__init__.py','package/orchestrator/privilege/service.py'])
+            result=self.analyze(args,closure)
+            self.assertEqual(result['status'],'UNRESOLVED')
+            self.assertIn('RHS_EFFECT_UNRESOLVED:orchestrator.privilege.service',result['issues'])
+            with self.assertRaises(p.BoundaryError):
+                c.StagingClosureRegistration.candidate_prerequisite(args[-2],args[-1],closure,args[2].plan['binding'],args[2].plan['provenance'])
+        with self.ordinary_rhs_fixture(b'other=_export_hook.safe\n',hook_source=b'safe=1\n') as (args,closure,root):
+            with patch.object(v,'MAX_EXPORT_ENTRIES',1):
+                with self.assertRaises(p.BoundaryError):self.analyze(args,closure)
+            with patch.object(v,'MAX_EXPORT_DEPTH',1):
+                result=self.analyze(args,closure)
+                self.assertEqual(result['status'],'UNRESOLVED')
+                self.assertTrue(any('EXPORT_ANALYSIS_BOUND' in x for x in result['issues']))
+        source=b'import orchestrator.privilege.service as src\nsafe=src.good\n'
+        with self.ordinary_rhs_fixture(b'other=_export_hook.safe\n',hook_source=source) as (args,closure,root):
+            rows={x['path']:x for x in closure['artifacts']}
+            rows['python_base/lib/python3.12/_export_hook.py']['requires']=sorted([
+                'package/orchestrator/privilege/__init__.py','package/orchestrator/privilege/service.py'])
+            result=self.analyze(args,closure)
+            self.assertEqual(result['status'],'UNRESOLVED')
+            self.assertTrue(any('RHS_EFFECT_UNRESOLVED' in x for x in result['issues']))
+    def case_ordinary_rhs_cache_phase_isolation(self):
+        extra={'python_base/lib/python3.12/_export_target.py':b'safe=1\n'}
+        original=v._Exports.proof;phases=set()
+        def record(resolver,name,symbol,*args,**kwargs):
+            value=original(resolver,name,symbol,*args,**kwargs)
+            if name=='orchestrator.privilege.service' and symbol=='alias':
+                for query in resolver.cache:
+                    if query[0]==resolver._key(name) and query[1]=='alias':
+                        self.assertEqual(query[0][0],8)
+                        phases.add(query[3])
+            return value
+        with patch.object(v._Exports,'proof',record):
+            self.check(b'import _export_target as target\nalias=target\ngood=alias.safe\n',
+                       b'from .service import good\n','STATIC_METADATA_VERIFIED',extra)
+        self.assertEqual(phases,{False,True})
     def case_package_child_and_shadow(self):
         path='package/orchestrator/privilege/__init__.py'
         self.check(b'good=1\n',b'from . import service\n','STATIC_METADATA_VERIFIED')
