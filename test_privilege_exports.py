@@ -139,7 +139,12 @@ class ExportCases(unittest.TestCase):
                      b'@_export_hook.missing\ndef other():\n    pass\n',
                      b'class Other(_export_hook.missing):\n    pass\n',
                      b'class Other(metaclass=_export_hook.missing):\n    pass\n')
-        for definition in definitions:
+        # N2 uses the same precise unused-export fixture and admission checks.
+        annotations=(b'other: _export_hook.missing = 1\n',
+                     b'other: _export_hook.missing\n',
+                     b'other: _export_hook["missing"] = 1\n',
+                     b'other: (_export_hook.missing,) = 1\n')
+        for definition in definitions+annotations:
             check(definition)
             nested=b'if True:\n'+b''.join(b'    '+line+b'\n' for line in definition.splitlines())
             check(nested)
@@ -148,7 +153,15 @@ class ExportCases(unittest.TestCase):
         # Unsupported deferred annotation handling rejects conservatively, not
         # on a claim that __future__.annotations performs this eager lookup.
         check(definitions[0],deferred=True)
-        for definition in (b'def other(value=1, *, option=(1,None)) -> "int":\n    pass\n',
+        for annotation in annotations:
+            check(annotation,star=True)
+            check(b'if True:\n'+b'    '+annotation,star=True)
+        check(annotations[0],deferred=True)
+        for definition in (b'other: "int" = 1\n',
+                           b'other: ("int",) = good\n',
+                           b'other: "int" = _export_hook\n',
+                           b'def dormant():\n    other: _export_hook.missing = 1\n',
+                           b'def other(value=1, *, option=(1,None)) -> "int":\n    pass\n',
                            b'class Other:\n    pass\n',
                            b'def dormant():\n    return _export_hook.missing\n',
                            b'other=lambda: _export_hook.missing\n',

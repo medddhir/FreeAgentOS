@@ -3002,3 +3002,82 @@ RESULT=PASS, exit0; wall299.014s, conservative120.986s headroom against unchange
 no required retry, assertion/timeout/production policy changes. Final scoped
 three-file diff and whitespace inspection PASS. Deterministic N1 preparation is
 verified; this is not semantic closure, protected authority or real enforcement.
+
+### B10 N2 module-annotation eager context and caller reconciliation
+
+Baselinec8ebd66232b67ab583b8673381cb62da2d79cadb reproduced both N2
+witnesses before editing: good=1; import _export_hook; other:
+_export_hook.missing = 1. Consumer requested good (other unrequested). The hook's
+__getattr__ source deleted service.good; the second hook replaced literal __all__
+and the consumer used actual import-star. Precise pinned declarations were service
+-> own initializer/hook; consumer -> own initializer/service; hook -> no file
+edge for builtin sys. Both returned STATIC_METADATA_VERIFIED, no issues and
+staging admission with qualified/installed_observed/execution_enabled=false.
+Annotation-only other: _export_hook.missing also returned the same acceptance.
+No reviewed hook/module executed: potential eager lookup and mutation are inferred
+Python effects, separate from actual analyzer/admission execution evidence.
+
+AnnAssign combined value and annotation under the ordinary assignment effect
+context. An unrequested annotated binding never reached its demand-driven expression
+proof. Rule7 separates those contexts: value retains ordinary handling, annotation
+uses the strict eager-expression handling already introduced for N1. The internal
+parameter is renamed eager_expression because it covers both definitions and
+module annotations; it is not a runtime eagerness claim for deferred semantics.
+Annotation-only statements are the confirmed equivalent omission and use the same
+fix. Unsupported hooks are not interpreted. Existing supported assignments and
+aliases are unchanged; no general execution/order simulator or taint relaxation.
+
+Exhaustive _index effect-caller/context reconciliation (false means ordinary
+binding-effect analysis, NOT dormant execution):
+
+| Caller/expression | Evaluation/scope | Context | Reason under supported contract |
+| --- | --- | --- | --- |
+| Direct definition immediate decorators/defaults/annotations/bases/keywords | Definition-time, bodies dormant | true | Unsupported eager lookup/call taints regardless of requested export |
+| Assign.value | Module-evaluated RHS | false | Preserve supported ordinary assignments/aliases and existing call rejection; walker still records writes and activates lambda-default contexts |
+| Assign non-name target | Module-evaluated assignment target | false plus unconditional taint | Unsupported target already rejects; no positive can survive |
+| AnnAssign.value, when present | Module-evaluated RHS | false | Same ordinary value/alias contract as Assign |
+| AnnAssign.annotation | Module annotation, or unsupported deferred semantics | true | Correct N2 omission independently of annotated-symbol demand |
+| AnnAssign whole statement for non-name target | Module-evaluated unsupported target | false plus unconditional taint | Unsupported target already rejects |
+| Fallback unknown/control-flow statement | Module-evaluated control flow | false plus existing broad call/attribute/subscript taint | Records writes; conservative surrounding checks already reject relevant uncertain lookups, including nested annotations |
+
+Internal traversal also reconciled: nested definition immediate expressions enter
+true; lambda positional/keyword defaults enter true while body is skipped; named-
+expression values, comprehension iterable/filters and ordinary child nodes inherit
+the current context. Function bodies remain skipped. Existing direct definition
+and unknown-statement broad checks remain conservative, including possible
+rejection of dormant syntax in unknown control flow. No additional accepting
+context omission in these callers was demonstrated; no unrelated policy is relaxed.
+
+N2 good witnesses now report IMPORT_ATTRIBUTE_UNRESOLVED:
+orchestrator.privilege.service.good and UNRESOLVED; star witnesses report
+STAR_IMPORT_UNRESOLVED and UNRESOLVED; prerequisites reject POLICY_REJECTED.
+Tests extend the existing precise N1 table with direct/conditional assigned and
+annotation-only, subscript/nested-expression annotations and hook-shaped star
+replacement. Literal annotation/value/alias positives and function-local annotation
+controls remain supported with all authority flags false. Deferred annotations
+are conservatively unsupported, not claimed eager. F1/F2/R1/R2/N1 contexts,
+cache/hash/pinned freshness, cycles, graph/query/work limits and policy-mismatch
+fencing remain preserved. The identity changes with this source; old mismatched
+journals are not rewritten, deleted or relabeled.
+
+No full candidate rebuild, finding-count refresh, reviewed module/hook execution,
+new executable fixture, model/provider call, stress campaign, installation,
+new privilege backend activation or production integration. Existing authorized
+required-suite fixtures alone may run. Doctor active isolation remains UNPROVEN;
+Stage3.1D NOT AUTHORIZED. B10 remains PARTIAL: unsupported semantics/order/dynamic
+closure, native/builtin positive evidence, full toolchain/build closure, protected
+publication, credentials and real consumers/removal remain gaps. No independent
+review PASS is claimed for this new repair. Historical disk-timeout uncertainty
+remains unresolved; deterministic passes do not establish runtime imports or
+real enforcement. Verification results are recorded below when complete.
+
+N2 verification: both precise assigned annotation witnesses and the annotation-only
+baseline changed from STATIC_METADATA_VERIFIED/staging admission to UNRESOLVED/
+POLICY_REJECTED. Integrated annotation/default/scope/admission table PASS; focused
+export/F1/F2/R1/R2/N1, independent analyzer, policy identity and closure groups
+PASS33.616s. Unchanged /root/agent-stack/bin/freeagent-test PASS518 in285.347s,
+RESULT=PASS, exit0; wall287.095s, conservative132.905s headroom against unchanged
+420s. Private /tmp/freeagent-b10-n2-required.log explicit0600, normal umask,
+no required retry or assertion/membership/timeout/security changes. Final scoped
+three-file diff/whitespace review PASS. This is deterministic N2 preparation only;
+B10 remains PARTIAL, independent review pending and real enforcement UNPROVEN.

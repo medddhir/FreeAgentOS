@@ -15,7 +15,7 @@ MAX_AST_NODES=100000
 MAX_PY_BYTES=256*1024
 MAX_DYNAMIC=4096
 MAX_STRINGS=1024*1024
-EXPORT_RULE_VERSION=6
+EXPORT_RULE_VERSION=7
 MAX_EXPORT_DEPTH=32
 MAX_EXPORT_ENTRIES=16384
 MAX_EXPORT_QUERIES=32768
@@ -134,11 +134,11 @@ class _Exports:
             if self.stored_nodes>MAX_AST_NODES:raise p.BoundaryError('BOUNDS_EXCEEDED')
             if symbol in bindings:unsafe.add(symbol)
             bindings[symbol]=value;positions[symbol]=position
-        def effects(node,*,definition_time=False):
+        def effects(node,*,eager_expression=False):
             # Module-evaluated effects only. Function bodies remain dormant;
             # executable class bodies and implicit decorators are rejected.
             nonlocal tainted
-            pending=[(node,definition_time)]
+            pending=[(node,eager_expression)]
             while pending:
                 current,eager=pending.pop()
                 self.bounded()
@@ -187,7 +187,7 @@ class _Exports:
             self.bounded()
             if isinstance(node,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef)):
                 evaluated=immediate(node)
-                for value in evaluated:effects(value,definition_time=True)
+                for value in evaluated:effects(value,eager_expression=True)
                 valid=not node.decorator_list and not getattr(node,'type_params',[])
                 if node.decorator_list:tainted=True
                 if isinstance(node,ast.ClassDef):
@@ -204,8 +204,10 @@ class _Exports:
                     if isinstance(target,ast.Name):bind(target.id,('expression',node.value))
                     else:effects(target);tainted=True
             elif isinstance(node,ast.AnnAssign):
-                for value in (node.value,node.annotation):
-                    if value is not None:effects(value)
+                if node.value is not None:effects(node.value)
+                # Module annotation evaluation is not demand-driven publication.
+                # Deferred semantics remain unsupported/conservatively rejected.
+                effects(node.annotation,eager_expression=True)
                 if any(isinstance(x,ast.Call) for value in (node.value,node.annotation) if value for x in ast.walk(value)):tainted=True
                 if isinstance(node.target,ast.Name):bind(node.target.id,('expression',node.value,node.annotation))
                 else:effects(node);tainted=True
