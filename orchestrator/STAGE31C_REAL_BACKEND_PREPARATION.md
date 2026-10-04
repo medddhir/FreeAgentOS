@@ -3534,3 +3534,88 @@ are unchanged. Final diff/whitespace review is required before the local commit.
 RPT-1 reporting repair is verified within this fixture; arbitrary plugin output
 and independent named-test attestation remain outside the contract. CAP-1/N3,
 B10/live qualification and historical disk causation status remain as above.
+
+## CAP-1 — fallback backing-allocation postcondition
+
+Baseline4eee989aaacd555b5c034595f1f7de70ae78cba6, clean main. Source-traced
+CAP-1 was reproduced with a focused regression before repair: a logical60MiB
+fallback completed60 mocked1MiB writes and returned without observing final
+metadata. Zero-size/zero-block, full-size/zero-block and under-backed final
+records all failed the expected rejection assertion (3 subtest failures).
+The former mocked fallback positive also kept fstat at zero size/blocks. This
+demonstrates a helper postcondition gap, not a complete-fixture false PASS or
+production authority bypass.
+
+allocate_disk_demand now shares require_backing() between successful reservation
+and completed ENOSPC fallback: fresh fstat of the same descriptor must report
+regular file, exactly60MiB size and st_blocks*512 exactly60MiB. Failures raise
+DISK_ALLOCATION_NOT_BACKED; fstat errors propagate. The rule assumes this
+supported tmpfs/runtime's allocated-block accounting and page-aligned demand;
+it is not universal physical-storage, persistence or filesystem proof. No
+sparse truncation or child progress is accepted as backing evidence.
+
+Fallback still seeks to zero because partial metadata does not identify extent
+locations. Writes reuse retained pages rather than adding their count to demand.
+At most60 writes, each at most1MiB and clipped to remaining logical demand;
+actual short-write return values alone advance coverage. Short writes that
+cannot complete in60 attempts fail boundedly. Existing callbacks remain logical
+CHILD_REPORTED observations, including before the final postcondition; they
+cannot establish backing or complete-fixture success. ENOSPC-only fallback,
+six60MiB planned demands,256MiB aggregate workspace,128MiB per-file limit,
+all quotas/deadlines/classification/resource-hit/cleanup assertions are unchanged.
+
+Regressions cover fully backed completion, sparse/under/over-backed and wrong
+type/size final records, retained7MiB without double counting, short writes,
+final metadata EIO propagation, incomplete/zero writes and existing unsupported
+allocation/error paths. Focused established-interpreter command: -m unittest
+test_disk_allocation test_disk_diagnostics test_freeagent_test_runtime
+test_pytest_reporting -q with the unchanged external pytest fixture prerequisite.
+PASS37 in2.952s, wrapper3.119991s. Private0600
+/tmp/freeagent-cap1-focused.log SHA256
+928c52f67f96498765c94a55998065851c5f8b5071da293cb283f0af0f20e383.
+RPT-1 real pytest/reporting regressions pass without dependency reinstall or
+reporting/runtime-contract changes. No live backend/campaign or provider calls.
+
+Exactly one isolated corrected fixture command: established interpreter -m
+unittest test_resource_sandbox.ResourceSandboxTests.test_workspace_disk_ceiling -v.
+PASS1 in0.926s, wrapper1.026567s; original ENOSPC/full-space/resource-hit and
+cleanup assertions passed within the unchanged6s fixture deadline. Private0600
+/tmp/freeagent-cap1-one-disk.log SHA256
+a300f704d1d52763c1f8a2c99dbf806d9c130ce56934fc6433e1e6e0b0e99d5e.
+Owned workspace observations:268431360 available bytes before launch and0 after
+test exit, before cleanup; available inodes19998 to19993. These are bounded
+independent filesystem observations, distinct from child-reported progress.
+Progress remains CHILD_REPORTED and is not physical allocation proof. This
+single supported-target result does not prove historical timeout causation or
+that a completed ENOSPC fallback was reached in that live fixture; the latter
+postcondition paths were deterministically exercised with descriptor recordings.
+
+One required invocation follows a bounded source manifest, with no retry.
+N3 pending/B10 PARTIAL/live website unqualified/historical disk causation unresolved;
+Stage31D NOT AUTHORIZED. No tag/push/deployment/new privileged validation.
+
+CAP-1 required verification: exactly one /root/agent-stack/bin/freeagent-test
+invocation with the unchanged explicit isolated pytest fixture prerequisite.
+Actual command: /root/agent-stack/.venv-orchestrator/bin/python3 -m unittest discover.
+PASS549 tests in319.594s; wrapper321.957580s; RESULT=PASS/EXIT_CODE=0.
+No timeout/OUTPUT_TRUNCATED; captured wrapper log7249bytes. Private0600
+/tmp/freeagent-cap1-required.log SHA256
+3ca638b3d670ff5a47566a9a42f2051c37c18bc090b29b40fd766f7d26a5e0ad.
+Whole-wrapper headroom against unchanged420s:98.042420s, conservatively measured;
+the exact runner interval is not separately logged. No required retry or second
+isolated fixture was run. RPT-1 regression coverage passes in this combined run.
+
+Pre-run private0600 /tmp/freeagent-cap1-required-source-before.json SHA256
+68a0bca818b13b7b769252acc5b772922cee38b92c1e07f08a4bb683c365ff26
+records193 selected source/test/config/docs,2971422bytes, with bounds1000 entries,
+2MiB/file and32MiB aggregate. No-follow descriptor reads check regular type and
+stable identity/size/mtime/ctime (excluding read-induced atime). All covered
+bytes/sizes/modes matched after the run; private result JSON retains comparison.
+This binds the evidence to selected observed bytes, not every dependency/read,
+independent attestation or transient mutations restored between observations.
+Only this result narrative was appended afterward; tested source/tests and all
+RPT-1 reporting/fixture-contract bytes are unchanged from their tested versions.
+Final scoped diff and whitespace inspection precedes the focused local commit.
+CAP-1's helper postcondition is repaired and verified in the stated scope; no
+external-review acceptance, universal backing proof or historical timeout cause
+is claimed. N3 pending/B10 PARTIAL/Stage31D NOT AUTHORIZED remain unchanged.

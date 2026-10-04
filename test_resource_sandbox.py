@@ -20,6 +20,15 @@ def allocate_disk_demand(descriptor, on_covered):
     import os
     import stat
     demand = 60 * 1024 * 1024
+
+    def require_backing():
+        # Supported tmpfs fixture: page-aligned demand, st_blocks in 512-byte
+        # units. This is descriptor metadata, not a progress-callback claim.
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_size != demand
+                or info.st_blocks * 512 != demand):
+            raise RuntimeError("DISK_ALLOCATION_NOT_BACKED")
+
     try:
         os.posix_fallocate(descriptor, 0, demand)
     except AttributeError as exc:
@@ -45,13 +54,11 @@ def allocate_disk_demand(descriptor, on_covered):
             covered += amount
             on_covered(covered)
             if covered == demand:
+                require_backing()
                 return
         raise RuntimeError("DISK_FALLBACK_INCOMPLETE")
     else:
-        info = os.fstat(descriptor)
-        if (not stat.S_ISREG(info.st_mode) or info.st_size != demand
-                or info.st_blocks * 512 != demand):
-            raise RuntimeError("DISK_ALLOCATION_NOT_BACKED")
+        require_backing()
         on_covered(demand)
 
 

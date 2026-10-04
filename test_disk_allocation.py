@@ -16,6 +16,61 @@ def metadata(size=DEMAND, allocated=DEMAND):
 
 
 class DiskAllocationTests(unittest.TestCase):
+    def test_complete_fallback_requires_final_backing_metadata(self):
+        error = OSError(errno.ENOSPC, 'full')
+        for final in (metadata(0, 0), metadata(DEMAND, 0),
+                      metadata(DEMAND, DEMAND - 512), metadata(DEMAND + 1),
+                      metadata(DEMAND, DEMAND + 512), metadata(-1, DEMAND),
+                      metadata(DEMAND, -512),
+                      SimpleNamespace(st_mode=stat.S_IFDIR | 0o700,
+                                      st_size=DEMAND, st_blocks=DEMAND // 512)):
+            with self.subTest(size=final.st_size, blocks=final.st_blocks), \
+                    patch.object(os, 'posix_fallocate', side_effect=error), \
+                    patch.object(os, 'fstat', side_effect=[metadata(0, 0), final]) as observe, \
+                    patch.object(os, 'lseek'), patch.object(os, 'write', return_value=MIB) as write:
+                with self.assertRaisesRegex(RuntimeError, 'DISK_ALLOCATION_NOT_BACKED'):
+                    allocate_disk_demand(99, lambda _: None)
+                self.assertEqual(write.call_count, 60)
+                self.assertEqual(observe.call_count, 2)
+
+    def test_fully_backed_fallback_reuses_retained_partial_allocation(self):
+        observations = []
+        with patch.object(os, 'posix_fallocate', side_effect=OSError(errno.ENOSPC, 'full')), \
+                patch.object(os, 'fstat', side_effect=[metadata(DEMAND, 7 * MIB), metadata()]) as observe, \
+                patch.object(os, 'lseek') as seek, \
+                patch.object(os, 'write', return_value=MIB) as write:
+            allocate_disk_demand(99, observations.append)
+            seek.assert_called_once_with(99, 0, os.SEEK_SET)
+            self.assertEqual(write.call_count, 60)
+            self.assertEqual(sum(len(call.args[1]) for call in write.call_args_list), DEMAND)
+            self.assertEqual(observations, [MIB * offset for offset in range(1, 61)])
+            self.assertEqual(observe.call_args_list[0].args, (99,))
+            self.assertEqual(observe.call_args_list[1].args, (99,))
+
+    def test_short_writes_do_not_infer_completion_from_retained_allocation(self):
+        observations = []
+        with patch.object(os, 'posix_fallocate', side_effect=OSError(errno.ENOSPC, 'full')), \
+                patch.object(os, 'fstat', return_value=metadata(DEMAND, 7 * MIB)) as observe, \
+                patch.object(os, 'lseek'), \
+                patch.object(os, 'write', side_effect=[MIB // 2] + [MIB] * 59) as write:
+            with self.assertRaisesRegex(RuntimeError, 'DISK_FALLBACK_INCOMPLETE'):
+                allocate_disk_demand(99, observations.append)
+            self.assertEqual(write.call_count, 60)
+            self.assertEqual(observations[0], MIB // 2)
+            self.assertEqual(observations[-1], DEMAND - MIB // 2)
+            self.assertTrue(all(value <= DEMAND for value in observations))
+            observe.assert_called_once_with(99)  # Incomplete writes cannot prove completion.
+
+    def test_final_metadata_read_error_propagates_after_bounded_writes(self):
+        error = OSError(errno.EIO, 'final metadata unavailable')
+        with patch.object(os, 'posix_fallocate', side_effect=OSError(errno.ENOSPC, 'full')), \
+                patch.object(os, 'fstat', side_effect=[metadata(0, 0), error]), \
+                patch.object(os, 'lseek'), patch.object(os, 'write', return_value=MIB) as write:
+            with self.assertRaises(OSError) as caught:
+                allocate_disk_demand(99, lambda _: None)
+            self.assertIs(caught.exception, error)
+            self.assertEqual(write.call_count, 60)
+
     def test_successful_reservations_cover_fixed_aggregate_demands(self):
         observations = []
         with patch.object(os, 'posix_fallocate') as reserve, \
@@ -52,7 +107,7 @@ class DiskAllocationTests(unittest.TestCase):
                                 (0, 'DISK_FALLBACK_WRITE_INVALID')):
             with self.subTest(amount=amount), \
                     patch.object(os, 'posix_fallocate', side_effect=OSError(errno.ENOSPC, 'full')), \
-                    patch.object(os, 'fstat', return_value=metadata(0, 0)), \
+                    patch.object(os, 'fstat', side_effect=[metadata(0, 0), metadata()]), \
                     patch.object(os, 'lseek'), patch.object(os, 'write', return_value=amount) as write:
                 observations = []
                 if outcome:
