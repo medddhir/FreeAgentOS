@@ -9,6 +9,50 @@ software. Claude Code remains user-supplied and is not redistributed here.
 
 ## Implemented preparation scope
 
+### Recorded preparation CLI (current implementation)
+
+The existing `freeagent-run` entrypoint now exposes an explicit rehearsal mode:
+
+```sh
+freeagent-run recorded-website --staging-parent /absolute/owned/private-parent \
+  --title 'Local Studio' --heading 'Build locally' --button 'See more' \
+  --revision-heading 'Revised page' --revision-button 'Explore details' \
+  --design 'Warm neutral palette' --confirmed --json
+```
+
+The parent must already exist, belong to the current user and have mode 0700.
+No privileged setup, model configuration, production credentials or provider
+access is required by this command. Source-layout usage is
+`.venv-orchestrator/bin/python3 orchestrator/cli.py recorded-website ...`;
+the existing installed `orchestrator.entrypoint:main` bridge also handles it.
+No separate export destination is accepted. Success reports the actual workspace
+and `<owned-run>/export` path; plain output includes `EXPORT=...`.
+
+This mode reuses `website.workflow_graph` (the same factory wrapped by
+`graph.build_website_graph`), LangGraph, `RecordedAdapter`, FileTools, Session
+snapshots/checks and `Session.export`. It avoids production graph initialization
+and its model configuration when launched as this explicit CLI command. Ordinary
+coding invocation and profiles retain their existing graph path and gates.
+
+A fixed controller recording escapes brief text into HTML, supplies local
+CSS/JS and README, then applies the confirmed heading/button revision and a
+spacing change. Design is recorded text, not a claim of model-generated design.
+No source JS/CSS is executed. Existing four-file, per-file/aggregate/context and
+tool bounds apply unchanged. Invalid inputs, unavailable/unsafe staging paths,
+unconfirmed/unchanged revisions and separate export options return nonzero.
+No success result is emitted after a failure; owned partial artifacts remain
+retained under the existing Session contract. A new invocation creates a fresh
+run, and Session.export remains exclusive and snapshot/check-bound.
+
+Results explicitly say RECORDED_PREPARATION, MODEL_CALLS=NONE,
+PREPARATION_COMPLETE/PREPARATION_ONLY and live_qualified=false. Structural checks
+are not functional/browser verification; preview remains DISABLED and live
+launches still reject. Same-UID private staging is not hostile-user isolation.
+Subprocess tests run under the available development UID/runtime and must not
+be presented as non-root qualification or observed installed-package execution.
+The historical result sections below remain historical; B10 PARTIAL and
+Stage31D NOT AUTHORIZED are unchanged.
+
 One static website: confirmed brief/design -> private scaffold -> recorded
 coding -> meaningful user-requested revision -> protected structural checks ->
 snapshot-bound preview contract -> complete source export. This is a LangGraph
@@ -174,3 +218,42 @@ test umask unchanged. No blind retry, assertion/workload/limit change or unrelat
 sandbox repair. Final scope/whitespace inspection passed. Because required
 verification failed, this milestone is BLOCKED and no commit is made. Scoped
 preparation remains in the worktree. No live path is qualified or activated.
+
+## Recorded CLI verification — 2026-10-04
+
+Focused website/broker/model-profile checks passed (49 tests), followed by
+CLI/runtime/ordinary-entrypoint checks (25 tests). The single required invocation
+was `/root/agent-stack/bin/freeagent-test`, using its established
+`.venv-orchestrator/bin/python3 -m unittest discover` selection. The existing
+`FREEAGENT_PYTEST_FIXTURE_PYTHON` prerequisite pointed to
+`/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`; no dependencies were installed.
+The committed development observer was activated by
+`FREEAGENT_CONTROLLER_PROGRESS_DIR=/tmp/freeagent-recorded-cli-required-5a_0hfcq`
+and the fixed `devtools/controller_progress` PYTHONPATH entry. Its existing
+controller-only activation/removal rules were unchanged.
+
+Required result: **566 tests, 416.678 seconds, OK, RESULT=PASS, EXIT_CODE=0**;
+wrapper wall time 419.329 seconds. There was no timeout or output truncation
+(the private wrapper log was 7,295 bytes). The 420-second deadline and 64 KiB
+capture bound were unchanged. Wrapper time is not the runner's exact deadline
+interval; headroom was narrow. The observer completed 570 intervals, including
+intentional nested synthetic cases, with no unmatched intervals or diagnostic
+failure. Its outcome totals are not authoritative suite failure counts.
+
+The private pre-run selected-source manifest covered 205 tracked/relevant new
+files (3,101,195 bytes), including CLI, website, tests, observer and documentation.
+Every selected file's bytes/mode matched immediately after the run. Manifest
+SHA-256: `5b395bd3bc68a445a23b1477cad017e45f1913c5cdddb6897985b0f7477a4ebc`.
+Required-log SHA-256:
+`456c87458df06f85f9f30b2c377f49ccd4064ce968e9e2507a3ce55b5519fab8`.
+This paragraph and the qualification-plan result update were added after that
+comparison; implementation/test bytes remain bound. This is selected-source
+binding, not independent dependency or read-set attestation.
+
+The runner and unittest launch identities were absent after completion; no
+matching concurrent test invocation or known fixture mount was observed.
+These bounded current observations do not prove historical cleanup or absence
+of every resource; unowned cgroups were not inspected. Tests ran as UID 0 on
+Python 3.12.3, so normal-user and installed-package qualification remain unproven.
+Recorded structural preparation passed; live coding, preview/browser execution,
+B10 completion and Stage31D authorization remain blocked/deferred as before.

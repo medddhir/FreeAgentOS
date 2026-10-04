@@ -8,7 +8,10 @@ import signal
 import sys
 from pathlib import Path
 
-import graph
+# The explicit rehearsal command must not initialize production model profiles.
+# Ordinary invocations retain their existing graph import and runtime behavior.
+if sys.argv[1:2] != ["recorded-website"]:
+    import graph
 from roles.controller_git import ControllerGitError, run_git
 from roles.workspace import cleanup_active_workspace, recover_stale_workspaces
 from roles.inspector import OPAQUE, SECRET_NAME
@@ -48,7 +51,8 @@ def _parser():
     parser.add_argument("--model-profile", action="append", default=[], metavar="ROLE=PROFILE",
                         help="Optional controller role profile; default Auto preserves current selection.")
     parser.epilog = ("Exit codes: 0 VERIFIED, 1 UNVERIFIED, 2 BLOCKED, 3 invalid input, "
-                     "4 controller failure, 130/143 interrupted. freeagent-test alone is not full verification.")
+                     "4 controller failure, 130/143 interrupted. freeagent-test alone is not full verification. "
+                     "For recorded preparation only: freeagent-run recorded-website --help.")
     return parser
 
 
@@ -345,6 +349,8 @@ def _problem(status, code, json_mode, cleanup="NONE"):
 def main(argv=None):
     from foundation import load_config, config_scope, ConfigError
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "recorded-website":
+        return _recorded_website(arguments[1:])
     try:
         # argparse handles usage/help; configuration is read only after parsing.
         args = _parser().parse_args(arguments)
@@ -359,7 +365,72 @@ def main(argv=None):
         return 3
 
 
+def _recorded_website(arguments):
+    """Explicit preparation branch: no production configuration or live worker."""
+    from website import ConfirmedBrief, Session, WebsiteError, recorded_site_adapter, workflow_graph
+    from langgraph.graph import StateGraph, START, END
+    parser = _Parser(prog="freeagent-run recorded-website",
+                     description="Recorded preparation only: fixed website recordings, structural checks "
+                     "and complete source export. No model calls or live preview/browser execution.")
+    parser.add_argument("--staging-parent", required=True,
+                        help="Existing caller-owned 0700 directory; export stays at <owned-run>/export.")
+    for name in ("title", "heading", "button", "revision-heading", "revision-button", "design"):
+        parser.add_argument("--" + name, required=True, help="Confirmed brief text, at most 512 UTF-8 bytes.")
+    parser.add_argument("--confirmed", required=True, action="store_true", help="Explicitly confirm brief/design and revision.")
+    parser.add_argument("--json", action="store_true", help="Emit bounded machine-readable preparation result.")
+    json_mode = "--json" in arguments
+    try:
+        args = parser.parse_args(arguments)
+        value = args.staging_parent
+        if (not value or len(value) > 4096 or any(ord(c) < 32 for c in value) or not Path(value).is_absolute()
+                or ".." in Path(value).parts):
+            raise UsageError("STAGING_PATH_INVALID")
+        parent = Path(value)
+        if any(path.is_symlink() for path in (parent, *parent.parents)):
+            raise UsageError("STAGING_PATH_LINK")
+        brief = ConfirmedBrief(args.title, args.heading, args.button, args.revision_heading,
+                               args.revision_button, args.design, args.confirmed)
+        adapter = recorded_site_adapter(brief)
+        session = Session(brief, parent)
+        # Same factory used by graph.build_website_graph, without importing the
+        # separate production graph and its configured model selection.
+        result = workflow_graph(adapter, StateGraph, START, END).invoke({"session": session})
+        response = {"status": result["status"], "operation": "RECORDED_PREPARATION",
+                    "recorded": True, "model_calls": "NONE", "live_qualified": False,
+                    "workspace": str(session.workspace), "export": result["export"]["directory"],
+                    "before_snapshot": result["before"].sha256, "after_snapshot": result["after"].sha256,
+                    "checks": result["checks"], "preview": result["preview"],
+                    "export_manifest": result["export"]["manifest"]}
+        encoded = json.dumps(response, sort_keys=True, separators=(",", ":"))
+        if len(encoded.encode()) > MAX_JSON_BYTES:
+            raise WebsiteError("RESULT_BOUNDS_EXCEEDED")
+        if json_mode:
+            print(encoded)
+        else:
+            print("STATUS=PREPARATION_COMPLETE\nOPERATION=RECORDED_PREPARATION\nMODEL_CALLS=NONE")
+            print("LIVE_QUALIFIED=false\nFUNCTIONAL=UNPROVEN\nBROWSER=UNPROVEN\nPREVIEW=DISABLED")
+            print("WORKSPACE=" + str(session.workspace))
+            print("EXPORT=" + result["export"]["directory"])
+        return 0
+    except UsageError:
+        _problem("INVALID_INPUT", "RECORDED_WEBSITE_USAGE_INVALID", json_mode)
+        return 3
+    except WebsiteError as exc:
+        _problem("BLOCKED", str(exc) if SAFE_CODE.fullmatch(str(exc)) else "WEBSITE_PREPARATION_REJECTED", json_mode)
+        return 2
+    except (OSError, ValueError):
+        _problem("BLOCKED", "WEBSITE_PREPARATION_INPUT_OR_PATH_INVALID", json_mode)
+        return 2
+    except KeyboardInterrupt:
+        _problem("INTERRUPTED", "RECORDED_PREPARATION_INTERRUPTED", json_mode, "RETAINED")
+        return 130
+    except Exception:
+        _problem("CONTROLLER_ERROR", "RECORDED_PREPARATION_FAILED", json_mode, "RETAINED")
+        return 4
+
+
 def _main(argv=None):
+    import graph
     argv = list(sys.argv[1:] if argv is None else argv)
     json_mode = "--json" in argv
     try:

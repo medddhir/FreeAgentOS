@@ -113,6 +113,29 @@ class Snapshot:
     sha256: str
 
 
+def recorded_site_adapter(brief):
+    """Fixed rehearsal recording, parameterized by confirmed text, never code."""
+    from html import escape
+    if type(brief) is not ConfirmedBrief:
+        raise WebsiteError("BRIEF_INVALID")
+    def page(heading, button):
+        return ('<!doctype html><html><head><meta charset="utf-8"><title>' +
+                escape(brief.title) + '</title><link rel="stylesheet" href="styles.css">'
+                '</head><body><main><h1>' + escape(heading) +
+                '</h1><button id="more">' + escape(button) +
+                '</button><p id="detail" hidden>Made locally.</p></main>'
+                '<script src="app.js"></script></body></html>')
+    css = 'body { background: #faf8f2; color: #232323; margin: 2rem; }'
+    js = ('document.querySelector("#more").addEventListener("click", () => { '
+          'document.querySelector("#detail").hidden = false; });')
+    return RecordedAdapter((("index.html", page(brief.heading, brief.button)),
+                            ("styles.css", css), ("app.js", js),
+                            ("README.md", "Recorded static website preparation.\nDesign brief: " +
+                             brief.design + "\nFunctional/browser qualification: UNPROVEN.\n")),
+                           (("index.html", page(brief.revision_heading, brief.revision_button)),
+                            ("styles.css", css + ' button { padding: 1rem; }')))
+
+
 class _HTML(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
