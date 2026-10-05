@@ -407,3 +407,32 @@ PACKAGING_VERIFICATION.md for artifact, source/log hashes, development-runtime
 separation and the proposed later installed-console attempt. No new normal-user
 qualification was run. Installed/live scope remains UNPROVEN; B10 PARTIAL;
 STAGE31D_AUTHORIZED: NO.
+
+## Non-root installed-console recorded preparation qualification — 2026-10-05
+
+A separately authorized attempt qualified the explicit installed recorded path
+under medhir UID/GID 1000/1000, using Python 3.12.3 from the identified system
+interpreter, the reviewed FreeAgentOS wheel and the 38-wheel offline dependency
+runtime (including LangGraph 1.2.12). The pinned helper launched the installed
+`venv/bin/freeagent-run recorded-website` from a fresh empty fixture workdir with
+no source PYTHONPATH, rather than the earlier source-layout cli.py path.
+Recorded exit 0, elapsed 1.6329543629835825 seconds, failure null and direct child
+reaped. Exact revised four-file bytes, receipt/file hashes and recomputed final
+snapshot binding were freshly reconciled from retained evidence without rerun.
+
+Qualification-result SHA-256:
+`7b93538f43efdf4e215dd9bad585c9b63c24e3b02031410484c94cfcb4a5c3c2`.
+Project-wheel SHA-256:
+`5ebf0db2bf59b00e7ea1d9a17d113765ff1cb84a75f8cb2202bba3b7418b7a47`.
+See `../PACKAGING_VERIFICATION.md` for all evidence identities and exact scope:
+the 1,524-member installed-observation count includes 42 excluded rewritten
+entries; it is not complete installed-member or runtime-read attestation.
+Integrity-only verifier output is not a qualification verdict. The wheel
+runtime is not asserted equivalent to the editable runtime. Earlier source
+qualification and all retained attempts/artifacts remain preserved.
+
+This qualifies recorded preparation only. No live model calls or generated-code
+execution; functional/browser verification, hostile isolation, descendant
+absence and protected production integration remain UNPROVEN. No tests, builds,
+installation or preparation invocation were performed for this documentation.
+**B10 PARTIAL. STAGE31D_AUTHORIZED: NO.**

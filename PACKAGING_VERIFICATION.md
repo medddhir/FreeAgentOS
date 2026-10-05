@@ -179,3 +179,73 @@ helper would launch this console command (not executed in this milestone):
 Both historical source-layout attempts remain preserved. Installed-package
 qualification and live execution remain UNPROVEN. B10 PARTIAL;
 STAGE31D_AUTHORIZED: NO.
+
+## Non-root installed-console recorded preparation qualification — 2026-10-05
+
+**Qualified scope:** one separately authorized installed-console recorded
+preparation attempt under medhir UID/GID 1000/1000, using the identified
+`/usr/bin/python3.12` (Python 3.12.3, x86_64; recorded package version
+3.12.3-1ubuntu0.17), the reviewed FreeAgentOS 0.3.0.dev0 wheel and the 38-wheel
+offline dependency runtime, including LangGraph 1.2.12. System interpreter binary
+SHA-256: `e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f`.
+This is distinct from the earlier qualified source-layout attempt: launch used
+`venv/bin/freeagent-run`, not a checkout's cli.py or an editable install. The
+pinned helper creates a fresh empty fixture workdir and launches there with an
+explicit environment containing no source PYTHONPATH or PYTHONHOME. Current
+inspection confirms that workdir is empty. These retained source/result facts
+are not independent historical process-environment or full read-set attestation.
+The wheel runtime is not asserted equivalent to the established editable runtime.
+
+Recorded result: **exit 0; elapsed 1.6329543629835825 seconds; failure null;
+direct child reaped; INSTALLED_CONSOLE_RECORDED_PREPARATION_ONLY**. Capture is
+1,747 bytes; result is 2,017 bytes. Recorded status is PREPARATION_COMPLETE,
+model_calls NONE, live_qualified false. Integrity-verifier output alone is not
+a qualification verdict; invocation success and independent export checks are
+required. This documentation milestone inspected existing regular-file evidence
+only: no tests, imports of application/runtime modules, builds, installation,
+qualification rerun or generated-file execution occurred.
+
+Fresh bounded evidence inspection confirmed the exact revised four project and
+export files (index.html, styles.css, app.js, README.md), with export.json as the
+only additional export member; single-link regular files at 0600 and owned
+run/project/export directories at 0700, UID/GID 1000/1000. Expected heading,
+button, CSS, JS and README bytes matched, receipt equality and all four hashes
+matched, before/final snapshots differed, and recomputing the run/profile/
+contract/file-hash snapshot matched the receipt, checks and disabled preview.
+Structural PASS remains separate from functional/browser UNPROVEN.
+
+The result's `wheel_members_observed=1524` and
+`wheel_bytes_observed=51737975` are enumeration totals, including excluded
+installer-rewritten entries. The pinned installed-byte observer counts entries
+before excluding 39 wheel RECORD files and the three explicit jsonpointer/
+jsonpatch script shebang rewrites (42 entries, 142,953 declared bytes). Its
+comparison path covers the remaining 1,482 entries, 51,595,022 declared bytes;
+console bytes and the pinned pip console producer are checked separately. This
+milestone reconciled that counter derivation from archive metadata, not by
+rerunning the observer. Generated installation metadata/bytecode, bootstrap
+runtime, undeclared site contents, dynamic loader behavior and every runtime
+read are not independently attested. Counted membership is not blanket proof
+that every member was compared or executed successfully.
+
+Bounded evidence identities (SHA-256; no raw logs/artifacts are committed):
+
+| Evidence | SHA-256 |
+|---|---|
+| Installed fixture manifest | `b945ff97512a4426308b71d991ad82c7cafa8053e5c4360c45d8ff2c18847694` |
+| Qualification result | `7b93538f43efdf4e215dd9bad585c9b63c24e3b02031410484c94cfcb4a5c3c2` |
+| Qualification capture | `f121b740d340f24f32b7942a09eddee0f4ab2405400ddc9f7e9f395620a529c4` |
+| Project wheel | `5ebf0db2bf59b00e7ea1d9a17d113765ff1cb84a75f8cb2202bba3b7418b7a47` |
+| Runtime lock | `b4e4652a1b779179f01ee8b20e5c5029d72a86c5f41b0e679d6193df1439388a` |
+| Wheel provenance | `061f23be9def87440ed693d6ee00716ebc5bfd35eb76e1728a8618b77390a92e` |
+| Export receipt | `a7a53ffe63de0cfece1bc80bdebf9b8d43e4025cb541bb17eaa6a0b135289d6d` |
+| Final snapshot | `f9b886962ad5aa476c0a12378d4eb1d62a3d5f36b26c79817eae029b555aebc4` |
+
+All qualification artifacts remain retained; the previous source fixture,
+runtime and both source-layout attempts are preserved. Historical preparation
+sections above retain their earlier UNPROVEN status for those milestones; this
+new result qualifies only the explicit installed recorded-preparation path.
+No live model calls or generated-code execution are qualified. Live building,
+functional/browser verification, hostile isolation, descendant absence,
+complete dynamic closure and protected production integration remain UNPROVEN.
+Direct-child reaping is not descendant absence. **B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.**
