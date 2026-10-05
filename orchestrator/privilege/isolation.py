@@ -112,11 +112,18 @@ class LinuxBackend:
             try:
                 entry.verify();started=self.clock();r['started_ns']=started;self._save()
                 if handle in self.text_jobs:
-                    self.processes[handle]=self.driver.launch_text_recording(r,entry,policy,self.text_jobs[handle])
+                    job=self.text_jobs[handle]
+                    job.verify_limits(entry.role,policy)
+                    job.begin_execution(started)
+                    self.processes[handle]=self.driver.launch_text_recording(r,entry,policy,job)
                 else:self.processes[handle]=self.driver.launch(r,entry,policy)
                 # Existing role-specific worker constants remain authoritative.
-                base=role_base(r['class'],r['role'],policy)
-                self.leases[handle]=ActivityLease(base,r['role'],'model' if r['class']=='MODEL_WORKER' else 'research',True,policy['wall_timeout_seconds'],started)
+                if handle in self.text_jobs:
+                    self.leases[handle]=ActivityLease(policy['wall_timeout_seconds'],r['role'],
+                        'text-inference-v1',False,policy['wall_timeout_seconds'],started)
+                else:
+                    base=role_base(r['class'],r['role'],policy)
+                    self.leases[handle]=ActivityLease(base,r['role'],'model' if r['class']=='MODEL_WORKER' else 'research',True,policy['wall_timeout_seconds'],started)
                 r['state']='RUNNING';self._save()
             except Exception:
                 # Even failure to persist RUNNING must not leave the launcher live.
@@ -210,9 +217,15 @@ class LinuxBackend:
                     or type(plan) is not TextInferencePlan or type(plan.invocation) is not str
                     or plan.invocation in self.text_invocations):
                 raise p.BoundaryError('POLICY_REJECTED')
-            entry,_=self.bindings[handle]
+            entry,limits=self.bindings[handle]
             entry.verify()
-            self.text_jobs[handle]=TextJob(plan,r,entry)
+            try:self.text_jobs[handle]=TextJob(plan,r,entry,limits,clock=lambda:self.clock())
+            except p.BoundaryError as failure:
+                retained=getattr(failure,'owned_text_job',None)
+                if retained is not None:
+                    self.text_jobs[handle]=retained
+                    self._dirty(r)
+                raise
             self.text_invocations.add(plan.invocation)  # bounded by MAX_ENTRIES; no replay in this backend
             return self.text_jobs[handle].job_id
 

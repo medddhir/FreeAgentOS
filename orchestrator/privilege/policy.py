@@ -42,6 +42,21 @@ RECIPES=MappingProxyType({
     'RESEARCH':('PRIVATE_PID','PRIVATE_MOUNT','CONTROLLER_READONLY','CGROUP_READONLY','FIXED_RESEARCH_NETWORK'),
 })
 ENVIRONMENT=MappingProxyType({'PATH':'/usr/bin:/bin','HOME':'/nonexistent','LANG':'C.UTF-8','PYTHONDONTWRITEBYTECODE':'1'})
+TEXT_LIMITS=MappingProxyType(_literal('worker.py','TEXT_INFERENCE_LIMITS'))
+
+
+def text_resource_limits(role, values):
+    """Exact effective values, distinct from preparation's policy identity.
+
+    Observe the existing profile as source data in the protected layer; never
+    import production execution or accept a partial/in-envelope substitute.
+    """
+    if (type(values) is not dict or set(values)!=set(TEXT_LIMITS)
+            or any(type(values[k]) is not int or values[k]!=v for k,v in TEXT_LIMITS.items())):
+        raise BoundaryError('RESOURCE_LIMIT_INVALID')
+    if resource_limits('MODEL_WORKER',role,values)!=values:
+        raise BoundaryError('RESOURCE_LIMIT_INVALID')
+    return dict(values)
 
 
 def worker_environment(supplied):

@@ -51,14 +51,20 @@ class RecordingDriver:
         if type(job) is not TextJob or entry.validation or entry.execution!='MODEL_WORKER':
             raise BoundaryError('POLICY_REJECTED')
         job.verify_owner(r,entry)
+        job.verify_limits(entry.role,limits)
         self._step(r['handle'],'TEXT_INPUT_DELIVERY')
         request=job.deliver(job.configuration())
         # Caller sets this only on the existing explicit recording test driver.
         fixture=getattr(self,'text_response_fixture',None)
         if type(fixture) is not bytes:raise BoundaryError('POLICY_REJECTED')
         self.text_request_observed=request
-        self.text_argv_observed=('freeagentos-worker','--broker-job',job.job_id)
-        process=self.launch(r,replace(entry,job_id=job.job_id),limits)
+        from .text_handoff import configuration, exec_contract
+        # Production constructor, not a copied fake descriptor/argv recipe.
+        c=configuration(entry,limits,list(range(60000,60006)),job)
+        self.text_configuration=c
+        self.text_argv_expected=tuple(exec_contract(c)[0])
+        ChildRoutine(RecordingCalls(self.events,r['handle'])).run(c)
+        process=RecordedProcess(r['handle']);self.resources[scope_name(r)]['process']=process
         self._step(r['handle'],'TEXT_RESPONSE_COLLECTION')
         job.finish_recording(fixture)
         return process

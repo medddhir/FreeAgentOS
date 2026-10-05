@@ -1110,3 +1110,321 @@ credential, action-enforcement or qualification evidence producers.
 The required 604-test PASS remains historical selected-byte evidence; this
 review disposition is subsequent documentation only. No verification was
 rerun. Admission remains closed. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+### TI-JOB-2 protected-child construction — 2026-10-05
+
+The text handoff now uses the existing LinuxDriver launch configuration,
+ChildRoutine/LinuxChildCalls operation order and owned collector lifecycle.
+`text_handoff.configuration` is shared by the protected launcher and recording
+driver; the latter uses synthetic helper FD numbers and records intentions,
+not inherited kernel descriptors. Its argv is now explicitly `expected`, not
+`observed`. No new launcher, RPC operation, registry slot or permit purpose exists.
+
+ABI v2 has eight distinct inherited descriptors: the original workspace,
+run-root, runtime, executable, barrier and receipt, followed by request and
+response. Version 1 keeps exactly six descriptors and its previous parent/
+child validation timing. Text is MODEL_WORKER/non-validation only. The child
+checks all eight object roles/access modes and rejects inode aliases before
+reading the cgroup barrier. After the existing root/mount/resource/identity
+sequence it duplicates every surviving descriptor before remapping request
+to FD 3 and response to FD 4, closing unrelated descriptors. Executable and
+receipt remain CLOEXEC; only request/response survive exec alongside stdio.
+Failures abort, never retry setup or claim successful cleanup.
+
+Request: regular sealed memfd, reopened O_RDONLY, same dev/inode identity;
+F_SEAL_WRITE/GROW/SHRINK/SEAL prohibit retained writable duplicates from changing
+bytes. Response: O_WRONLY pipe writer, not an unbounded writable output memfd.
+The controller owns its O_RDONLY pipe reader and private result memfd; the
+adapter receives neither. Pipe buffering is kernel-bounded, not evidence of a
+particular pipe capacity. Adapter duplicates can delay EOF; collection/cancel
+deadlines handle that as failure, never completion. Parent writer closure is
+wired after inheritance. Controller result storage is bounded and sealed only
+by the controller. Ambiguous closure stays sticky/dirty, including constructor
+failure ownership retained by LinuxBackend; released FD numbers are not retried.
+
+Both frames use a four-byte big-endian JSON-header length, at most 4096 header
+bytes, then payload. Request payload <=48 KiB; response payload 1..64 KiB.
+These agree with TEXT_INFERENCE_BOUNDS and website request/response contracts;
+wire framing adds at most 4100 bytes. Generic 16 KiB RPC/configuration limits
+remain unchanged: payloads travel through descriptors, not JSON prompt argv.
+Response header binds job/binding/request, exact integer byte count, SHA-256
+and COMPLETE/ERROR. Collection accepts only COMPLETE, full EOF and an exact
+integer zero outcome observed from the owned direct child. COMPLETE alone,
+bool/float counts, empty/incomplete/oversized/cross-job data cannot succeed.
+Untrusted returned bytes still undergo the existing whole-proposal validator,
+broker, snapshot and export fencing. They grant no authority or cleanup proof.
+
+Fixed enrolled-adapter argv is `freeagentos-worker --broker-job JOB`; fixed
+environment is PATH=/usr/bin:/bin, HOME=/home, TMPDIR=/tmp, LANG/LC_ALL=C.UTF-8
+inside the existing chroot. This is an ELF descriptor adapter ABI, NOT an
+installed Claude CLI contract, not the prepared prompt argv, and carries no
+credential or gateway environment. A separately provisioned adapter/runtime
+must implement it. Existing protected MODEL resource limits/lease remain
+unchanged; their reconciliation with the prepared 60-second text profile is
+a prerequisite for qualification, not something this wiring authorizes.
+
+LinuxDriver explicitly rejects text launch before setup/Popen; LinuxBackend
+binding/collection remain exact RecordingDriver-only. All three production
+worker text admission gates remain closed. The prepared collector wiring in
+LinuxDriver cannot activate without separately authorized authority changes.
+No synthetic collector, service registration or non-validation COLLECT rule
+was broadened. Policy source identity includes text_handoff and changed
+launcher sources, invalidating earlier bound plans; no permits/registrations
+were reissued.
+
+Deterministic tests invoke production construction, child FD remapping/exec
+selection and collector loop with syscall/stream seams. They do not observe
+a real protected exec, pipe inheritance, mount isolation or installed adapter.
+Existing recording proposal/revision/export regressions continue to apply.
+No new subprocess, namespace or mount probe is part of this milestone.
+
+Smallest proposed real handoff qualification, NOT authorized here: provision
+and identify a non-provider synthetic ELF ABI adapter and sealed runtime under
+the existing protected installation/qualification authority; reconcile limits,
+credential-free environment and profile identity; authorize one owned protected
+invocation with a fixed request and synthetic response. Independently observe
+FD 3 read-only/sealed, FD 4 write-only, absent extra descriptors, actual argv,
+zero exit/EOF, bounded frame identity and owned cancellation/cleanup. Only
+after that could separate visibility/action/credential and provider-request/
+token/cost evidence support real inference. No qualification producer or
+activation is implemented here. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+TI-JOB-2 verification: focused/affected 45 tests passed in 9.225 seconds;
+after preserving v1's original post-chroot import contract, the affected
+handoff/composition/containment 12-test check passed in 2.444 seconds. Earlier
+focused failures identified over-eager v1 parent validation and direct syscall
+fixture version compatibility, plus two test-frame construction errors; these
+were diagnosed before corrected checks. Assertions and original membership
+were preserved.
+
+Exactly one `/root/agent-stack/bin/freeagent-test` attempt passed: 614 tests,
+404.458 seconds, OK, RESULT=PASS, EXIT_CODE=0; wrapper 406.763 seconds. No
+timeout/output truncation; captured log 8895 bytes. The established controller
+runtime was `/root/agent-stack/.venv-orchestrator/bin/python3`; explicit fixture
+interpreters remained `/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3` and
+`/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`. Observer activation
+was PYTHONPATH=/root/agent-stack/devtools/controller_progress and
+FREEAGENT_CONTROLLER_PROGRESS_DIR pointing to the fresh evidence directory.
+Normal umask, 420-second runner deadline, 64 KiB capture rejection and existing
+disk-phase diagnostics were retained. Wrapper timing is not exact runner
+headroom. No additional isolated disk fixture or new subprocess probe ran.
+
+Evidence directory: `/tmp/freeagent-ti-job2-required-gnnx0eu1`.
+- required.log SHA-256:
+  `01e240d35d98a103e0ca574e267b0ab9b7fbaa85ccd26f20ce0097f922e9e165`
+- source-before.json / source-after.json SHA-256:
+  `1789793ebcc421915aed1f0d7f129f8f412f4d970c46f6e0d22cdc022f128573`
+- progress.jsonl SHA-256:
+  `28186654484ca752b33e26c945267d44d56ec0ec5caff551fc5c878fdfbd8394`
+- coverage.json SHA-256:
+  `cd634ff77a9cd08288cde6c9ea7a623b432ad2ead0e00d3c8e4ae5540bfd629c`
+
+All 186 selected files matched before/after: tracked Python/TOML/lock/C/bin/
+guidance plus explicitly included integration documents and new handoff source/
+tests. Selection excludes other untracked/ignored files, installed dependency
+and interpreter bytes, credentials/runtime state and actual dependency/read
+sets. This is selected-byte binding, not independent attestation; this result
+append is subsequent documentation, not part of tested bytes. Observer ended
+PROCESS_END with diagnostic_error=null, 4035 events/580790 bytes, 618 observed
+test intervals including nested synthetic outcomes and no unmatched test or
+subcase intervals. Authoritative count is 614. Recorded runner/unittest PIDs
+2235770/2235771 and their groups were absent at observation; direct child reaped.
+This is current scoped absence and suite assertions, not global, descendant or
+historical cleanup proof. Historical timeout causation remains unresolved.
+
+Preparation verification passed; real text-child/kernel/adapter qualification
+did not run. Changes remain unstaged/uncommitted. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.
+
+### TI-JOB-2-LIMIT-BIND — 2026-10-06
+
+Reviewed snapshot `ti-job2-protected-child-worktree-review-ydxs__i2`, manifest
+`8841b5bbdc0bb5443cf371f65163420591828d7caad1cf4d015ac945bf97b549`, matched
+all ten pending source/test/documentation paths before this correction. Its
+recorded 614-test PASS is historical evidence, not verification of this delta.
+F1–F4 are source-confirmed: construction admitted MODEL/default/reduced limits
+against a plan declaring text limits; collection started its own ten-second
+lifetime before attach/configuration/barrier; coder/fixer leases used180 seconds;
+and accept_response/collect called header.get without first requiring a dict.
+No finding established activation; existing real text gates were closed.
+
+The protected policy layer now observes the existing TEXT_INFERENCE_LIMITS as
+source literals using its existing non-importing reader. `text_resource_limits`
+requires the complete exact key set, exact integer types and all profile values:
+schema1, wall60, termination grace1, CPU quota/period100000/100000, CPU time60,
+memory1610612736, swap0, processes64, openfiles256, filesize134217728,
+output65536. It also checks the existing MODEL resource envelope; no envelope
+or limit was raised. Defaults, partial dictionaries, extra fields, booleans and
+any different in-envelope value reject RESOURCE_LIMIT_INVALID. Preparation
+policy identity remains a separate digest domain from these effective values.
+
+LinuxBackend.bind_text_job supplies its already-created effective resource
+policy to TextJob; the job validates it BEFORE creating text memfds/pipes.
+Generic owned scope creation still precedes binding; callers must request the
+full intended policy at create. Effective values are immutable copied data and
+included in the job binding, rechecked before delivery and construction.
+Direct text_handoff.configuration also validates/copies the complete policy.
+Version2 child validation independently performs the same exact validation;
+neither path can use a permissive MODEL-envelope check to evade binding.
+The request/response constants remain matched to the existing text/website
+bounds, including exact65536 effective output limit. Version1 and ordinary
+MODEL resource/profile behavior remain unchanged.
+
+Deadline semantics: LinuxBackend.start obtains one monotonic-nanosecond start
+after entry verification, before journal persistence and launch preparation.
+TextJob.begin_execution is one-shot and sets deadline=start+60000000000 ns.
+The same start is persisted in the owned record and supplied through version2
+configuration with an exact duration check. The prepared LinuxDriver path
+requires the job start to match the record. Text ActivityLease uses base60,
+profile text-inference-v1, streaming=False, ceiling60 and that same start,
+without MODEL coder/fixer grace. Its actual enforce path terminates at60,
+rather than180. No ActivityLease or ordinary/synthetic lease rules changed.
+
+TextCollector starts draining immediately after the owned Popen handoff,
+before cgroup attach/configuration/barrier, as before; it no longer starts a
+separate lifetime timer. Draining and all setup consume the single bound
+execution window. It reads using the bound output limit plus <=4100 framing
+bytes and one overflow detector. select/wait intervals stay <=50ms; no60-second
+test sleeps. EOF and the independently polled direct-child outcome must both
+be observed before the deadline. After poll it samples the monotonic clock
+again; accept_response requires exact zero integer exit, EOF, and an observed
+completion timestamp in [start, deadline). At or after the deadline cannot
+qualify, even if COMPLETE was read earlier or a poll straddles the deadline.
+Unobserved exit, retained writer/no EOF, nonzero exit, malformed/incomplete
+frame or overflow reject with fixed boundary errors; collection errors flow
+to existing dirty fencing. Valid adapter completion observed in time may be
+verified/sealed later; cleanup time does not extend the adapter's window.
+
+Cancellation remains independent: collector close signals stop and joins at
+most2 seconds; an unjoined thread or ambiguous FD closure stays dirty and
+retains ownership. Existing owned cgroup kill/drain and direct-child reaping
+bounds remain unchanged. Termination/reaping/closure are cleanup work, never
+additional eligible execution time. Timeout closes the owned reader; it is
+not successful completion. Recording timestamps use the trusted backend/test
+clock and remain non-authoritative; no real child outcome is manufactured.
+
+Both accept_response and collect require an exact dict header before field
+access, preserving exact integer byte counts, non-empty payload/hash and
+job/run/request binding. int/list/string/null/bool top-level headers reject
+POLICY_REJECTED rather than AttributeError. Existing cleanup uncertainty and
+fixed error handling remain intact. The sealed request reader receives the
+same type guard defensively. Fake-clock tests cover every policy field,
+pre-allocation/default/partial rejection, direct construction/child rejection,
+actual coder/fixer backend deadlines,11-second success, deadline failure,
+poll/EOF/exit ordering, retained writer and unobserved exit, bounded cleanup,
+and malformed header types; existing rights/remapping/synthetic/lease and
+proposal/revision/export assertions remain.
+
+Linux text launch and recording-entry rejection remain unconditional; backend
+binding/collection stay exact RecordingDriver-only. All three worker guards,
+service slots, permit purpose, RPC limits and non-validation COLLECT are
+unchanged. No privileged policy dependency was added to production worker.
+Protected policy identity now binds this policy and lifecycle delta; earlier
+plans/permits/registrations cannot be assumed valid. Nothing was reissued.
+Actual ELF adapter/runtime provisioning, kernel FD/namespace qualification,
+visibility/action enforcement, credentials and provider budget evidence remain
+missing. The previously proposed separately authorized synthetic real handoff
+procedure remains the next qualification prerequisite, not authorization.
+B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+
+TI-JOB-2-LIMIT-BIND verification: focused/affected checks passed 125 tests in
+19.160 seconds (wrapper 19.958 seconds). Exactly one required invocation of
+`/root/agent-stack/bin/freeagent-test` passed 621 tests in 405.678 seconds:
+OK, RESULT=PASS, EXIT_CODE=0. Wrapper wall time was 407.851100603 seconds;
+wrapper time is not an exact measurement of runner deadline headroom.
+There was no timeout or capture truncation. The 64 KiB capture and 420-second
+runner deadline were unchanged; captured log size was 8,911 bytes.
+
+Evidence directory: `/tmp/freeagent-ti-job2-limit-bind-required-9qfbbunn`.
+Established controller interpreter: `.venv-orchestrator/bin/python3`.
+Explicit development fixture selection was
+`FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`
+and
+`FREEAGENT_PACKAGE_FIXTURE_PYTHON=/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`.
+Progress activation used `PYTHONPATH=/root/agent-stack/devtools/controller_progress`
+and `FREEAGENT_CONTROLLER_PROGRESS_DIR` pointing to this fresh evidence directory;
+`PYTHONDONTWRITEBYTECODE=1`, with normal umask unchanged. No runtime was installed
+or replaced. Existing disk diagnostics remained enabled, non-authoritative,
+and unchanged by this milestone.
+
+Evidence SHA-256 identities:
+- focused.log: `c55639cefa4476b60d0aa92f88f53430887a70b30336a9d170e62146f453e25d`
+- required.log: `5c60e5270c0ecdeb243cb5a0365c98a5a82609d8d010d6e300dd116f6be90eb2`
+- source-before.json and source-after.json: `a7c0c9b5ad97af36846878677ecda8180b47b2d5d3cbb7feb03007fa4eb08503`
+- progress.jsonl: `4ebeee55cbc9969ab2b53c10984cd318775cdfed2b7893dca62194cdfb386242`
+- invocation.json: `b6aeb6d731ee413fed7387ae7d07fb50f4f28761a5edb8aa360b8dac1d142027`
+- coverage.json: `1697688644c28c20a302c34ddbcefd1031dc74dd7c27e542587ff5e0f808016c`
+
+All 186 selected source files matched before/after and current bytes before
+this result-only append. Selection covered tracked Python/TOML/lock/C source,
+bin scripts, guidance and explicitly named integration documents/new handoff
+source/tests. coverage.json enumerates inclusion and excluded tracked paths.
+Installed dependency/interpreter bytes, runtime state, credentials, other
+ignored/untracked files and the actual dependency/read-set are not attested.
+This is selected-byte binding, not independent execution/read-set attestation.
+This subsequent documentation append was not included in the tested manifest.
+
+The observer completed with diagnostic_error=null, 4,217 records / 603,998
+bytes and zero unmatched intervals. Nested synthetic outcome records are
+not authoritative suite failure counts. Both recorded launch PIDs were absent
+and no current members of their recorded process groups were observed after
+completion; the wrapper reaped its direct child. This bounded current evidence
+is not global cleanup, historical cleanup or proof of descendant absence.
+Historical disk-timeout causation remains unresolved. No independent source
+review of this new limit/deadline delta or kernel/live qualification is claimed.
+All production activation restrictions remain closed. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. Changes remain unstaged and uncommitted.
+
+## TI-JOB-2 independent repair review disposition
+
+The focused independent repair-delta source review reported PASS with no
+blocking findings. This disposition covers preparation and deterministic
+construction only; it does not qualify an actual kernel handoff.
+
+F1–F4 are reconciled: the complete 12-field text resource profile is checked
+before text-specific descriptor allocation, configuration and delivery;
+collection uses the shared execution deadline; text leases receive exactly
+60 seconds without ordinary coder/fixer grace; and malformed header types
+receive fixed boundary errors before field access. Child-side profile
+validation remains independent of parent-side validation.
+
+Setup consumes the execution window. Response observation after the deadline
+is conservatively rejected, even if the child may have finished earlier.
+Cleanup time cannot extend successful-response eligibility.
+
+Generic backend allocation can precede text binding. An incompatible handle
+cannot bind to a text job and still requires owned cleanup; this is not a claim
+that every generic allocation was already governed by the text profile.
+
+Historical verification: 621 tests in 405.678 seconds, RESULT=PASS,
+EXIT_CODE=0; wrapper 407.851 seconds, without timeout or truncation.
+The observer completed with zero unmatched intervals. All 186 selected
+source files matched before/after verification. Subsequent changes were
+result documentation only. Selected-source binding does not independently
+attest installed dependencies, interpreter bytes or the actual runtime
+read set. No tests were rerun for this disposition.
+
+Review manifest SHA-256:
+c1ad3fd7dd67003f63f54ce5b2c3dcba50b0e6bab02c54b0765cb6aafc77c97c
+
+Repair-delta SHA-256:
+f99ec675307c2a872510f36db1ddbf9d05cc29443a148c14ff403ca184f210ea
+
+Required-log SHA-256:
+5c60e5270c0ecdeb243cb5a0365c98a5a82609d8d010d6e300dd116f6be90eb2
+
+Source-before/source-after manifest SHA-256:
+a7c0c9b5ad97af36846878677ecda8180b47b2d5d3cbb7feb03007fa4eb08503
+
+Progress SHA-256:
+4ebeee55cbc9969ab2b53c10984cd318775cdfed2b7893dca62194cdfb386242
+
+Policy-identity changes invalidate earlier bound plans and permits; no permit
+was automatically reissued. An installed adapter/runtime, real kernel
+handoff, credential delivery, filesystem visibility and action enforcement,
+and trusted qualification/admission producers remain incomplete.
+Production text admission remains closed. Historical timeout causation and
+broader cleanup remain unproven.
+
+B10: PARTIAL. STAGE31D_AUTHORIZED: NO.

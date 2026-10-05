@@ -23,15 +23,31 @@ ORDER=('CGROUP_BARRIER','UNSHARE','PID_NAMESPACE_FORK','PRIVATE_PROPAGATION','RO
 
 def validate_configuration(c):
     from .policy import execution_class
-    if type(c) is not dict or set(c)!= {'version','class','role','uid','gid','job_id','validation','fds','limits'}:
+    fields={'version','class','role','uid','gid','job_id','validation','fds','limits'}
+    if type(c) is not dict or set(c)!=fields | ({'text'} if c.get('version')==2 else set()):
         raise BoundaryError('INVALID_REQUEST')
-    if type(c['version']) is not int or c['version']!=1:raise BoundaryError('PROTOCOL_MISMATCH')
+    if type(c['version']) is not int or c['version'] not in (1,2):raise BoundaryError('PROTOCOL_MISMATCH')
     execution_class(c['class'],c['role'])
     if (type(c['validation']) is not bool or not identifier(c['job_id'])
             or any(type(c[k]) is not int or not 1<=c[k]<2**31 for k in ('uid','gid'))
-            or type(c['fds']) is not list or len(c['fds'])!=6
-            or any(type(fd) is not int or not 3<=fd<=65535 for fd in c['fds']) or len(set(c['fds']))!=6):
+            or type(c['fds']) is not list or len(c['fds'])!=(8 if c['version']==2 else 6)
+            or any(type(fd) is not int or not 3<=fd<=65535 for fd in c['fds']) or len(set(c['fds']))!=len(c['fds'])):
         raise BoundaryError('POLICY_REJECTED')
+    if c['version']==2:
+        t=c['text']
+        if (c['validation'] or c['class']!='MODEL_WORKER' or type(t) is not dict
+                or set(t)!={'abi','job','binding','input_identity','output_identity','started_ns','deadline_ns'}
+                or type(t['abi']) is not int or t['abi']!=2 or t['job']!=c['job_id']
+                or not identifier(t['binding'],64)
+                or any(type(t[k]) is not list or len(t[k])!=2
+                       or any(type(n) is not int or n<0 for n in t[k])
+                       for k in ('input_identity','output_identity'))):
+            raise BoundaryError('POLICY_REJECTED')
+        from .policy import text_resource_limits
+        text_resource_limits(c['role'],c['limits'])
+        if (any(type(t[k]) is not int or not 0<=t[k]<2**63 for k in ('started_ns','deadline_ns'))
+                or t['deadline_ns']!=t['started_ns']+c['limits']['wall_timeout_seconds']*1000000000):
+            raise BoundaryError('POLICY_REJECTED')
     if resource_limits(c['class'],c['role'],c['limits'])!=c['limits']:raise BoundaryError('RESOURCE_LIMIT_INVALID')
     return c
 
@@ -87,7 +103,11 @@ class LinuxChildCalls:
     def perform(self,op,c):
         if self.position>=len(ORDER) or op!=ORDER[self.position]:raise BoundaryError('INVALID_STATE')
         self.position+=1
-        workspace,runroot,runtime,executable,barrier,receipt=c['fds']
+        workspace,runroot,runtime,executable,barrier,receipt=c['fds'][:6]
+        if op=='CGROUP_BARRIER' and c.get('version',1)==2:
+            from .text_handoff import verify_descriptors
+            verify_descriptors(c,complete=True)
+        if hasattr(self,'text_exec_fds'):executable,receipt=self.text_exec_fds
         # These are inherited helper-only FDs, not raw caller paths. Rootfs is
         # under a private helper-owned parent and never writable by a worker.
         target='/proc/self/fd/'+str(runroot)+'/rootfs'
@@ -142,6 +162,10 @@ class LinuxChildCalls:
         elif op in ('CLEAR_GROUPS','SET_GID','SET_UID','CLEAR_CAPSET','NO_NEW_PRIVS'):
             if self.setup.stage!='DROPPED':raise BoundaryError('POLICY_REJECTED')
         elif op=='CLOSE_PRIVILEGED_FDS':
+            if c.get('version',1)==2:
+                from .text_handoff import map_descriptors
+                self.text_exec_fds=map_descriptors(c)
+                return
             # Enumerate the private fd table before closing proc access. Preserve
             # only ELF executable FD + fixed setup receipt, both CLOEXEC.
             for name in os.listdir('/proc/self/fd'):
@@ -153,25 +177,32 @@ class LinuxChildCalls:
         elif op=='EXEC':
             if self.setup.stage!='DROPPED':raise BoundaryError('POLICY_REJECTED')
             if os.pread(executable,4,0)!=b'\x7fELF':raise BoundaryError('POLICY_REJECTED')
-            argv=['freeagentos-worker','--synthetic'] if c['validation'] else ['freeagentos-worker',*FLAGS[c['class']],c['job_id']]
-            environment=worker_environment({});environment['HOME']='/home';environment['TMPDIR']='/tmp'
+            if c.get('version',1)==2:
+                from .text_handoff import exec_contract
+                argv,environment=exec_contract(c)
+            else:
+                # Preserve the existing v1 runtime import/exec contract.
+                argv=['freeagentos-worker','--synthetic'] if c['validation'] else ['freeagentos-worker',*FLAGS[c['class']],c['job_id']]
+                environment=worker_environment({});environment['HOME']='/home';environment['TMPDIR']='/tmp'
             os.write(receipt,b'EXEC_READY\n')
             os.execve(executable,argv,environment)
 
 
 def main():
     # Executed solely by a future explicitly authorized root-owned supervisor.
-    receipt=None
+    receipt=None;calls=None
     try:
         raw=sys.stdin.buffer.read(16385)
         if len(raw)>16384:raise BoundaryError('BOUNDS_EXCEEDED')
         c=json.loads(raw,object_pairs_hook=_pairs)
         validate_configuration(c)
-        if c['validation']:receipt=c['fds'][5]
-        ChildRoutine(LinuxChildCalls()).run(c)
+        if c['validation'] or c['version']==2:receipt=c['fds'][5]
+        calls=LinuxChildCalls()
+        ChildRoutine(calls).run(c)
     except Exception:
         # No raw exceptions, configuration, credentials or worker data printed.
         try:
+            if calls is not None and hasattr(calls,'text_exec_fds'):receipt=calls.text_exec_fds[1]
             if receipt is not None:os.write(receipt,b'EXEC_FAILED\n')
         except Exception:pass  # abrupt exit/EOF alone is never successful exec proof
         os._exit(125)

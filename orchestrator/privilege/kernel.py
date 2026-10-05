@@ -109,7 +109,7 @@ class LinuxDriver:
         if type(permit) is not InstallationPermit or os.geteuid()!=0 or not identifier(owner):
             raise BoundaryError('POLICY_REJECTED')
         self.permit=permit;self.root_fd=os.dup(root_fd);self.cgroup_fd=os.dup(cgroup_fd)
-        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set();self.collectors={};self.proofs={};self.proof_bindings={}
+        self.launcher=launcher;self.owner=owner;self.scopes={};self.roots={};self.children={};self.launch_fds={};self.close_errors=set();self.launch_settled=set();self.validation_files={};self.qualified=False;self.sealed=set();self.collectors={};self.text_collectors={};self.proofs={};self.proof_bindings={}
         self.observers={}
         with open('/proc/sys/kernel/random/boot_id') as stream:self.boot_id=stream.read(64).strip()
 
@@ -168,13 +168,24 @@ class LinuxDriver:
             finally:os.close(fd)
         finally:os.close(parent)
 
-    def launch(self,r,entry,limits):
+    def launch_text_recording(self,r,entry,limits,job):
+        # Backend's recording seam must never silently select a real launch.
+        raise BoundaryError('POLICY_REJECTED')
+
+    def launch(self,r,entry,limits,*,text_job=None):
         """Fresh trusted interpreter avoids threaded-fork preexec_fn hazards.
 
         Parent attaches a paused launcher before releasing its pipe barrier.
         Launcher then creates namespace init, drops privileges, and FD-execs.
         """
+        if text_job is not None:
+            # No installation purpose/runtime slot/qualified producer exists.
+            # The wiring below is prepared, not permission to use it.
+            raise BoundaryError('POLICY_REJECTED')
         if not self.qualified or r['owner']!=self.owner or r['handle'] not in self.sealed:raise BoundaryError('POLICY_REJECTED')
+        if text_job is not None:
+            text_job.verify_limits(entry.role,limits)
+            if text_job.started_ns!=r['started_ns']:raise BoundaryError('POLICY_REJECTED')
         entry.verify();self.launcher.verify()
         root=self.roots[r['handle']]
         owned=[];self.launch_fds[r['handle']]=owned
@@ -185,8 +196,12 @@ class LinuxDriver:
             read_barrier,write_barrier=os.pipe2(os.O_CLOEXEC);owned.extend((read_barrier,write_barrier))
             receipt_r,receipt_w=os.pipe2(os.O_CLOEXEC);owned.extend((receipt_r,receipt_w))
             fds=(workspace,rootfs,entry.runtime_fd,entry.executable.fd,read_barrier,receipt_w)
-            config={'version':1,'class':entry.execution,'role':entry.role,'uid':entry.uid,'gid':entry.gid,
-                    'job_id':entry.job_id,'validation':entry.validation,'fds':list(fds),'limits':limits}
+            from .text_handoff import configuration, TextCollector
+            config=configuration(entry,limits,fds,text_job)
+            if text_job is not None:
+                text_job.verify_owner(r,entry)
+                text_job.deliver(text_job.configuration())
+                fds=tuple(config['fds'])
             # Reserve the ownership slot before creating any process. Failure to
             # register cannot strand a child outside the supervisor ledger.
             process=OwnedPidfd.pending(r['handle'],None)
@@ -196,6 +211,14 @@ class LinuxDriver:
                 stdin=subprocess.PIPE,stdout=subprocess.PIPE if entry.validation else subprocess.DEVNULL,stderr=subprocess.DEVNULL,
                 env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'},close_fds=True)
             process.child=child
+            if text_job is not None:
+                # Close parent's writer after inheritance: EOF cannot be held
+                # open by the controller. Remaining adapter duplicates are
+                # bounded by collection timeout and owned cancellation.
+                text_job.close_response_writer()
+                collector=TextCollector(text_job,child)
+                self.text_collectors[r['handle']]=collector
+                collector.start()
             process.acquire()
             self._write(self.scopes[r['handle']],'cgroup.procs',child.pid)
             child.stdin.write(json.dumps(config,separators=(',',':')).encode());child.stdin.close()
@@ -239,6 +262,8 @@ class LinuxDriver:
     def running(self,r,process):return process.running(r['handle'])
 
     def collection_failed(self,handle):
+        text=getattr(self,'text_collectors',{}).get(handle)
+        if text is not None and (text.error is not None or text.close_failed):return True
         collector=self.collectors.get(handle)
         observer=getattr(self,'observers',{}).get(handle)
         if observer is not None:
@@ -288,6 +313,11 @@ class LinuxDriver:
         owned=self.children.get(r['handle'])
         if process is not None and process is not owned:raise BoundaryError('UNKNOWN_HANDLE')
         process=owned;failed=False
+        text=getattr(self,'text_collectors',{}).get(r['handle'])
+        if text is not None:
+            try:text.close();self.text_collectors.pop(r['handle'])
+            except Exception:
+                failed=True;self.close_errors.add(r['handle'])
         try:self._close_observers(r)
         except Exception:failed=True  # never skip scope/child/pipe cleanup
         collector=self.collectors.get(r['handle'])
@@ -359,6 +389,7 @@ class LinuxDriver:
         return fd
 
     def absent(self,r):
+        if r['handle'] in getattr(self,'text_collectors',{}):return False
         if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or r['handle'] in getattr(self,'observers',{}) or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:return False
         name=scope_name(r)
         for fd in (self.root_fd,self.cgroup_fd):
@@ -381,6 +412,7 @@ class LinuxDriver:
         return {'scope':True,'root':True}  # verified matching inode or absence
 
     def remove(self,r):
+        if r['handle'] in getattr(self,'text_collectors',{}):raise BoundaryError('CLEANUP_INCOMPLETE')
         if r['owner']!=self.owner or r['handle'] in self.children or r['handle'] in self.collectors or r['handle'] in getattr(self,'observers',{}) or self.launch_fds.get(r['handle']) or r['handle'] in self.close_errors:raise BoundaryError('CLEANUP_INCOMPLETE')
         scope=self._scope(r)
         if scope is not None:
@@ -397,6 +429,9 @@ class LinuxDriver:
 
     def close(self):
         failed=False
+        for handle,collector in list(getattr(self,'text_collectors',{}).items()):
+            try:collector.close();self.text_collectors.pop(handle)
+            except Exception:self.close_errors.add(handle);failed=True
         for handle,observer in list(getattr(self,'observers',{}).items()):
             try:observer.close()
             except Exception:self.close_errors.add(handle);failed=True
