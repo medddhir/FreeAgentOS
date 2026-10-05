@@ -861,3 +861,252 @@ live enforcement/evidence producers remain incomplete. Selected-source binding
 is not independent dependency/read-set attestation. Prior failed attempts and
 historical timeout/cleanup uncertainty remain recorded above. B10 PARTIAL;
 STAGE31D_AUTHORIZED: NO.
+
+
+### Protected-launcher visibility integration — prerequisite BLOCKED, 2026-10-05
+
+Inspected at HEAD `07d47ee18cca06e53dc68794e1598586ea38081d`, main, initially
+clean; `text-inference-preparation-verified` dereferences to that same commit.
+No application/test implementation or launch was changed. Inspection stopped
+at the milestone's essential-runtime/authority-producer condition; this is not
+a failed executable test or an environment-capability finding.
+
+Actual reusable chain: `service.serve` -> administrator `ApprovedExecution` /
+`ExecutionRegistry` plus `Seal` / `SnapshotSource` -> `LinuxBackend.create/start`
+-> `LinuxDriver.launch` -> `ChildRoutine` / `LinuxChildCalls.perform`.
+`SnapshotSource.copy_into` copies only the sealed workspace bytes with descriptor-
+rooted no-follow reads and hashes the bytes written. That workspace seal is not
+a sealed inference-runtime identity. `ApprovedExecution.verify` checks a pinned
+executable and runtime ownership/types/modes, marker and required directories;
+it does not bind every runtime member's content to TextInferencePlan.runtime_sha256.
+
+`LinuxDriver.launch` passes exactly six helper-selected descriptors (workspace,
+run root, runtime, executable, barrier, receipt), verifies pinned executables,
+attaches the paused launcher to the owned cgroup before barrier release, and
+retains ownership/termination obligations on failures. The child construction
+makes propagation private, binds the registered runtime root read-only/nosuid,
+overlays bounded tmpfs tmp/run/home/dev/workspace, supplies minimal devices and
+PID-namespace proc, chroots and changes cwd, applies limits, drops identity and
+capabilities, closes inherited privileged descriptors, and FD-execs only ELF.
+Only DETERMINISTIC_TESTER copies the sealed project into its private workspace;
+MODEL/RESEARCH do not copy the caller project. These are implemented syscall
+construction/lifecycle mechanisms, not newly qualified kernel secrecy evidence.
+Runtime-root membership itself must exclude unrelated secrets; a read-only bind
+or ownership/marker check alone cannot establish that exclusion. Existing mock
+mount tests in test_privilege_complete.py:case_fixed_mounts establish construction,
+not kernel isolation or proc-based escape resistance.
+
+Exact missing handoff:
+- `policy.CLASSES` and `execution.FLAGS` support only MODEL_WORKER,
+  DETERMINISTIC_TESTER and RESEARCH_HELPER. The MODEL argv contract is
+  --broker-job plus an opaque enrolled job, not a caller-selected command.
+- `child.validate_configuration` has no text profile, request identity or pinned
+  input-resource field; its closed schema has six descriptors. `child.EXEC`
+  reconstructs fixed class argv/environment. It cannot consume or preserve the
+  prepared text argv/environment by passing TextInferencePlan as configuration.
+- `service.serve` constructs only the validation slot with validation=True;
+  final argv is --synthetic. `InstallationPermit.load` accepts only the
+  STAGE31D_SYNTHETIC_VALIDATION purpose. Neither is text activation authority.
+- `installed_identity.RecordingRegistration` explicitly returns qualified=False,
+  installed_observed=False and execution_enabled=False. It is not a protected
+  inference-runtime publisher. No source consumer connects TextInferencePlan
+  to an ApprovedExecution, exact runtime closure or input descriptor. The
+  Stage31C fixed-class contract likewise records adapter enrollment as future
+  work, rather than an installed broker-job adapter.
+
+Therefore a text-specific mount branch now would lack the trusted runtime/input
+producer and final invocation binding needed to reach it through the existing
+boundary. Routing it through ordinary worker execution or a validation flag
+would substitute a different trust contract. No declaration-only visibility
+profile, caller-selected mounts, fake admission, new launcher or bypass was added.
+All three production text admission guards remain unconditional rejection.
+
+Smallest concrete prerequisite: prepare the text-specific registered execution
+binding within the existing execution/service registration contracts. It must
+identify one supported fixed adapter/runtime layout, independent immutable
+runtime-member identity and allowed visibility, the exact controller request/
+input descriptor and scratch policy, final argv/environment binding and descriptor
+ownership/closure rules. It must reconcile the existing broker-job ELF contract
+with the prepared text command before changing child construction; declarations
+and staging receipts cannot qualify or publish it. Keep the live admission gate
+closed and positive qualification absent while preparing/testing that handoff.
+No actual runtime, credential or authority publication is authorized here.
+
+Only after that prerequisite is reviewed can one separately authorized kernel
+visibility qualification be proposed for the exact binding: use owned synthetic
+inside/outside sentinel resources to observe permitted input/runtime/scratch and
+rejection of outside paths, substitutions and proc/descriptor access, then verify
+owned cancellation/cleanup. No concrete live invocation is ready today; this
+proposal is not authorization and was not executed. Visibility alone still would
+not prove independent action restrictions, credential lifecycle, provider budgets
+or complete dynamic runtime closure.
+
+Changed path: this document only. Focused/required tests not run because the
+integration prerequisites were not met; prior 594-test PASS applies to the
+committed preparation, not this unimplemented boundary. No new executable
+evidence/source-binding manifest is claimed. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. No installation, credential access, model/provider call,
+mount/namespace launch, service change, staging, commit, tag, push or deployment.
+
+### TI-JOB-1: owned descriptor request/job/response connection — 2026-10-05
+
+Implemented against `07d47ee18cca06e53dc68794e1598586ea38081d`, preserving
+its pending blocked-integration append. Architecture anchor manifest
+`7ac50b4036619590b058c64990ec5ddcbd2674db3e4c04b8ead5ffa484b4a2d0`
+and all 45 selected files were rechecked before implementation.
+
+Architecture corrections and scope:
+- Generic protocol frames are 16,384 bytes, with strings bounded to 256 UTF-8
+  bytes. Neither the 48 KiB request nor a 64 KiB response can be sent as an RPC
+  string; JSON escaping would add further overhead. No generic bound changed.
+- `ApprovedExecution.argv` and `child.EXEC` currently use job-ID/synthetic
+  arguments. The production six-descriptor schema remains unchanged, including
+  the validation receipt collector. There is no admitted text adapter, text
+  service slot or expanded installation-permit purpose.
+- Non-validation generic `COLLECT` stays rejected. New text collection is an
+  internal recording-driver operation, not an RPC or authority producer.
+
+Actual connection: `LinuxBackend.create` first allocates/journals owned fixture
+resources using the existing registry; `bind_text_job` attaches a `TextJob` to
+that CREATED handle. It accepts only the existing exact `RecordingDriver`,
+non-validation MODEL_WORKER entry, and a canonical reconstructed
+`TextInferencePlan`. The entry is reverified and its executable digest compared
+with the declaration. A fresh random job ID binds handle/owner/backend run,
+website run/profile/phase/contract/snapshot, request hash, invocation, plan
+binding, declared runtime hash and declared/observed executable digest. Runtime
+FD device/inode is checked separately, not called full runtime content proof.
+An invocation cannot be rebound in the same backend, including after cleanup;
+its retained set is bounded by the existing MAX_ENTRIES ledger bound.
+
+Input/output ABI version 1:
+- Two controller-owned CLOEXEC memfds, no caller-selected path. Input is sealed
+  against write/grow/shrink and further seal changes before delivery. Its wire
+  image is a four-byte big-endian header length, a bounded protocol JSON header
+  (at most 4096 bytes), then exact canonical request bytes (at most 48 KiB).
+  Header includes job, binding, byte count and request digest. Payload is not
+  passed through protocol.encode/decode or argv.
+- `configuration` names the exact two resource descriptors and job/binding.
+  Substitutions, extra fields, bool/integer ambiguity, wrong inode/size/seals,
+  already-filled output and repeated delivery reject. Recorded fixed adapter
+  argv is `freeagentos-worker --broker-job JOB`; request delivery is through
+  the bound input descriptor, not a prompt argument.
+- Output uses the same framing with job/request/binding/status/length/hash.
+  Payload is nonempty and at most 64 KiB, excluding the separately bounded
+  header. Output must be sealed and complete before collection. ERROR,
+  malformed, incomplete, oversized, cross-job and substituted output reject.
+  Collection is single-use and requires the corresponding TERMINATED owned
+  backend handle. Result is untrusted bytes, not cleanup, model provenance,
+  independent test evidence or admission authority.
+- The future installed adapter contract would map input to read-only logical
+  FD 3 and output to logical FD 4 after privilege drop, with only fixed job argv.
+  This milestone does NOT perform that kernel FD remapping or add a child
+  schema for it. The recording driver consumes the actual resources directly.
+  A real adapter, bounded/asynchronous response collector and that descriptor
+  handoff must be provisioned/qualified before real launch can consume this ABI.
+
+`LinuxBackend.start` invokes the recording delivery/response fixture through
+its existing launch/failure lifecycle. Recorded ChildRoutine order is retained;
+no kernel operations or child launch occurs. Response fixture bytes are
+explicitly synthetic. Termination, cleanup, recovery and backend close own the
+job descriptors; ambiguous closure stays dirty/UNPROVEN and never retries a
+possibly reused FD. Failure after recording process creation is terminated
+through the driver's existing owned resource table even if launch did not
+return a process. Job descriptors are not durable runtime artifacts: on crash,
+OS closure plus the existing resource ledger's recovery fencing remain the
+contract, not resumed/replayed job authority.
+
+The synthetic response is consumed by the existing SyntheticProposalAdapter:
+whole-proposal validation precedes broker writes, a fresh snapshot remains
+required, meaningful revision uses a new request/job, protected checks precede
+exclusive exact-byte four-file export. No new broker, parser or workflow was
+introduced. Policy source identity now includes text_job.py; production worker
+imports remain unchanged and no privileged dependency was added there.
+
+Deterministic tests inspect actual memfd bytes/seals, descriptor substitution,
+canonical/mutated plans, fresh identities/replay, error/incomplete/overflow and
+cross-handle responses, dirty close/failure ownership, cancellation, existing
+schema rejection, closed worker admission and full website revision/export.
+These are descriptor and recording lifecycle tests, not installed adapter,
+namespace/mount, filesystem secrecy or provider qualification. Existing
+MODEL_WORKER class policies/leases remain unchanged; the proposed text profile's
+60-second launch budget is not newly enforced by a real text launch. No live
+text launch exists. Production registration/admission stays closed.
+
+Remaining dependencies: immutable registered runtime and executable ABI,
+protected publication and full closure, real input/output descriptor mapping,
+bounded real response collection tied to exit/cancellation, explicit visibility,
+independent action restrictions, scoped credentials and actual environment
+selection, qualified activation/cleanup, provider-side request/token/cost
+budgets. The fixed environment builder is still preparation data. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. No installed adapter or runtime availability is invented.
+
+TI-JOB-1 verification result (subsequent documentation only): focused affected
+contracts passed 39 tests in 2.272s; configured text-job/real-pytest regressions
+passed 15 in 4.545s; final text-job/policy-identity checks passed 10 in 0.951s.
+An earlier focused pytest setup rejected a missing documented fixture variable;
+no pytest test ran in that setup, and the existing fixture was then supplied
+without installation. No reporting/discovery/limit changes were made.
+
+Exactly one required invocation, `/root/agent-stack/bin/freeagent-test`, selected
+`.venv-orchestrator/bin/python3 -m unittest discover`: 604 tests, 393.200s, OK,
+RESULT=PASS, EXIT_CODE=0. Wrapper wall time 394.858954226s; it is not exact runner
+headroom. No timeout or capture truncation; wrapper log 8895 bytes. Development
+configuration used the existing pytest fixture at
+`/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`, packaging fixture at
+`/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`, controller observer
+PYTHONPATH `/root/agent-stack/devtools/controller_progress` and a fresh private
+FREEAGENT_CONTROLLER_PROGRESS_DIR. No runtime replacement or installation.
+
+Private evidence directory `/tmp/freeagent-ti-job1-required-z8vaosjz`:
+- required.log SHA-256 `3aa177093cc28497a88b04075605a73cf0edfc9ec330d522a89768c6b5210e3c`.
+- source-before.json and source-after.json SHA-256
+  `622cbfb878470162c8f9055551a9e3eded9a729283cd0fc177ee12cf32ec2b7d`.
+- progress.jsonl SHA-256 `dc1fd1d34e620ffae0fc23114c95a142b4c23d6b62903149942b7633f2831082`.
+- coverage.json SHA-256 `9d9f030431c77b15bb2f0e34d3a5cb732f0180bd83bc7cdc83845a0602f92d4a`.
+
+All 184 selected files matched, including both new source/test paths. Selection
+covers tracked Python/TOML/lock/C/bin/guidance files plus explicit integration
+context and new TI-JOB-1 files; excludes other untracked/ignored files, installed
+dependencies/interpreters, runtime state, credentials and actual dependency/read
+sets. This is byte binding, not independent attestation. This result append is
+not part of the tested source selection. Observer completed 608 test intervals
+(including nested synthetic outcomes), zero unmatched test/subcase intervals,
+3973 records / 571872 bytes, diagnostic_error=null and PROCESS_END. Authoritative
+suite count remains 604. Direct child was reaped; recorded runner/unittest PIDs
+and their recorded groups were absent at observation. No global/descendant or
+historical cleanup proof follows. Historical timeout causation remains unresolved.
+
+These results verify the recording/descriptor connection and existing contracts,
+not kernel isolation or actual inference. Real text admission remains closed;
+no provider, credential, generated-code or new privileged launch was performed.
+B10 PARTIAL; STAGE31D_AUTHORIZED: NO. Changes remain unstaged/uncommitted.
+
+### TI-JOB-1 focused independent review disposition — 2026-10-05
+
+Independent source review: PASS for the recording/descriptor integration,
+with no blocking findings. The reviewed worktree snapshot manifest is
+`8b7fc12b5da4315c6a2291e22a00636afe54411f9ddd50a83b35403a42a58de3`.
+This verdict does not cover kernel enforcement: actual protected-child
+descriptor mapping, an installed adapter and live qualification remain absent.
+
+Deferred next-handoff prerequisites, not implemented in this checkpoint:
+- Distinguish controller-expected argv from genuinely observed argv; recorded
+  construction must not be labeled evidence of a real child's invocation.
+- Cross-check request/response bounds against the existing profile contracts,
+  including framing overhead and the unchanged generic protocol limits.
+- Sanitize invalid-record and runtime-descriptor errors while preserving
+  descriptor ownership, retained obligations and dirty cleanup evidence.
+- Reject empty responses and require exact integer byte-count fields before
+  any real-adapter collection. Recording success is not that integration.
+- Preserve the existing synthetic descriptor, argv and collector contracts.
+
+Policy source identity includes the new text-job module and changed lifecycle
+sources. Identity changes invalidate earlier bound plans and may require
+separately authorized permit/registration reconciliation. This checkpoint
+reissues nothing and grants no activation authority. Preparation identities,
+recording results and source-review PASS cannot replace trusted runtime,
+credential, action-enforcement or qualification evidence producers.
+
+The required 604-test PASS remains historical selected-byte evidence; this
+review disposition is subsequent documentation only. No verification was
+rerun. Admission remains closed. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.

@@ -1,6 +1,6 @@
 """Explicit test driver; records kernel intentions, never simulates proof of enforcement."""
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 from .protocol import BoundaryError
 from .kernel import scope_name
@@ -40,11 +40,35 @@ class RecordingDriver:
     def running(self,r,process):
         if process.handle!=r['handle']:raise BoundaryError('UNKNOWN_HANDLE')
         return process.active
+
+    def launch_text_recording(self,r,entry,limits,job):
+        """Explicit synthetic response fixture; no child or authority created.
+
+        Existing owned process/lifecycle is recorded; the input/output are real
+        bounded descriptor bytes. This is not the six-FD synthetic ELF ABI.
+        """
+        from .text_job import TextJob
+        if type(job) is not TextJob or entry.validation or entry.execution!='MODEL_WORKER':
+            raise BoundaryError('POLICY_REJECTED')
+        job.verify_owner(r,entry)
+        self._step(r['handle'],'TEXT_INPUT_DELIVERY')
+        request=job.deliver(job.configuration())
+        # Caller sets this only on the existing explicit recording test driver.
+        fixture=getattr(self,'text_response_fixture',None)
+        if type(fixture) is not bytes:raise BoundaryError('POLICY_REJECTED')
+        self.text_request_observed=request
+        self.text_argv_observed=('freeagentos-worker','--broker-job',job.job_id)
+        process=self.launch(r,replace(entry,job_id=job.job_id),limits)
+        self._step(r['handle'],'TEXT_RESPONSE_COLLECTION')
+        job.finish_recording(fixture)
+        return process
     def collection_failed(self,handle):return False
     def collect(self,r):raise BoundaryError('INVALID_STATE')  # recording intentions are not pipe evidence
     def security_reader(self,r,entry,expectation):raise BoundaryError('INVALID_STATE')  # test must explicitly inject recordings
     def terminate(self,r,process=None):
         self._step(r['handle'],'CGROUP_KILL_OWNED')
+        if process is None:
+            process=self.resources.get(scope_name(r),{}).get('process')
         if process:
             if process.handle!=r['handle']:raise BoundaryError('UNKNOWN_HANDLE')
             process.active=False;process.closed=True

@@ -37,6 +37,7 @@ class LinuxBackend:
         self.records={r['handle']:r for r in journal.load()};self.processes={};self.leases={};self.bindings={}
         self.stop=threading.Event();self.monitor=None
         self.security_tasks={};self.security_reports={}
+        self.text_jobs={};self.text_invocations=set()
         self.recovery_required=any(r['state']!='RELEASED' for r in self.records.values())
 
     def _save(self):self.journal.save(list(self.records.values()))
@@ -110,7 +111,9 @@ class LinuxBackend:
             entry,policy=self.bindings[handle]
             try:
                 entry.verify();started=self.clock();r['started_ns']=started;self._save()
-                self.processes[handle]=self.driver.launch(r,entry,policy)
+                if handle in self.text_jobs:
+                    self.processes[handle]=self.driver.launch_text_recording(r,entry,policy,self.text_jobs[handle])
+                else:self.processes[handle]=self.driver.launch(r,entry,policy)
                 # Existing role-specific worker constants remain authoritative.
                 base=role_base(r['class'],r['role'],policy)
                 self.leases[handle]=ActivityLease(base,r['role'],'model' if r['class']=='MODEL_WORKER' else 'research',True,policy['wall_timeout_seconds'],started)
@@ -190,6 +193,46 @@ class LinuxBackend:
             entry=self.bindings.get(handle,(None,None))[0]
             if entry is not None and not entry.validation:raise p.BoundaryError('POLICY_REJECTED')
             return self.driver.collect(r)
+
+    def bind_text_job(self,handle,plan):
+        """Internal owned recording seam, never RPC or positive admission.
+
+        Actual production registration/permits remain synthetic-only. A real
+        driver cannot consume this seam until separately authorized integration.
+        """
+        from .recording import RecordingDriver
+        from .text_job import TextJob
+        from ..roles.worker import TextInferencePlan
+        with self.lock:
+            r=self._record(handle)
+            if (type(self.driver) is not RecordingDriver or self.recovery_required
+                    or r['state']!='CREATED' or handle in self.text_jobs
+                    or type(plan) is not TextInferencePlan or type(plan.invocation) is not str
+                    or plan.invocation in self.text_invocations):
+                raise p.BoundaryError('POLICY_REJECTED')
+            entry,_=self.bindings[handle]
+            entry.verify()
+            self.text_jobs[handle]=TextJob(plan,r,entry)
+            self.text_invocations.add(plan.invocation)  # bounded by MAX_ENTRIES; no replay in this backend
+            return self.text_jobs[handle].job_id
+
+    def collect_text_job(self,handle):
+        """Bound untrusted bytes only, not generic COLLECT/cleanup evidence."""
+        from .recording import RecordingDriver
+        with self.lock:
+            r=self._record(handle)
+            if (type(self.driver) is not RecordingDriver or self.recovery_required
+                    or r['state']!='TERMINATED' or handle not in self.text_jobs):
+                raise p.BoundaryError('POLICY_REJECTED')
+            job=self.text_jobs[handle]
+            job.verify_owner(r,self.bindings[handle][0])
+            return job.collect()
+
+    def _close_text_job(self,handle):
+        job=self.text_jobs.get(handle)
+        if job is not None:
+            job.close()
+            self.text_jobs.pop(handle)
 
     def begin_security_capture(self,handle,expectation):
         """Controller-internal validation seam, NOT a transport operation.
@@ -281,6 +324,7 @@ class LinuxBackend:
             if r['state']=='FAILED_DIRTY':raise p.BoundaryError('RECOVERY_REQUIRED')
             self.terminate(handle)
             try:
+                self._close_text_job(handle)
                 self.driver.remove(r)
                 if not self.driver.absent(r):raise p.BoundaryError('CLEANUP_INCOMPLETE')
                 r['state']='RELEASED';r['cleanup']='CONFIRMED';self._save()
@@ -318,6 +362,7 @@ class LinuxBackend:
             try:
                 for r in pending:
                     self._finish_security(r)
+                    self._close_text_job(r['handle'])
                     plans.append((r,recovery_actions(r,self.journal.policy,self.owner,self.driver.prove(r))))
                 for r,actions in plans:
                     never_allocated=self.driver.absent(r) and not any(r[k] for k in ('root_inode','scope_inode','started_ns'))
@@ -342,6 +387,9 @@ class LinuxBackend:
         if self.monitor:self.monitor.join(timeout=2)
         failed=False
         with self.lock:
+            for handle in list(self.text_jobs):
+                try:self._close_text_job(handle)
+                except Exception:failed=True;self._dirty(self._record(handle))
             for handle in list(self.security_tasks):
                 try:self._finish_security(self._record(handle))
                 except Exception:failed=True

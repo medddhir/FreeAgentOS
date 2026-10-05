@@ -54,7 +54,7 @@ AUTHORITATIVE = MappingProxyType({
 PRIVILEGE_SOURCES = tuple('privilege/'+name+'.py' for name in (
     '__init__','backend','build_closure','campaign','child','closure_verify','client','evidence','execution','inventory','installed_identity','isolation','journal','kernel',
     'linux','policy','policy_sources','protocol','real_journal','recording','rollback','sealed',
-    'security','security_assembly','security_capture','security_collection','security_observe','security_proof','service','socket_state','stress_gate','supervisor','validation'))
+    'security','security_assembly','security_capture','security_collection','security_observe','security_proof','service','socket_state','stress_gate','supervisor','text_job','validation'))
 NUMBERS = frozenset(('BASE_SECONDS','GRACE_SECONDS','RECENT_SECONDS','HARD_SECONDS',
                      'PLANNER_TIMEOUT','CODER_TIMEOUT','FIXER_TIMEOUT','REVIEWER_TIMEOUT','TEST_TIMEOUT','MAX_FIX_ATTEMPTS',
                      'MAX_READ_FILES','MAX_READ_BYTES','MAX_TOOL_CALLS','MAX_SESSION_BYTES','MAX_UNITS','MAX_TARGET_FILES',
