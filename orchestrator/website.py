@@ -1,4 +1,4 @@
-"""Recorded static-site preparation. No model, server, browser or target execution.
+"""Recorded/synthetic static-site preparation. No model, server, browser or target execution.
 
 Uses the existing graph library, file broker and descriptor-bound snapshot reads.
 Preparation checks are structural, never functional/browser qualification.
@@ -15,7 +15,8 @@ import uuid
 
 from roles.file_tools import FileTools
 from roles.inspector import _read
-from roles.read_policy import WEBSITE_FILES, WEBSITE_PROFILE, website_policy
+from roles.read_policy import (WEBSITE_FILES, WEBSITE_PROFILE, website_policy,
+                               content_allowed)
 from roles.workspace import _sha
 
 PIN = "e103efe779e2dd01274dabae83531fef00bf2563"
@@ -184,9 +185,27 @@ class _HTML(HTMLParser):
                 self.text[tag] += data
 
 
+def structural_checks(files, brief, revised):
+    """Same protected structural subset for proposed bytes and actual snapshots."""
+    page = _HTML()
+    page.feed(dict(files)["index.html"].decode("utf-8"))
+    page.close()
+    expected = {"title": brief.title,
+                "h1": brief.revision_heading if revised else brief.heading,
+                "button": brief.revision_button if revised else brief.button}
+    if (page.unsafe or page.stack or page.css != 1 or page.js != 1
+            or any(page.count[k] != 1 or page.text[k].strip() != v for k, v in expected.items())
+            or not all(dict(files)[n].strip() for n in WEBSITE_FILES)):
+        raise WebsiteError("PROTECTED_CHECK_FAILED")
+
+
 class Session:
     """One private, controller-owned rehearsal; retains artifacts on failure."""
-    def __init__(self, brief, parent):
+    def __init__(self, brief, parent, *, preparation="recorded"):
+        if type(preparation) is not str or preparation not in ("recorded", "synthetic"):
+            raise WebsiteError("PREPARATION_KIND_INVALID")
+        self.preparation = preparation
+        self._proposal_phase = "code"
         if type(brief) is not ConfirmedBrief:
             raise WebsiteError("BRIEF_INVALID")
         # Caller is deterministic controller/test code, never model/tool input.
@@ -202,9 +221,12 @@ class Session:
         self.workspace_identity = self.identity(self.workspace)
         self.brief = brief
         self.run = uuid.uuid4().hex
-        self.contract = digest({"profile": WEBSITE_PROFILE, "files": WEBSITE_FILES,
-                                "max_file_bytes": MAX_FILE_BYTES, "guidance": GUIDANCE_SHA,
-                                "brief": brief.__dict__, "checks": "STRUCTURAL_V1"})
+        contract = {"profile": WEBSITE_PROFILE, "files": WEBSITE_FILES,
+                    "max_file_bytes": MAX_FILE_BYTES, "guidance": GUIDANCE_SHA,
+                    "brief": brief.__dict__, "checks": "STRUCTURAL_V1"}
+        if preparation == "synthetic":
+            contract["preparation"] = "SYNTHETIC_PROPOSAL_V1"
+        self.contract = digest(contract)
 
     @staticmethod
     def identity(path):
@@ -259,18 +281,9 @@ class Session:
 
     def checks(self, snapshot, revised):
         self.validate_snapshot(snapshot)
-        page = _HTML()
-        page.feed(dict(snapshot.files)["index.html"].decode("utf-8"))
-        page.close()
-        expected = {"title": self.brief.title,
-                    "h1": self.brief.revision_heading if revised else self.brief.heading,
-                    "button": self.brief.revision_button if revised else self.brief.button}
-        if (page.unsafe or page.stack or page.css != 1 or page.js != 1
-                or any(page.count[k] != 1 or page.text[k].strip() != v for k, v in expected.items())
-                or not all(dict(snapshot.files)[n].strip() for n in WEBSITE_FILES)):
-            raise WebsiteError("PROTECTED_CHECK_FAILED")
+        structural_checks(snapshot.files, self.brief, revised)
         return {"snapshot_sha256": snapshot.sha256, "contract": self.contract,
-                "structural": "PASS", "recorded": True, "functional": "UNPROVEN",
+                "structural": "PASS", "recorded": self.preparation == "recorded", "functional": "UNPROVEN",
                 "browser": "UNPROVEN", "active_isolation": "UNPROVEN"}
 
     def preview(self, snapshot):
@@ -280,6 +293,8 @@ class Session:
                 "execution": "DISABLED", "qualification": "UNPROVEN"}
 
     def export(self, snapshot, checks):
+        if self.preparation == "synthetic" and self._proposal_phase != "complete":
+            raise WebsiteError("PROPOSAL_NOT_COMPLETE")
         self.validate_snapshot(snapshot)
         if checks != self.checks(snapshot, True):
             raise WebsiteError("CHECK_EVIDENCE_MISMATCH")
@@ -297,6 +312,8 @@ class Session:
                         "snapshot_sha256": snapshot.sha256, "contract": self.contract,
                         "files": {n: _sha(b) for n, b in snapshot.files},
                         "status": "PREPARATION_ONLY", "live_qualified": False}
+            if self.preparation == "synthetic":
+                manifest.update(synthetic=True, model_calls="NONE", recorded=False)
             self.write(directory, "export.json", json.dumps(manifest, sort_keys=True).encode())
             os.fsync(directory)
             os.fsync(root)
@@ -305,6 +322,166 @@ class Session:
             if directory is not None:
                 os.close(directory)
             os.close(root)
+
+
+MAX_RESPONSE_BYTES = 64 * 1024
+MAX_REQUEST_BYTES = 48 * 1024
+
+
+class ProposalError(WebsiteError):
+    """Safe fixed rejection category; retained files are never cleaned up here."""
+    def __init__(self, stage, session):
+        super().__init__("PROPOSAL_" + stage + "_FAILED")
+        try:
+            session.assert_root()
+            retained = "RETAINED"
+        except Exception:
+            retained = "UNPROVEN"
+        self.evidence = {"stage": stage, "artifact_state": retained,
+                         "cleanup_attempted": False, "model_calls": "NONE",
+                         "live_qualified": False}
+
+
+def proposal_request(session, phase):
+    """Controller-only request data. No callable transport or execution authority."""
+    if session.preparation != "synthetic" or phase not in ("code", "revision"):
+        raise WebsiteError("PROPOSAL_PHASE_INVALID")
+    base = session.snapshot()
+    request = {"version": 1, "run": session.run, "profile": WEBSITE_PROFILE,
+               "phase": phase, "contract": session.contract, "base_snapshot": base.sha256,
+               "brief": session.brief.__dict__, "guidance": guidance(),
+               "guidance_sha256": GUIDANCE_SHA,
+               "files": [{"path": n, "text": b.decode("utf-8")} for n, b in base.files]}
+    if len(json.dumps(request, ensure_ascii=False).encode("utf-8")) > MAX_REQUEST_BYTES:
+        raise WebsiteError("PROPOSAL_REQUEST_BOUNDS")
+    return request, base
+
+
+def _proposal_json(raw):
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_RESPONSE_BYTES:
+        raise WebsiteError("PROPOSAL_INVALID")
+    text = raw.decode("utf-8", "strict")
+    # Check structural work before json.loads: only top object, files array and
+    # four entry objects fit this schema. Braces inside strings are not structure.
+    depth = containers = 0
+    quoted = escaped = False
+    for char in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            containers += 1
+            if depth > 3 or containers > 6:
+                raise WebsiteError("PROPOSAL_INVALID")
+        elif char in "]}":
+            depth -= 1
+            if depth < 0:
+                raise WebsiteError("PROPOSAL_INVALID")
+    def object_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise WebsiteError("PROPOSAL_INVALID")
+            result[key] = value
+        return result
+    def invalid_number(value):
+        raise WebsiteError("PROPOSAL_INVALID")
+    def integer(value):
+        if len(value) > 20:
+            raise WebsiteError("PROPOSAL_INVALID")
+        return int(value)
+    return json.loads(text, object_pairs_hook=object_pairs, parse_int=integer,
+                      parse_float=invalid_number, parse_constant=invalid_number)
+
+
+def validate_proposal(raw, session, phase, base):
+    """Validate every replacement and retained byte before any proposal write."""
+    if session.preparation != "synthetic" or phase not in ("code", "revision"):
+        raise WebsiteError("PROPOSAL_PHASE_INVALID")
+    session.validate_snapshot(base)
+    value = _proposal_json(raw)
+    binding = {"version": 1, "run": session.run, "profile": WEBSITE_PROFILE,
+               "phase": phase, "contract": session.contract, "base_snapshot": base.sha256}
+    if (type(value) is not dict or set(value) != set(binding) | {"files"}
+            or any(type(value[key]) is not type(want) or value[key] != want
+                   for key, want in binding.items())):
+        raise WebsiteError("PROPOSAL_INVALID")
+    entries = value["files"]
+    if type(entries) is not list or not 1 <= len(entries) <= MAX_ACTIONS:
+        raise WebsiteError("PROPOSAL_INVALID")
+    actions = []
+    seen = set()
+    merged = dict(base.files)
+    for entry in entries:
+        if (type(entry) is not dict or set(entry) != {"path", "text"}
+                or type(entry["path"]) is not str or entry["path"] not in WEBSITE_FILES
+                or entry["path"] in seen or type(entry["text"]) is not str):
+            raise WebsiteError("PROPOSAL_INVALID")
+        raw_text = entry["text"].encode("utf-8", "strict")
+        if len(raw_text) > MAX_FILE_BYTES or not content_allowed(raw_text):
+            raise WebsiteError("PROPOSAL_INVALID")
+        seen.add(entry["path"])
+        actions.append((entry["path"], entry["text"]))
+        merged[entry["path"]] = raw_text
+    if phase == "code" and seen != set(WEBSITE_FILES):
+        raise WebsiteError("PROPOSAL_INVALID")
+    files = tuple((n, merged[n]) for n in WEBSITE_FILES)
+    if (sum(len(b) for _, b in files) > MAX_PROJECT_BYTES
+            or any(not content_allowed(b) for _, b in files)
+            or phase == "revision" and files == base.files):
+        raise WebsiteError("PROPOSAL_INVALID")
+    structural_checks(files, session.brief, phase == "revision")
+    session.validate_snapshot(base)
+    return tuple(actions), files
+
+
+@dataclass(frozen=True)
+class SyntheticProposalAdapter:
+    """Two finite, externally bound byte responses; no callbacks or live transport."""
+    code: bytes
+    revision: bytes
+
+    def __post_init__(self):
+        for response in (self.code, self.revision):
+            if type(response) is not bytes or not 0 < len(response) <= MAX_RESPONSE_BYTES:
+                raise WebsiteError("PROPOSAL_RESPONSE_BOUNDS")
+
+    def apply(self, session, phase):
+        try:
+            if session._proposal_phase != phase:
+                raise WebsiteError("PROPOSAL_PHASE_INVALID")
+            request, base = proposal_request(session, phase)
+            response = self.code if phase == "code" else self.revision
+            actions, files = validate_proposal(response, session, phase, base)
+        except Exception:
+            session._proposal_phase = "blocked"
+            raise ProposalError("VALIDATION", session) from None
+        try:
+            broker = FileTools(website_policy(session.workspace, "coder" if phase == "code" else "fixer"))
+            session.validate_snapshot(base)
+            for path, text in actions:
+                session.assert_root()
+                broker.call("write_file", {"path": path, "text": text})
+            observed = session.snapshot()
+            if observed.files != files:
+                raise WebsiteError("PROPOSAL_APPLICATION_CHANGED")
+            session.checks(observed, phase == "revision")
+        except Exception:
+            session._proposal_phase = "blocked"
+            raise ProposalError("APPLICATION", session) from None
+        session._proposal_phase = "revision" if phase == "code" else "complete"
+        return {"phase": phase, "recorded": False, "synthetic": True,
+                "adapter_id": "SYNTHETIC_PROPOSAL_V1", "model_calls": "NONE",
+                "context_sha256": digest(request), "base_snapshot": base.sha256,
+                "response_sha256": _sha(response), "snapshot_sha256": observed.sha256,
+                "tool_calls": broker.calls, "live_qualified": False}
 
 
 def launch_live(kind, *args, **kwargs):
@@ -322,14 +499,21 @@ class WorkflowState(TypedDict, total=False):
     preview: dict
     export: dict
     status: str
+    synthetic: bool
+    model_calls: str
+    live_qualified: bool
 
 
 def workflow_graph(adapter, graph_type, start, end):
-    if type(adapter) is not RecordedAdapter:
+    if type(adapter) not in (RecordedAdapter, SyntheticProposalAdapter):
         raise WebsiteError("RECORDED_ADAPTER_REQUIRED")
     builder = graph_type(WorkflowState)
     def scaffold(state):
-        state["session"].scaffold()
+        session = state["session"]
+        expected = "synthetic" if type(adapter) is SyntheticProposalAdapter else "recorded"
+        if session.preparation != expected:
+            raise WebsiteError("PREPARATION_KIND_MISMATCH")
+        session.scaffold()
         return {}
     def code(state):
         session = state["session"]
@@ -351,7 +535,10 @@ def workflow_graph(adapter, graph_type, start, end):
         session = state["session"]
         return {"preview": session.preview(state["after"]),
                 "export": session.export(state["after"], state["checks"]),
-                "status": "PREPARATION_COMPLETE"}
+                "status": ("SYNTHETIC_PREPARATION_COMPLETE" if session.preparation == "synthetic"
+                           else "PREPARATION_COMPLETE"),
+                **({"synthetic": True, "model_calls": "NONE", "live_qualified": False}
+                   if session.preparation == "synthetic" else {})}
     for name, node in (("scaffold", scaffold), ("code", code), ("revision", revise),
                        ("checks", checks), ("export", export)):
         builder.add_node(name, node)

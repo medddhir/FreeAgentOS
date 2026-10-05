@@ -14,12 +14,23 @@ sys.path.insert(0, str(ROOT / "orchestrator"))
 from roles.sandbox import RESOURCE_POLICY, REQUIRED_CONTROLS, run_isolated
 
 
-def allocate_disk_demand(descriptor, on_covered):
+def disk_phase_record(phase, demand, written, category="NONE"):
+    """Finite child-reported metadata, never allocation or enforcement proof."""
+    import time
+    return dict(phase=phase, monotonic=time.monotonic(), written_bytes=written,
+                demand=demand, category=category)
+
+
+def allocate_disk_demand(descriptor, on_covered, on_phase=None):
     """Fixed tmpfs capacity demand; fall back only after genuine ENOSPC."""
     import errno
     import os
     import stat
     demand = 60 * 1024 * 1024
+
+    def phase(name, category="NONE"):
+        if on_phase is not None:
+            on_phase(name, category)
 
     def require_backing():
         # Supported tmpfs fixture: page-aligned demand, st_blocks in 512-byte
@@ -29,35 +40,50 @@ def allocate_disk_demand(descriptor, on_covered):
                 or info.st_blocks * 512 != demand):
             raise RuntimeError("DISK_ALLOCATION_NOT_BACKED")
 
+    phase("reservation_before")
     try:
         os.posix_fallocate(descriptor, 0, demand)
     except AttributeError as exc:
+        phase("reservation_after", "UNSUPPORTED")
         raise RuntimeError("DISK_ALLOCATION_UNSUPPORTED") from exc
     except OSError as exc:
+        category = ("UNSUPPORTED" if exc.errno in (errno.ENOSYS, errno.EOPNOTSUPP)
+                    else "ENOSPC" if exc.errno == errno.ENOSPC else "UNEXPECTED")
+        phase("reservation_after", category)
         if exc.errno in (errno.ENOSYS, errno.EOPNOTSUPP):
             raise RuntimeError("DISK_ALLOCATION_UNSUPPORTED") from exc
         if exc.errno != errno.ENOSPC:
             raise
-        info = os.fstat(descriptor)
-        if (not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= demand
-                or not 0 <= info.st_blocks * 512 <= demand):
-            raise RuntimeError("DISK_PARTIAL_ALLOCATION_INVALID")
-        # st_size/blocks do not prove where extents exist. Overwrite from zero;
-        # existing allocated pages are reused, not added to the logical demand.
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        block = b'x' * (1024 * 1024)
-        covered = 0
-        for _ in range(60):
-            amount = os.write(descriptor, block[:min(len(block), demand - covered)])
-            if not 0 < amount <= min(len(block), demand - covered):
-                raise RuntimeError("DISK_FALLBACK_WRITE_INVALID")
-            covered += amount
-            on_covered(covered)
-            if covered == demand:
-                require_backing()
-                return
-        raise RuntimeError("DISK_FALLBACK_INCOMPLETE")
+        phase("fallback_before")
+        try:
+            info = os.fstat(descriptor)
+            if (not stat.S_ISREG(info.st_mode) or not 0 <= info.st_size <= demand
+                    or not 0 <= info.st_blocks * 512 <= demand):
+                raise RuntimeError("DISK_PARTIAL_ALLOCATION_INVALID")
+            # st_size/blocks do not prove where extents exist. Overwrite from zero;
+            # existing allocated pages are reused, not added to the logical demand.
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            block = b'x' * (1024 * 1024)
+            covered = 0
+            for _ in range(60):
+                amount = os.write(descriptor, block[:min(len(block), demand - covered)])
+                if not 0 < amount <= min(len(block), demand - covered):
+                    raise RuntimeError("DISK_FALLBACK_WRITE_INVALID")
+                covered += amount
+                on_covered(covered)
+                if covered == demand:
+                    require_backing()
+                    phase("fallback_after", "OK")
+                    return
+            raise RuntimeError("DISK_FALLBACK_INCOMPLETE")
+        except OSError as exc:
+            phase("fallback_after", "ENOSPC" if exc.errno == errno.ENOSPC else "UNEXPECTED")
+            raise
+        except RuntimeError:
+            phase("fallback_after", "INVALID")
+            raise
     else:
+        phase("reservation_after", "OK")
         require_backing()
         on_covered(demand)
 
@@ -180,25 +206,29 @@ class ResourceSandboxTests(unittest.TestCase):
         result = self.execute(
             "import json\n"
             "written = 0\n"
-            "def progress(phase):\n"
+            "demand_id = 0\n"
+            "def progress(phase, category='NONE'):\n"
             " with open('/tmp/freeagent-disk-progress.jsonl', 'a') as diagnostic:\n"
-            "  diagnostic.write(json.dumps(dict(phase=phase, monotonic=time.monotonic(), written_bytes=written)) + '\\n')\n"
+            "  diagnostic.write(json.dumps(disk_phase_record(phase, demand_id, written, category)) + '\\n')\n"
             "progress('test_start')\n"
             "try:\n"
             " for index in range(6):\n"
+            "  demand_id = index + 1\n"
             "  base = written\n"
             "  def covered(offset):\n"
             "   nonlocal written\n"
-            "   previous = written\n"
             "   written = base + offset\n"
-            "   if offset == 60 * 1024 * 1024 or written // (10 * 1024 * 1024) > previous // (10 * 1024 * 1024): progress('write')\n"
+            "   if offset == 60 * 1024 * 1024: progress('write')\n"
             "  with open('/workspace/growth-%d.bin' % index, 'wb', buffering=0) as file:\n"
-            "   allocate_disk_demand(file.fileno(), covered)\n"
-            "except OSError:\n"
-            " progress('write_error')\n"
+            "   allocate_disk_demand(file.fileno(), covered, progress)\n"
+            "except OSError as error:\n"
+            " progress('write_error', 'ENOSPC' if error.errno == 28 else 'UNEXPECTED')\n"
             " raise\n"
-            "else: progress('complete')", timeout=6, disk_diagnostics=True,
-            helpers=inspect.getsource(allocate_disk_demand))
+            "except RuntimeError:\n"
+            " progress('write_error', 'INVALID')\n"
+            " raise\n"
+            "else: progress('complete', 'OK')", timeout=6, disk_diagnostics=True,
+            helpers=inspect.getsource(disk_phase_record) + "\n" + inspect.getsource(allocate_disk_demand))
         print("DISK_FIXTURE_DIAGNOSTICS=" + json.dumps(result['evidence'].get('disk_diagnostics'), sort_keys=True))
         self.assert_clean(result)
         self.assertIn("No space left on device", result["output"])

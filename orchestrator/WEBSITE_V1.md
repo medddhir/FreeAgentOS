@@ -436,3 +436,69 @@ execution; functional/browser verification, hostile isolation, descendant
 absence and protected production integration remain UNPROVEN. No tests, builds,
 installation or preparation invocation were performed for this documentation.
 **B10 PARTIAL. STAGE31D_AUTHORIZED: NO.**
+
+## Synthetic proposal preparation (API only) — 2026-10-05
+
+The existing website graph also accepts `SyntheticProposalAdapter`: two finite
+model-shaped UTF-8 byte responses for code and revision, with no provider,
+callback, agent launch or new CLI. Use a controller-created Session with
+`preparation="synthetic"`; the existing recorded CLI/default Session is unchanged.
+Response version 1 binds run/profile/phase/contract/base_snapshot and permits
+only full replacement entries `{path, text}` for the same four files. Code
+requires all four; revision requires 1..4 unique changed replacements. Bounds
+are 64 KiB/response, three JSON nesting levels/six containers, 8,192 bytes/file,
+32,768 bytes/project and a separate 48 KiB controller request. Unknown fields,
+duplicate keys/paths, wrong types/encodings, traversal/protected paths, authority
+claims and content-policy violations reject before proposal writes.
+
+All merged proposed bytes undergo the existing protected structural predicate
+before FileTools application; actual snapshot/check evidence is freshly derived
+afterward. This permits variable supported page layouts and meaningful revision,
+not arbitrary HTML/JS/CSS acceptance: fixed confirmed title/heading/button,
+local stylesheet/script links and nonempty files remain required. No JavaScript,
+CSS, browser or functional execution is performed or qualified.
+
+Failures distinguish validation from application. Writes may partially complete;
+owned artifacts remain RETAINED or observation UNPROVEN, cleanup_attempted false.
+Failed synthetic runs cannot retry phases or export, even if partial files pass
+structural checks. Successful synthetic results/receipts say model_calls NONE,
+recorded false and synthetic true; status SYNTHETIC_PREPARATION_COMPLETE is only
+structural preparation. Export is still exclusively `<owned-run>/export` with
+exact bytes and a PREPARATION_ONLY receipt. Live launch remains disabled.
+
+See MODEL_BUILDER_INTEGRATION.md for the exact future contained schema-response
+seam and unresolved credential, runtime, request/token/cost and execution gates.
+Synthetic verification is not live model qualification. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.
+
+Synthetic proposal verification status: focused checks passed (58 website/
+proposal/CLI/policy and 16 graph/model-profile/progress tests). The single required
+attempt ran 580 tests in 356.119s, RESULT=FAIL/exit 1: sole failure was the
+unchanged disk-capacity fixture's six-second inner timeout instead of ENOSPC.
+No outer timeout/truncation; selected 180 files matched before/after and observer
+completed without unmatched intervals or diagnostic error. The proposal cases
+passed, but the milestone remains BLOCKED on required verification. No retry
+or disk/enforcement changes were made. Full bounded identities and limitations
+are recorded in MODEL_BUILDER_INTEGRATION.md; no live qualification is claimed.
+
+
+Current synthetic proposal preparation verification — 2026-10-05: the one
+separately authorized required invocation with existing bounded controller
+progress and disk-phase diagnostics passed **584 tests in 352.793 seconds,
+OK, RESULT=PASS, EXIT_CODE=0**; wrapper 354.968686007 seconds, no timeout or
+capture overflow. All 181 selected files matched before/after; observer
+completed without diagnostic error or unmatched intervals. The four additional
+tests are diagnostic marker regressions. Ten affected policy-identity/packaging
+checks also passed. Existing disk assertions passed after observed demand 5
+reservation/fallback ENOSPC and zero remaining workspace capacity. Workload,
+backing checks, quotas and deadlines were unchanged. These observations do not
+resolve the earlier timeout's cause or prove historical cleanup.
+
+Full invocation/source/log identities and selection omissions are appended in
+MODEL_BUILDER_INTEGRATION.md. These paragraphs and that result record are
+subsequent documentation-only changes; implementation/test bytes remain the
+tested bytes. The earlier failed required run remains historical evidence.
+Synthetic preparation is verified by this required run, not qualified live
+model building, generated-code execution or functional/browser behavior.
+Changes remain uncommitted and unstaged. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.

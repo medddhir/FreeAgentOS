@@ -358,8 +358,14 @@ def _disk_progress(rootfs):
         records = []
         for line in lines:
             record = json.loads(line)
-            if (set(record) != {"phase", "monotonic", "written_bytes"}
-                    or record["phase"] not in ("test_start", "write", "complete", "write_error")
+            legacy = set(record) == {"phase", "monotonic", "written_bytes"}
+            phased = set(record) == {"phase", "monotonic", "written_bytes", "demand", "category"}
+            phases = ("test_start", "write", "complete", "write_error")
+            allocation_phases = ("reservation_before", "reservation_after", "fallback_before", "fallback_after")
+            if (not (legacy or phased)
+                    or record["phase"] not in phases + (allocation_phases if phased else ())
+                    or phased and (type(record["demand"]) is not int or not 0 <= record["demand"] <= 6
+                                   or record["category"] not in ("NONE", "OK", "ENOSPC", "UNSUPPORTED", "UNEXPECTED", "INVALID"))
                     or type(record["monotonic"]) not in (int, float)
                     or not 0 <= record["monotonic"] < 2 ** 63
                     or type(record["written_bytes"]) is not int
