@@ -124,3 +124,19 @@ def prepare_bundle(directory,package_digest,runtime_digest,synthetic_digest,uid,
         return {'status':'PREPARED_NOT_INSTALLED','protocol_version':VERSION,'policy_hash':policy_hash(),
                 'scope_limit':3,'attempt_limit':1,'credential_material_printed':False}
     finally:os.close(fd)
+
+
+def prepare_text_inference_plan(request, *, runtime_sha256, executable_sha256,
+                                invocation, credential_reference):
+    """Preparation identity only; no activation or credential resolution.
+
+    Policy observation stays in this existing preparation layer. The worker
+    receives a digest as non-authoritative data and never imports this layer.
+    Runtime/executable identities remain declarations, not installed proof.
+    This source/policy identity is distinct from worker cleanup evidence's
+    effective resource-policy dictionary digest, despite the shared field name.
+    """
+    from ..roles.worker import prepare_text_inference
+    return prepare_text_inference(request, runtime_sha256=runtime_sha256,
+        executable_sha256=executable_sha256, invocation=invocation,
+        credential_reference=credential_reference, policy_sha256=policy_hash())

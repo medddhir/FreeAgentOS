@@ -201,7 +201,145 @@ class WorkerResult:
     evidence: dict
 
 
+# Preparation only: this profile has no qualified activation producer. Fixed
+# paths name the intended private layout, not observed/protected artifacts.
+TEXT_INFERENCE_PROFILE = "text-inference-v1"
+TEXT_INFERENCE_EXECUTABLE = "/runtime/bin/claude-free"
+TEXT_INFERENCE_LIMITS = {
+    "schema_version": 1, "wall_timeout_seconds": 60,
+    "termination_grace_seconds": 1, "cpu_quota_us": 100000,
+    "cpu_period_us": 100000, "cpu_time_seconds": 60,
+    "memory_limit_bytes": 1536 * MIB, "swap_limit_bytes": 0,
+    "max_processes": 64, "max_open_files": 256,
+    "max_file_size_bytes": 128 * MIB, "max_output_bytes": 64 * 1024,
+}
+TEXT_INFERENCE_BOUNDS = {"request_bytes": 48 * 1024,
+                         "response_bytes": 64 * 1024, "cli_invocations": 1}
+TEXT_INFERENCE_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL",
+                           "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN")
+TEXT_INFERENCE_REQUIREMENTS = (
+    "PROTECTED_RUNTIME_IDENTITY", "REPOSITORY_AND_SECRET_VISIBILITY_EXCLUDED",
+    "NARROW_CREDENTIAL_PROVISIONING", "INDEPENDENT_ACTION_RESTRICTIONS",
+    "QUALIFIED_ACTIVATION", "BOUND_CANCELLATION_AND_CLEANUP",
+)
+
+
+@dataclass(frozen=True)
+class TextInferencePlan:
+    """Declared invocation binding, never an activation/qualification ticket."""
+    request: bytes
+    request_sha256: str
+    argv: tuple
+    runtime_sha256: str
+    executable_sha256: str
+    invocation: str
+    credential_reference: str
+    policy_sha256: str
+    profile_sha256: str
+    binding_sha256: str
+
+
+def text_inference_environment():
+    """Preparation data only; not selected by any admitted launch.
+
+    No inherited env or credential read. Future admission requires actual
+    environment enforcement and trusted credential provisioning, not this hash.
+    """
+    return {"PATH": "/runtime/bin", "HOME": "/tmp/text-inference-home",
+            "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:3001"}
+
+
+def prepare_text_inference(request, *, runtime_sha256, executable_sha256,
+                           invocation, credential_reference, policy_sha256):
+    """Bound canonical request and declared identities; no discovery or launch.
+
+    Only website request fields are accepted. Their values remain data. Neither
+    hashes nor an environment reference establish runtime/credential authority.
+    """
+    import re
+    from roles.read_policy import no_file_tool_flags
+    fields = {"version", "run", "profile", "phase", "contract", "base_snapshot",
+              "brief", "guidance", "guidance_sha256", "files"}
+    try:
+        if (type(request) is not dict or set(request) != fields
+                or type(request["version"]) is not int or request["version"] != 1
+                or request["profile"] != "website-static-v1"
+                or request["phase"] not in ("code", "revision")
+                or any(type(v) is not str or re.fullmatch(r"[0-9a-f]{64}", v) is None
+                       for v in (runtime_sha256, executable_sha256, policy_sha256))
+                or type(invocation) is not str or re.fullmatch(r"[0-9a-f]{32}", invocation) is None
+                or type(credential_reference) is not str
+                or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", credential_reference) is None):
+            raise ValueError()
+        brief_keys = {"title", "heading", "button", "revision_heading",
+                      "revision_button", "design", "confirmed"}
+        brief = request["brief"]
+        files = request["files"]
+        if (type(brief) is not dict or set(brief) != brief_keys or brief["confirmed"] is not True
+                or any(type(brief[k]) is not str or len(brief[k].encode("utf-8")) > 512
+                       for k in brief_keys - {"confirmed"})
+                or type(files) is not list or len(files) != 4
+                or type(request["guidance"]) is not str or len(request["guidance"].encode("utf-8")) > 8192
+                # Producer formats only: these declarations prove neither
+                # provenance nor freshness, and confer no admission authority.
+                or type(request["run"]) is not str
+                or re.fullmatch(r"[0-9a-f]{32}", request["run"]) is None
+                or any(type(request[k]) is not str
+                       or re.fullmatch(r"[0-9a-f]{64}", request[k]) is None
+                       for k in ("contract", "base_snapshot", "guidance_sha256"))):
+            raise ValueError()
+        allowed = {"index.html", "styles.css", "app.js", "README.md"}
+        seen = set()
+        for entry in files:
+            if (type(entry) is not dict or set(entry) != {"path", "text"}
+                    or type(entry["path"]) is not str or entry["path"] not in allowed
+                    or entry["path"] in seen or type(entry["text"]) is not str
+                    or len(entry["text"].encode("utf-8")) > 8192):
+                raise ValueError()
+            seen.add(entry["path"])
+        raw = json.dumps(request, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if not 0 < len(raw) <= TEXT_INFERENCE_BOUNDS["request_bytes"]:
+            raise ValueError()
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        raise WorkerBoundaryError("TEXT_INFERENCE_REQUEST_INVALID") from None
+    # Existing flags are compatibility requests, not independent action proof.
+    argv = (TEXT_INFERENCE_EXECUTABLE, *no_file_tool_flags(),
+            "--permission-mode", "dontAsk", "--permission-prompts", "none",
+            "--output-format", "json", "--json-schema", '{"type":"object"}',
+            "-p", raw.decode("utf-8"))
+    profile = {"version": 1, "profile": TEXT_INFERENCE_PROFILE,
+               "model_profile": "claude-free-default", "executable": argv[0],
+               "options": argv[1:-1], "limits": TEXT_INFERENCE_LIMITS,
+               "bounds": TEXT_INFERENCE_BOUNDS, "environment_keys": TEXT_INFERENCE_ENV_KEYS,
+               "environment": text_inference_environment(),
+               "requirements": TEXT_INFERENCE_REQUIREMENTS, "streaming": False}
+    profile_sha = _digest(profile)
+    # Preparation source/policy identity, supplied as declared binding data.
+    # This is not the effective resource-policy digest used by _validate_evidence.
+    policy_sha = policy_sha256  # never admission authority
+    request_sha = hashlib.sha256(raw).hexdigest()
+    binding = {"profile": profile_sha, "policy": policy_sha,
+               "runtime": runtime_sha256, "executable": executable_sha256,
+               "invocation": invocation, "request": request_sha,
+               "credential_reference": credential_reference}
+    return TextInferencePlan(raw, request_sha, argv, runtime_sha256,
+                             executable_sha256, invocation, credential_reference,
+                             policy_sha, profile_sha, _digest(binding))
+
+
+def _text_inference_admission():
+    # Existing staging registrations, recording approvals and Linux tokens are
+    # not producers for the six requirements. There is deliberately no boolean,
+    # evidence-dict, callback or fake ticket path to a positive decision.
+    raise WorkerBoundaryError("TEXT_INFERENCE_QUALIFICATION_UNPROVEN")
+
+
 def _validate_evidence(evidence, policy, exit_code, outer_truncated=False):
+    # Evidence policy_sha256 hashes the effective resource-policy dictionary.
+    # TextInferencePlan.policy_sha256 instead binds preparation source identity;
+    # neither field may be substituted for the other digest domain.
     if (not isinstance(exit_code, int) or evidence.get("cleanup_status") != "CONFIRMED"
             or evidence.get("remaining_processes") != 0 or evidence.get("cgroup_status") != "ENFORCED"
             or evidence.get("policy_sha256") != _digest(policy)
@@ -219,6 +357,10 @@ def _digest(policy):
 
 
 def _effective_policy(limits, profile="model"):
+    if profile == TEXT_INFERENCE_PROFILE:
+        if limits:
+            raise WorkerBoundaryError("WORKER_POLICY_OVERRIDE_INVALID")
+        return dict(TEXT_INFERENCE_LIMITS)
     if profile not in POLICIES:
         raise WorkerBoundaryError("WORKER_PROFILE_INVALID")
     policy = dict(POLICIES[profile])
@@ -249,6 +391,18 @@ def _child_limits(scope, policy, timeout):
 
 
 def _run_inner(area, request):
+    if type(request) is not dict:
+        raise WorkerBoundaryError("WORKER_REQUEST_INVALID")
+    if request.get("profile") == TEXT_INFERENCE_PROFILE:
+        _text_inference_admission()
+    cmd = request.get("cmd")
+    if (type(cmd) is not list or not cmd or type(cmd[0]) is not str or not cmd[0]
+            or any(type(arg) is not str or "\x00" in arg for arg in cmd)):
+        raise WorkerBoundaryError("WORKER_REQUEST_INVALID")
+    # This path is intentionally reserved even under an ordinary profile.
+    # A configured ordinary launcher at this exact path remains unavailable.
+    if cmd[0] == TEXT_INFERENCE_EXECUTABLE:
+        _text_inference_admission()
     inner_started_ns = time.monotonic_ns()
     policy = request["policy"]
     if _effective_policy(request["limits"], request["profile"]) != policy:
@@ -368,6 +522,9 @@ def _model_command(cmd):
 def _run_worker_impl(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
                      policy_profile="model", stream_activity=False):
     """Run only the CLI tree in a cgroup; keep this controller outside it."""
+    if (policy_profile == TEXT_INFERENCE_PROFILE or
+            isinstance(cmd, list) and cmd and cmd[0] == TEXT_INFERENCE_EXECUTABLE):
+        _text_inference_admission()
     outer_started_ns = time.monotonic_ns()
     policy = _effective_policy(limits, policy_profile)
     if (type(stream_activity) is not bool or stream_activity and
@@ -486,6 +643,9 @@ def _cleanup_outer_scope(scope_name):
 
 def run_worker(cmd, *, cwd=None, timeout=180, role="worker", limits=None,
                policy_profile="model", stream_activity=False):
+    if (policy_profile == TEXT_INFERENCE_PROFILE or
+            isinstance(cmd, list) and cmd and cmd[0] == TEXT_INFERENCE_EXECUTABLE):
+        _text_inference_admission()
     try:
         from roles.model_attribution import GatewaySession, safe_attribution_diagnostics, diagnostic_defaults, _ipc_failure
         setup_diagnostics = diagnostic_defaults()

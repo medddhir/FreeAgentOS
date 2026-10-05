@@ -385,3 +385,479 @@ Current deterministic preparation verification passed; the earlier required
 failure and unresolved historical timing/cleanup limitations remain recorded
 above. Work remains uncommitted/unstaged; live model, execution, functional and
 browser qualification remain unproven. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+
+## Fixed text-inference preparation and admission — 2026-10-05
+
+`roles/worker.py:prepare_text_inference` now prepares one declared invocation
+of `text-inference-v1`. It accepts only the existing website request shape,
+checks bounded fields/collections before serialization, produces canonical
+sorted compact UTF-8 JSON (48 KiB maximum), and hashes it before any send.
+The immutable plan binds request, invocation ID, declared executable/runtime
+digests, credential reference, authoritative policy identity and the complete
+fixed profile identity. These declared hashes are not observed runtime proof.
+No request is sent, no credential is read and no authority is granted by a plan.
+The worker/profile sources are included in source-bound policy identity; old
+policy-bound records are not silently treated as identities for this change.
+
+The reserved executable is `/runtime/bin/claude-free`, with fixed existing
+no-file-tool flags, permission mode, JSON output and object-schema arguments;
+request text occupies only the final prompt data argument. This intended path
+is not an installed, sealed, pinned or qualified executable. Existing configured
+`claude-free-default` describes the intended compatibility profile, not served
+model identity or qualification. Client flags remain compatibility requests,
+not independently enforced restrictions. The proposal validator remains the
+separate mandatory whole-response validator before any broker writes; this
+milestone does not connect the plan to workflow application or a live adapter.
+
+Fixed resource configuration reuses worker policy/lease contracts: 60 seconds
+with no progress grace, 1-second termination grace, CPU quota/period 100000/
+100000 microseconds, CPU time 60 seconds, memory 1536 MiB, swap zero, processes
+64, descriptors 256, file-size 128 MiB and response capture 64 KiB. Overrides
+for this profile reject. Request serialization/field bounds and admission
+rejection are active local controls. Resource/response limits are prepared
+configuration: this profile never enters the existing execution lifecycle yet.
+At most one CLI invocation is specified per plan; currently zero launches are
+possible. Durable consumption of a future invocation ticket is not implemented,
+and plans are reusable data, not one-shot authority. Upstream request counts,
+retries, tokens and cost remain unenforced; CLI-invocation limits do not cap them.
+
+`text_inference_environment` constructs only fixed PATH, HOME, LANG, LC_ALL and
+loopback ANTHROPIC_BASE_URL values. It never copies `os.environ` or resolves a
+credential reference. ANTHROPIC_AUTH_TOKEN is the sole additionally declared
+credential delivery key, but no delivery producer exists for this profile.
+References use the existing configuration naming contract; credential values
+never enter plan requests or evidence through this code. Existing ordinary
+worker environment behavior is unchanged; it is not used for this profile.
+
+Mandatory requirements: protected runtime identity; exclusion of caller
+repository and unrelated secrets; narrow credential provisioning; independent
+file/tool/command restrictions; applicable qualified activation; and bound
+cancellation/cleanup. Neither Linux authentication, staging registration,
+recording approval, model output, an evidence dictionary nor a boolean satisfies
+these requirements. There is no legitimate existing positive-admission producer
+for them. Consequently public `run_worker`, `_run_worker_impl` and `_run_inner`
+reject both this profile and its reserved executable before gateway health,
+credential environment delivery, cgroup setup or subprocess launch, using the
+fixed `TEXT_INFERENCE_QUALIFICATION_UNPROVEN` error. Cleanup remains UNPROVEN in
+that generic rejection evidence; no cleanup is claimed or needed as a result
+of a launch that never occurred. Direct commands under ordinary profiles retain
+their existing lifecycle except the new reserved executable cannot evade this
+gate by switching its profile label.
+
+Deterministic tests exercise actual Session request production, canonical
+binding, bounded malformed inputs, synthetic environment leakage prevention,
+fixed argv, changed declared identities, all three admission entry points,
+forged/staging/stale claims, override rejection, no lease grace, existing cleanup
+evidence rejection and ordinary-worker delegation. No positive admission test
+was added: no existing legitimate authority seam can supply it. Synthetic
+claims cannot become a production bypass. Existing worker cancellation tests
+remain required regressions; they do not prove cancellation for a sealed
+text-inference runtime that has not been implemented.
+
+Single next integration dependency: implement the protected text-inference
+provisioning/evidence producer inside the existing worker/supervisor handoff,
+with independently checked runtime visibility and action restrictions, scoped
+credential delivery, exact invocation consumption and cleanup/cancellation
+binding. B10 protected publication/credential and real consumer integration
+remain prerequisites where applicable. No parallel launcher or weaker ordinary-
+user fallback is proposed. Only after that producer, runtime/launcher identity,
+gateway egress/data disclosure and enforceable provider budgets are reviewed
+could a separately authorized one-invocation live qualification be proposed.
+This milestone does not authorize it. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+
+### Verification result — BLOCKED, 2026-10-05
+
+Focused synthetic/affected checks passed: 42 tests in 9.635 seconds, followed
+by seven final admission-guard/ordinary-worker checks in 0.437 seconds. Exactly
+one required `/root/agent-stack/bin/freeagent-test` invocation then ran the
+established controller runtime (`-m unittest discover`) with the unchanged
+progress observer, documented existing pytest/package fixtures and disk-phase
+diagnostics. Authoritative result: **589 tests in 342.765 seconds,
+FAILED (failures=2), RESULT=FAIL, EXIT_CODE=1**. Wrapper 343.917844654 seconds.
+No required deadline timeout occurred, but **OUTPUT_TRUNCATED=true**: failure
+assertions printed the enlarged worker source and exceeded the preserved 64 KiB
+capture bound. Overflow remains fail-closed; no reporting limit was changed.
+
+Demonstrated implementation regression: `prepare_text_inference` imports
+`privilege.policy` from production `roles/worker.py`. Existing
+`test_privilege.py:PrivilegeCases` static isolation assertion and
+`test_privilege_complete.py:LinuxCompleteCases.case_production` prohibit the
+privilege dependency in production roles/worker source. The retained log
+contains the production traceback at test_privilege_complete.py:221;
+the observer identifies both failed foundation subcases (`privilege/static`
+and `linux_complete/production`). The earlier full traceback was lost to capture
+truncation and is not reconstructed here. This is a code-boundary defect, not
+an environment failure or a reason to weaken those assertions. The smallest
+next correction is to place authoritative privileged identity preparation on
+its existing preparation side of the boundary and pass only non-authoritative
+bound plan data to the worker. Do not introduce a fake qualified producer or
+change the admission rejection. No correction or verification retry followed
+this failed required attempt; work remains uncommitted/unstaged and UNVERIFIED.
+
+Evidence: `/tmp/freeagent-text-inference-required-lrj2mj02`.
+Required-log SHA-256:
+`603df43d823d717cc7966ae688a4890dc3103678dc53761b1ce652868347768e`.
+Source-before/source-after SHA-256 (identical):
+`63e415f869397548474c67b2c988645c4d56ee724904dfc4a69483df5b403b6f`.
+Progress SHA-256:
+`f65001a057fe81036276022850bfeaceab4456306da23f1c77739b9d68127594`.
+Invocation/configuration SHA-256:
+`b47b43915c92a2fcc0a0771d83ae2d9fb5fcad582f66118b1a6f88248ea7da45`.
+The exact activation config is in invocation.json: fixed observer PYTHONPATH,
+private progress directory, existing FREEAGENT_PYTEST_FIXTURE_PYTHON and
+FREEAGENT_PACKAGE_FIXTURE_PYTHON; no runtime replacement or download. Bounds
+remain 420 seconds / 64 KiB and six seconds for the inner disk fixture.
+
+All 182 selected files matched before/after and current files before these
+result-only additions. Selection is tracked Python/TOML/lock/C, bin/ and
+website guidance, explicit proposal documents and new text-inference tests;
+coverage.json enumerates included/excluded paths. It excludes other untracked/
+ignored material, installed/editable dependency bytes, base interpreter,
+credentials/runtime state and actual read-set. It is not independent
+attestation. No implementation/test changes followed the required attempt.
+Observer completed 593 matched test intervals (four are intentional nested
+synthetic fixtures), 3,745 records / 542,074 bytes, diagnostic_error null;
+975 matched subcase intervals and PROCESS_END recorded. Nested intentional
+outcomes are not controller-suite failure counts. The disk fixture passed.
+Recorded runner/unittest PIDs were absent afterward, owned launch groups empty,
+and no matching fixture mounts were observed. No unowned cgroups were inspected.
+Historical cleanup/timeout causation and global descendant absence remain
+unproven. B10 PARTIAL; STAGE31D_AUTHORIZED: NO. No live text-inference activation,
+provider call, credential read or qualification is claimed.
+
+
+### Separation correction — current preparation, 2026-10-05
+
+The failed required attempt above remains historical evidence. Its two
+unchanged separation assertions are `test_privilege.py:PrivilegeCases.static`
+(no `privilege` dependency in production role modules) and
+`test_privilege_complete.py:LinuxCompleteCases.case_production` (same worker
+boundary). The retained latter assertion printed a 35,177-character escaped
+worker source line; the log also retained a 21,323-character partial prior
+source dump. This is concrete evidence of traceback verbosity exceeding the
+64 KiB capture boundary, rather than inference from the overflow marker alone.
+The first complete traceback was not retained. Reporting has not been changed:
+fix the boundary failures, then check the unchanged bounded runner once.
+
+Current code removes the policy import entirely from production worker code.
+`privilege.validation:prepare_text_inference_plan` observes the existing current
+`policy_hash()` in the existing preparation layer and delegates to
+`roles.worker:prepare_text_inference` with that digest as data. This is a
+one-way preparation dependency; the worker does not load the preparation layer,
+directly, indirectly, lazily or through a proxy. The worker validates the digest
+as exactly 64 lowercase hexadecimal characters and includes it in the canonical
+invocation binding. A caller may construct equivalent declared data, but that
+cannot satisfy admission. No policy observer was moved into another production
+module, and no new positive-evidence producer or activation seam was added.
+
+The closed website request schema, bounded canonical JSON, fixed argv/profile,
+reference-only credential metadata, environment allowlist and pre-launch
+rejection remain in the worker. All three worker entry points reject the fixed
+profile or reserved executable before environment delivery, resource setup or
+launch; caller-provided hashes, stale/forged claims and booleans do not change
+that decision. Existing model/ordinary worker policy, lease, cancellation and
+cleanup behavior are preserved. A focused test now exercises the preparation
+layer's observed policy digest separately from the worker's declared digest
+consumer, including schema rejection and changed-digest binding. The new tests
+use the package-qualified worker namespace shared by the preparation wrapper,
+so safe exceptions are checked against the actual producing class.
+
+Only request/configuration validation and unconditional pre-launch rejection
+are implemented controls. Filesystem secrecy, independent action restrictions,
+narrow credential delivery, qualified activation, exact invocation consumption
+and cancellation/cleanup evidence for this intended runtime lack producers.
+Resource/time/response budgets remain prepared configuration while activation
+is rejected. Actual upstream request/retry/token/cost enforcement is unavailable.
+No credentials or live clients were used. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. The next producer integration dependency described
+above remains unchanged; this separation correction does not qualify it.
+
+
+### Separation correction required verification — PASS, 2026-10-05
+
+The two original separation regressions remain unchanged and passed. Focused
+and affected checks passed: 36 tests in 13.874 seconds, covering those assertions,
+text-inference schema/binding/rejection, actual copied-target pytest reporting,
+controller progress, model profiles, package/identity, lease and worker cleanup
+compatibility. An initial focused run exposed a test exception-class mismatch
+between module aliases; the new test now imports the package-qualified worker
+used by its preparation producer. No separation assertion was changed.
+
+Exactly one subsequent required `/root/agent-stack/bin/freeagent-test` attempt
+used the established `.venv-orchestrator/bin/python3 -m unittest discover`.
+Authoritative outcome: **590 tests, 360.581 seconds, OK, RESULT=PASS,
+EXIT_CODE=0**. Wrapper 362.540611148 seconds; output 8,884 bytes. No timeout or
+truncation. Correcting the separation failures resolved output overflow in this
+run without any reporting change. This does not guarantee that future failure
+tracebacks fit; the unchanged 64 KiB bound and overflow rejection still apply.
+Controller compact/target verbose reporting and named-test assertions remain
+intact. Deadlines and resource controls are unchanged; disk fixture passed.
+
+Private evidence: `/tmp/freeagent-text-separation-required-v9jkzyz3`.
+Required-log SHA-256:
+`33080fd3fd6f69ad143dc1c19518471940f76a385436c919a4f30acd21a0234d`.
+Source-before/source-after SHA-256 (identical):
+`b6bf3691cf06f7730b8542fc4dc0ae7324b76cb3a36869a60d40309b05ab8173`.
+Progress SHA-256:
+`915e925e367c2bfc1f070300b831606b1f2165f197ad46c0e9df201c32a66d9a`.
+Invocation/configuration SHA-256:
+`ae5d82cb507fbed019af69a4785472f17752aaeccf0d3b5e1ec66eafd3be07c1`.
+
+Invocation activated only the existing development observer with
+`PYTHONPATH=/root/agent-stack/devtools/controller_progress`,
+`FREEAGENT_CONTROLLER_PROGRESS_DIR=/tmp/freeagent-text-separation-required-v9jkzyz3`,
+`FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`
+and
+`FREEAGENT_PACKAGE_FIXTURE_PYTHON=/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`.
+Inherited normal umask was preserved. No dependencies were acquired or installed
+into an established runtime. The 420-second required deadline, 64 KiB capture
+rejection and six-second inner disk deadline were unchanged.
+
+All 182 selected source files matched before/after and current bytes before
+these result-only documentation additions. Coverage selection/omissions are
+unchanged from the failed run and enumerated in coverage.json: tracked Python/
+TOML/lock/C sources, bin/ and guidance, explicit proposal documents and the new
+text-inference test. Installed dependencies, interpreter/base binaries, other
+untracked/ignored material, credentials/runtime state and actual read sets are
+not independently attested. Result documentation is subsequent to tested bytes.
+Observer: 594 matched test intervals (four intentional nested cases), 985 matched
+subcase intervals, 3,771 records / 545,492 bytes, diagnostic_error null and
+PROCESS_END. Observer totals do not replace authoritative unittest counts.
+Recorded runner/unittest PIDs were absent afterward, owned groups empty, and
+no matching fixture mounts remained in bounded observations. No unowned cgroups
+were inspected/mutated; historical cleanup/global descendant absence and disk
+timeout causation remain unproven.
+
+This verifies deterministic preparation and unconditional admission rejection,
+not filesystem secrecy, action enforcement, credential delivery, activation or
+upstream request/token/cost enforcement. Their trusted producers remain absent.
+Implementation/tests are unchanged after the run; only this result record was
+appended. Changes remain unstaged/uncommitted for review. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. No independent review or live qualification is claimed.
+
+
+### Reviewed preparation hardening — reconciliation, 2026-10-05
+
+The separation snapshot received a source-only PASS (manifest
+`9a27044eb72ee29d59c7b54ab597fbe4cd4ff5474fc6a45b21dbf26c65550021`).
+This does not independently reproduce execution or qualify live inference.
+
+Confirmed by baseline regressions: ordinary multibyte fields could exceed
+512/8192-byte intent while remaining below the aggregate 48 KiB cap; malformed
+run/contract/snapshot/guidance identities could construct a plan; malformed
+inner commands could reach resource setup. UTF-8 encoded byte checks now use
+the existing limits and convert encoding errors to TEXT_INFERENCE_REQUEST_INVALID.
+Source/guidance newlines and tabs remain valid data; no blanket control-character
+filter was added. Producer Session.run is uuid4().hex (32 lowercase hex),
+Session.contract and Snapshot.sha256 are SHA-256 hex, and GUIDANCE_SHA is pinned
+64 lowercase hex. These exact formats are checked, without claiming provenance,
+freshness, pinned-value agreement or authority from correctly shaped declarations.
+
+The inner worker now explicitly rejects non-list/empty commands, a missing or
+empty executable, non-string arguments and embedded NULs with WORKER_REQUEST_INVALID
+before policy/resource/environment/launch setup. A text profile still rejects
+unconditionally; a valid command naming the reserved executable still rejects
+under any profile. The reserved /runtime/bin/claude-free path intentionally
+collides with an otherwise configurable ordinary launcher: it is unavailable
+for ordinary model/research use while this preparation is disabled. The default
+claude-free launcher remains compatible. No configuration subsystem or bypass
+was added; the reserved executable guard was preserved.
+
+The preparation policy_sha256 binds source/policy identity supplied by the
+preparation layer. Actual worker cleanup evidence's policy_sha256 instead hashes
+the effective resource-policy dictionary. These domains have distinct producers
+and consumers; comparing digest inequality would not prove their separation.
+Comments at both sites now make this distinction explicit. The fixed text
+environment builder is preparation data only and is not consumed by an admitted
+launch. The ordinary worker still inherits its existing transport environment;
+future activation requires actual environment selection/enforcement and trusted
+credential provisioning. That integration remains deferred and disabled.
+
+All three text admission gates remain unconditional rejection. Runtime identity,
+visibility exclusion, independent action restrictions, narrow credential delivery,
+qualified activation and cancellation/cleanup proof still lack trusted producers.
+Upstream request/token/cost enforcement remains unproven. Resource/output/time
+limits, leases, cleanup, policy-source identity, ordinary profiles and reporting
+contracts remain unchanged. B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+
+### Preparation hardening verification — BLOCKED, 2026-10-05
+
+Before implementation, four new focused cases were run against the reviewed
+worktree. Byte-bound, identity-format and inner-command families reproduced
+acceptance/setup gaps. The first reserved-launcher case lacked the planner's
+required schema argument (test setup error); correcting that fixture yielded a
+PASS without changing application behavior. Reservation/default compatibility
+is confirmed and intentionally preserved, not repaired by removing a guard.
+
+After hardening, 61 focused/affected checks passed in 25.899 seconds. These
+include the two unchanged production separation regressions, the full policy
+identity case table, text-inference, model profiles, synthetic website proposals,
+worker resources/timing, actual copied pytest reporting and controller progress.
+Private focused-log SHA-256:
+`92d7902e09d6d6fc966068e6dc389752740be9244bb952e73f9e75a10f7ef855`.
+
+Exactly one required `/root/agent-stack/bin/freeagent-test` attempt used the
+established `.venv-orchestrator/bin/python3 -m unittest discover`, with the
+existing observer and development fixtures. RESULT=TIMEOUT, EXIT_CODE=124 at
+the unchanged 420-second runner deadline. Wrapper 420.383063155 seconds; captured
+log 709 bytes, no overflow. There was no final unittest count/duration/OK marker.
+The last observed start was
+`test_worker_resource.WorkerResourceTests.test_infinite_loop_times_out`
+at 418.469 seconds relative to observer startup; the last recorded completion was
+`test_worker_resource.WorkerResourceTests.test_fixer_timeout_with_proven_cleanup_cannot_verify`
+(PASS). One unmatched TEST interval identifies unfinished execution when the
+outer deadline fired; it does not establish a hang, per-test timeout defect,
+host contention or sole causation. Existing disk fixture and new hardening cases
+completed; no fixture/quota/deadline/reporting changes or retry were made.
+
+Evidence directory: `/tmp/freeagent-text-hardening-required-9waa1gjd`.
+Required-log SHA-256:
+`deaa2e7ba4abf606f0c900710c1ee969cafdb9ad1da0ea8e851400330f4b74ab`.
+Source-before/source-after SHA-256 (identical):
+`5bb7369964215a4acfbe90aa4bb81a5481a0ada4614f7e0a76765e7bfd6738cb`.
+Progress SHA-256:
+`bf7555fc9d3877f4f88b7eec67a49730a4a8d6c8cbbebe8bf982fd365264b7d2`.
+Invocation/configuration SHA-256:
+`595837cbe2e1e945cda6336608dffc1656729ab2eca4fdc6e2274a09aa33900e`.
+
+Activation was the existing controller_progress PYTHONPATH directory plus
+FREEAGENT_CONTROLLER_PROGRESS_DIR naming that evidence directory. Existing
+FREEAGENT_PYTEST_FIXTURE_PYTHON and FREEAGENT_PACKAGE_FIXTURE_PYTHON selected the
+same isolated development fixtures as the earlier separation run. Invocation.json
+records exact paths. No dependencies were downloaded/installed; normal inherited
+umask, compact/verbose reporting, 64 KiB capture rejection, resource controls,
+six-second inner disk deadline and 420-second required deadline were preserved.
+
+All 182 selected sources matched before/after. Selection covers tracked
+Python/TOML/lock/C, bin/, guidance and explicitly named proposal documents/new
+test; coverage.json enumerates included/excluded paths. Installed dependencies,
+interpreter/base binaries, other untracked/ignored files, credentials/runtime
+state and actual read sets remain unattested. Only this result documentation was
+appended after the attempt. Observer recorded 564 completed test intervals (with
+intentional nested synthetic runs), 1,026 completed subcase intervals, 3,834 records
+and 549,376 bytes. No PROCESS_END or shutdown result was available after termination;
+this diagnostic incompleteness is distinct from the runner timeout verdict.
+
+Recorded runner/unittest PIDs were absent afterward, their process groups empty
+and no matching fixture mounts were visible in the current bounded observation.
+No unowned cgroups were inspected or mutated. Historical cleanup, global descendant
+absence and disk-timeout causation remain unproven. Required verification remains
+BLOCKED; no commit/staging or additional attempt. The next verification decision
+must use retained progress evidence before authorizing another run; no change to
+limits or security checks is justified by this timeout alone. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. Live enforcement/evidence producers remain absent.
+
+
+### Unchanged hardening verification reconciliation — PASS, 2026-10-05
+
+The failed hardening log/manifests/progress and earlier separation PASS evidence
+were freshly hash-checked against their recorded identities. Completed shared
+interval comparison found foundation grew 103.386 -> 129.354 seconds (+25.969),
+attribution 11.097 -> 15.880 (+4.783), and contract 4.410 -> 8.228 (+3.818).
+The source_bound_exports subcase grew 52.460 -> 66.626 (+14.166) inside foundation;
+these inclusive/nested times must not be added together. The four added hardening
+tests consumed 0.133 seconds total in the failed run. Repeated generic subcase
+labels do not identify unique phases; comparison.json records them as inclusive
+aggregates, not exclusive costs. Failed-run completed tests omit later unfinished/
+unstarted tests, so these comparisons are not a whole-suite cost decomposition.
+Shared-test growth dominates added-test cost; its cause remains unproven. Host
+contention, setup/I/O variability and other timing effects were not measured.
+
+The interrupted test's source path is execute -> run_worker -> _run_worker_impl
+-> namespace inner worker -> _run_inner -> ActivityLease/_read_worker_streams
+-> _stop_scope -> _validate_evidence. It launches only the existing synthetic
+Python infinite-loop fixture, with a two-second timeout, no activity grace,
+ordinary model resource policy (CPU 100000/100000, memory 1536 MiB, swap zero,
+64 processes, 256 descriptors, 128 MiB per-file, 256 KiB worker capture), and
+one-second termination grace. Its assertions require confirmed cleanup, zero
+remaining processes, enforced cgroup/resource controls, timeout evidence and
+child result 124. Setup/collection/cleanup add time outside the two-second lease.
+New inner shape validation is on this path, but the valid three-string command
+passes it; neither text preparation nor the reserved path/profile is selected.
+No lease, quota, timeout, cleanup or result-classification operation was changed.
+The test completed in 2.201 seconds in the historical passing run but started at
+418.469 seconds in the failed run (70.235 seconds later). The outer 420-second
+runner deadline interrupted an interval whose normal duration exceeded the
+approximately remaining time; this is not a demonstrated test defect or hang.
+
+After bounded current preflight found recorded PIDs absent, groups empty, no
+relevant current verification jobs or matching fixture mounts, exactly one
+isolated invocation ran:
+`.venv-orchestrator/bin/python3 -m unittest test_worker_resource.WorkerResourceTests.test_infinite_loop_times_out`.
+It passed: one test in 2.225 seconds, exit zero; wrapper 3.419552 seconds;
+98 captured bytes, no timeout/overflow, direct child reaped. Its private capture
+SHA-256 is `acc46ff005a5e7dd714312c903836939325e3ace867bd322872861ff7a18ea87`.
+The diagnostic wrapper bounded collection to 30 seconds/64 KiB without changing
+the fixture's worker lease/assertions. No retry or instrumentation change.
+
+That isolated PASS, distributed shared-test growth, absence of a reproduced
+correctness failure and a second clear current preflight supported the separately
+authorized one required attempt for unchanged implementation/test bytes.
+Actual command `/root/agent-stack/bin/freeagent-test` retained established
+`.venv-orchestrator/bin/python3 -m unittest discover`, 420-second runner deadline,
+64 KiB overflow rejection, existing discovery/reporting, disk diagnostics and
+six-second inner disk deadline. Explicit configuration:
+`PYTHONPATH=/root/agent-stack/devtools/controller_progress`,
+`FREEAGENT_CONTROLLER_PROGRESS_DIR=/tmp/freeagent-text-reconcile-jb0951e6/required`,
+`FREEAGENT_PYTEST_FIXTURE_PYTHON=/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3`,
+`FREEAGENT_PACKAGE_FIXTURE_PYTHON=/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`.
+Normal inherited umask unchanged; no dependencies installed or model calls made.
+
+Authoritative result: **594 tests, 406.257 seconds, OK, RESULT=PASS, EXIT_CODE=0**.
+Wrapper 408.770623943 seconds; captured output 8,883 bytes, no timeout/truncation.
+Wrapper duration is not exact runner deadline headroom. Observer: 598 completed
+test intervals (including four intentional nested tests), 1,026 completed subcase
+intervals, no unmatched intervals, PROCESS_END, diagnostic_error null, 3,902
+records / 562,015 bytes. Nested observer outcomes are not authoritative suite
+failure counts. Required verification passes; this later PASS does not establish
+the earlier slowdown/timeout cause or prove historical cleanup.
+
+Evidence directory: `/tmp/freeagent-text-reconcile-jb0951e6/required`.
+Required-log SHA-256:
+`5a908e62ce8f8ce03a83470e36fdd3ed83e5950fcd41ef3b04bf1128f800fc81`.
+Source-before/source-after SHA-256 (identical):
+`693f9040cfa7cfc6e9735e0d1e2308e4eb98bfd5e744e34923485d0c5ebefabe`.
+Progress SHA-256:
+`a433e36d07a63769e7020b6fae52c907e03f9c98e95e8232f939504b542e9906`.
+Invocation/configuration SHA-256:
+`84b11323fe68f01927693e19dd3acc542cb05bfdac2fa427ff9bd5475a80d078`.
+All 182 selected sources match before/after; all five pending-file hashes also
+matched their milestone starting identities before this result-only append.
+Coverage.json retains the selection: tracked Python/TOML/lock/C, bin/, guidance,
+and explicitly named proposal documents/test files. Ignored/unselected untracked
+material, installed/editable dependencies, interpreter/base binaries, credentials/
+runtime state and the actual dependency/read set are not independently attested.
+
+Current observations found recorded isolated/runner/unittest PIDs absent, their
+process groups empty, and no matching fixture mounts visible. No unowned cgroups
+were inspected/mutated; this is bounded current evidence, not global descendant
+absence or historical cleanup proof. All implementation/test bytes remain
+unchanged; only this documentation was appended. Nothing staged or committed.
+B10 PARTIAL; STAGE31D_AUTHORIZED: NO. Live runtime visibility, action enforcement,
+credential provisioning, qualified activation, protected identity/cleanup evidence
+and upstream request/token/cost enforcement remain incomplete.
+
+
+### Independent hardening review disposition — PASS, 2026-10-05
+
+Independent hardening source review: **PASS, no blocking findings**. The reviewed
+snapshot manifest is `64ef7e8ed05f79f642e3daea6503590ebc4d5eee257e81854c4084b5949aeb01`;
+hardening-delta SHA-256 is
+`70a3fefc80cf9d7b34182e0f792e93c978e4877098a7a593080c24d4eaf48777`.
+The verdict covers preparation/separation only, not runtime enforcement or
+live qualification. Recorded required verification remains 594 tests,
+406.257 seconds, RESULT=PASS, EXIT_CODE=0; no tests were rerun for this disposition.
+
+Non-blocking follow-up, deferred: outer ordinary-worker command validation
+permits an empty executable or embedded NUL to reach inner rejection, causing
+unnecessary unshare/interpreter setup and error-code inconsistency. A future
+correction should share command validation before outer setup, with regressions
+preserving valid empty non-first arguments and reserved-executable rejection.
+This commit does not implement that correction. Admission remains closed;
+live enforcement/evidence producers remain incomplete. Selected-source binding
+is not independent dependency/read-set attestation. Prior failed attempts and
+historical timeout/cleanup uncertainty remain recorded above. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.
