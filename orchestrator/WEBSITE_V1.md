@@ -378,3 +378,32 @@ runtime closure and descendant absence remain UNPROVEN. Protected publication,
 credential lifecycle and real backend/removal integration remain incomplete.
 Historical root-run verification statements above retain their original scope.
 **B10: PARTIAL. STAGE31D_AUTHORIZED: NO.**
+
+## Installed recorded CLI packaging preparation — 2026-10-05
+
+The existing pyproject.toml package list and package-data rules already include
+all project modules needed by recorded content checks and pinned guidance,
+license/notices/provenance. Fresh wheel inspection found no omission requiring
+an application or packaging-layout change. Offline installed-console/resource
+regressions and fixed-condition build comparison are in
+`test_installed_package.py`; the build/development prerequisite and proposed
+later non-root offline installation are documented in
+`../PACKAGING_VERIFICATION.md`. Existing entrypoint, broker, guidance identities,
+ordinary command paths and live-launch gates are unchanged.
+
+Installed development checks use help/invalid-input dispatch and direct resource
+and content checking; they do not constitute another non-root preparation
+qualification. Source-layout qualification above is preserved. Installed-package
+qualification and live execution remain UNPROVEN; B10 PARTIAL and
+STAGE31D_AUTHORIZED: NO. Verification results are recorded separately.
+
+Packaging verification result: focused installed-wheel/website/runtime/pytest
+checks passed (41 tests, 35.556s), as did affected read-policy/progress checks
+(39 tests, 4.363s). Exactly one required run passed: **572 tests, 357.648s,
+RESULT=PASS, EXIT_CODE=0**; wrapper 359.416s, no timeout or truncation. All 207
+selected files matched afterward; only result documentation was then appended.
+The bounded observer had no unmatched intervals or diagnostic failure. See
+PACKAGING_VERIFICATION.md for artifact, source/log hashes, development-runtime
+separation and the proposed later installed-console attempt. No new normal-user
+qualification was run. Installed/live scope remains UNPROVEN; B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.

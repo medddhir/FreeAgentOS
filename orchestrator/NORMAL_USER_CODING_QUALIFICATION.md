@@ -312,3 +312,29 @@ runtime closure and descendant absence remain UNPROVEN. Protected publication,
 credential lifecycle and real backend/removal integration remain incomplete.
 Historical root-run verification statements above retain their original scope.
 **B10: PARTIAL. STAGE31D_AUTHORIZED: NO.**
+
+## Installed-package preparation update — 2026-10-05
+
+A fresh wheel from the existing package layout includes the recorded-path
+modules, guidance/license/provenance and normal console entrypoint. No concrete
+packaging membership defect justified changing application code or pyproject.toml.
+The next bounded step is offline installed-console qualification, after separate
+authorization, using a fresh normal-user fixture and identified project/runtime
+wheels rather than editable source. See `../PACKAGING_VERIFICATION.md` for the
+explicit development-only packaging checks and proposed single attempt.
+
+The already qualified source fixture and both retained attempts are untouched.
+Packaging regressions do not grant permission or installed/live qualification.
+Installed-package behavior, live coding, browsers/functional checks, hostile
+isolation and descendant absence remain UNPROVEN. B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO.
+
+Packaging preparation's single required run passed: 572 tests in 357.648s,
+RESULT=PASS, EXIT_CODE=0; 207 selected source files matched afterward, with no
+timeout/truncation or progress diagnostic failure. Only result documentation
+changed afterward. Fixed-condition duplicate wheel builds matched; installed
+help/resource/content checks passed in a separate UID-0 development fixture.
+This supports packaging preparation, not installed non-root or live execution
+qualification. Artifact/evidence identities and the proposed later single
+installed-console attempt are in PACKAGING_VERIFICATION.md. No implementation
+or execution gate changed, and no new source-layout attempt was performed.
