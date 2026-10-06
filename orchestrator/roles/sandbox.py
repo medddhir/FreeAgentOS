@@ -1,8 +1,10 @@
 """Run target tests in a networkless chroot with only disposable target files."""
 
 import ctypes
+import errno
 import hashlib
 import json
+import math
 import os
 import re
 import resource
@@ -315,6 +317,9 @@ def _event_values(path):
 DISK_DIAGNOSTIC_FILE = "freeagent-disk-progress.jsonl"
 DIAGNOSTIC_BYTES = 8192
 DIAGNOSTIC_RECORDS = 40
+RETENTION_BYTES = 32 * 1024
+RETENTION_RECORDS = DIAGNOSTIC_RECORDS
+RETENTION_FILE_PREFIX = "disk-diagnostic-"
 CPU_DIAGNOSTIC_KEYS = ("usage_usec", "user_usec", "system_usec", "nr_periods",
                        "nr_throttled", "throttled_usec")
 
@@ -377,6 +382,555 @@ def _disk_progress(rootfs):
         return {"status": "CHILD_REPORTED", "records": records}
     except (OSError, ValueError, TypeError, UnicodeError):
         return {"status": "MISSING_OR_INVALID"}
+
+
+class _DiagnosticRetentionError(ValueError):
+    """A fixed, safe diagnostic-retention failure code."""
+
+    def __init__(self, code, artifact=None):
+        super().__init__(code)
+        self.code = code
+        self.artifact = artifact
+
+
+def _retention_error(code, artifact=None):
+    raise _DiagnosticRetentionError(code, artifact)
+
+
+def _retention_integer(value, *, maximum=2 ** 63 - 1):
+    if type(value) is not int or not 0 <= value <= maximum:
+        _retention_error("DIAGNOSTIC_VALUE_INVALID")
+    return value
+
+
+def _retention_number(value):
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value < 2 ** 63:
+        _retention_error("DIAGNOSTIC_VALUE_INVALID")
+    return value
+
+
+def _retention_sample(sample):
+    if type(sample) is not dict or sample.get("status") not in ("OBSERVED", "UNAVAILABLE"):
+        _retention_error("DIAGNOSTIC_SAMPLE_INVALID")
+    if sample["status"] == "UNAVAILABLE":
+        return {"status": "UNAVAILABLE"}
+    cpu_stat = sample.get("cpu_stat")
+    if type(cpu_stat) is not dict:
+        _retention_error("DIAGNOSTIC_SAMPLE_INVALID")
+    return {
+        "status": "OBSERVED",
+        "monotonic": _retention_number(sample.get("monotonic")),
+        "cpu_stat": {key: _retention_integer(cpu_stat.get(key)) for key in CPU_DIAGNOSTIC_KEYS},
+        "available_bytes": _retention_integer(sample.get("available_bytes")),
+        "available_inodes": _retention_integer(sample.get("available_inodes")),
+    }
+
+
+def _retention_cpu_delta(delta):
+    if delta is None:
+        return None
+    if type(delta) is not dict:
+        _retention_error("DIAGNOSTIC_CPU_DELTA_INVALID")
+    return {key: _retention_integer(delta.get(key)) for key in CPU_DIAGNOSTIC_KEYS}
+
+
+def _retention_progress(progress):
+    if type(progress) is not dict or progress.get("status") not in ("CHILD_REPORTED", "MISSING_OR_INVALID"):
+        _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+    if progress["status"] == "MISSING_OR_INVALID":
+        return {"status": "MISSING_OR_INVALID"}
+    records = progress.get("records")
+    if type(records) is not list or not 1 <= len(records) <= RETENTION_RECORDS:
+        _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+    retained = []
+    for record in records:
+        if type(record) is not dict:
+            _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+        phased = set(record) == {"phase", "monotonic", "written_bytes", "demand", "category"}
+        legacy = set(record) == {"phase", "monotonic", "written_bytes"}
+        allowed_phases = ("test_start", "write", "complete", "write_error")
+        allocation_phases = ("reservation_before", "reservation_after",
+                             "fallback_before", "fallback_after")
+        if not (phased or legacy) or record.get("phase") not in (
+                allowed_phases + (allocation_phases if phased else ())):
+            _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+        if phased and (type(record.get("demand")) is not int
+                       or not 0 <= record["demand"] <= 6
+                       or record.get("category") not in ("NONE", "OK", "ENOSPC",
+                                                          "UNSUPPORTED", "UNEXPECTED", "INVALID")):
+            _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+        retained_record = {
+            "phase": record["phase"],
+            "monotonic": _retention_number(record.get("monotonic")),
+            "written_bytes": _retention_integer(record.get("written_bytes"),
+                                                 maximum=360 * MIB),
+        }
+        if phased:
+            retained_record.update(demand=record["demand"], category=record["category"])
+        if retained and (retained_record["monotonic"] < retained[-1]["monotonic"]
+                         or retained_record["written_bytes"] < retained[-1]["written_bytes"]):
+            _retention_error("DIAGNOSTIC_PROGRESS_INVALID")
+        retained.append(retained_record)
+    return {"status": "CHILD_REPORTED", "records": retained}
+
+
+def _retention_memory_readings(readings):
+    if type(readings) is not list or len(readings) != len(MEMORY_DIAGNOSTIC_FILES):
+        _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+    expected = {name: (kind, keys) for name, kind, keys in MEMORY_DIAGNOSTIC_FILES}
+    retained = []
+    seen = set()
+    for reading in readings:
+        if type(reading) is not dict:
+            _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+        name = reading.get("file")
+        if name in seen or name not in expected or reading.get("kind") != expected[name][0]:
+            _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+        status = reading.get("status")
+        if status not in ("OBSERVED", "UNAVAILABLE"):
+            _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+        retained_reading = {
+            "file": name,
+            "kind": reading["kind"],
+            "start": _retention_number(reading.get("start")),
+            "end": _retention_number(reading.get("end")),
+            "status": status,
+        }
+        if retained_reading["end"] < retained_reading["start"]:
+            _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+        if status == "UNAVAILABLE":
+            if reading.get("values") is not None:
+                _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+            retained_reading["values"] = None
+        else:
+            values = reading.get("values")
+            if type(values) is not dict:
+                _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+            keys = expected[name][1]
+            if keys is None:
+                value = values.get("value")
+                if name == "memory.oom.group":
+                    value = _retention_integer(value, maximum=1)
+                elif value != "max":
+                    value = _retention_integer(value)
+                retained_reading["values"] = {"value": value}
+            elif name == "memory.pressure":
+                retained_reading["values"] = {
+                    key: (None if values.get(key) is None else _retention_integer(values[key]))
+                    for key in keys
+                }
+            else:
+                retained_reading["values"] = {
+                    key: (None if values.get(key) is None else _retention_integer(values[key]))
+                    for key in keys
+                }
+        retained.append(retained_reading)
+        seen.add(name)
+    if seen != set(expected):
+        _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+    return retained
+
+
+def _retention_memory_deltas(deltas):
+    if type(deltas) is not dict:
+        _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+    retained = {}
+    for name, keys in (("memory.stat", MEMORY_COUNTERS),
+                       ("memory.events", MEMORY_EVENTS),
+                       ("memory.events.local", MEMORY_EVENTS),
+                       ("memory.pressure", ("some", "full"))):
+        values = deltas.get(name)
+        if type(values) is not dict:
+            _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+        retained[name] = {
+            key: (None if values.get(key) is None else _retention_integer(values[key]))
+            for key in keys
+        }
+    return retained
+
+
+def _retention_diagnostic(diagnostic):
+    if (type(diagnostic) is not dict
+            or type(diagnostic.get("schema_version")) is not int
+            or diagnostic["schema_version"] != 1):
+        _retention_error("DIAGNOSTIC_OBJECT_INVALID")
+    phases = diagnostic.get("phases")
+    phase_names = ("setup_start", "setup_complete", "launch_start", "launch_return",
+                   "wait_return", "result_collection")
+    if type(phases) is not dict or any(name not in phases for name in phase_names):
+        _retention_error("DIAGNOSTIC_PHASES_INVALID")
+    memory = diagnostic.get("memory")
+    if type(memory) is not dict:
+        _retention_error("DIAGNOSTIC_MEMORY_INVALID")
+    return {
+        "schema_version": 1,
+        "authority": "NONE",
+        "phases": {name: _retention_number(phases[name]) for name in phase_names},
+        "before": _retention_sample(diagnostic.get("before")),
+        "after": _retention_sample(diagnostic.get("after")),
+        "cpu_delta": _retention_cpu_delta(diagnostic.get("cpu_delta")),
+        "progress": _retention_progress(diagnostic.get("progress")),
+        "memory": {
+            "before": _retention_memory_readings(memory.get("before")),
+            "after": _retention_memory_readings(memory.get("after")),
+            "deltas": _retention_memory_deltas(memory.get("deltas")),
+        },
+    }
+
+
+class _RetentionDirectory:
+    def __init__(self, descriptors, path, *, created=False, private=True):
+        self.descriptors = descriptors
+        self.descriptor = descriptors[-1]
+        self.path = path
+        self.created = created
+        self.private = private
+        self.identities = [(os.fstat(fd).st_dev, os.fstat(fd).st_ino)
+                           for fd in descriptors]
+
+    def close(self):
+        descriptors, self.descriptors = self.descriptors, []
+        self.descriptor = None
+        error = None
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError as caught:
+                error = caught
+        if error is not None:
+            _retention_error("DIAGNOSTIC_DIRECTORY_CLOSE_FAILED")
+
+
+def _retention_absolute_path(destination):
+    if not isinstance(destination, (str, bytes, os.PathLike)):
+        _retention_error("DIAGNOSTIC_DESTINATION_TYPE_INVALID")
+    try:
+        value = os.fspath(destination)
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+        if not value:
+            _retention_error("DIAGNOSTIC_DESTINATION_INVALID")
+        path = Path(value)
+        if not path.is_absolute() or ".." in path.parts:
+            _retention_error("DIAGNOSTIC_DESTINATION_UNSAFE")
+        return path
+    except (OSError, TypeError, ValueError):
+        _retention_error("DIAGNOSTIC_DESTINATION_INVALID")
+
+
+def _retention_directory_info(info, *, private=False):
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in (0, os.getuid()):
+        _retention_error("DIAGNOSTIC_DESTINATION_UNSAFE")
+    if private:
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            _retention_error("DIAGNOSTIC_DESTINATION_UNSAFE")
+    elif (info.st_mode & 0o022
+          and not (info.st_uid == 0 and info.st_mode & stat.S_ISVTX)):
+        # Root-owned sticky temporary roots are safe ancestors, not private
+        # destinations. Untrusted owners and other shared writers are rejected.
+        _retention_error("DIAGNOSTIC_DESTINATION_UNSAFE")
+
+
+def _check_retention_directory(directory):
+    parts = directory.path.parts[1:]
+    for index, descriptor in enumerate(directory.descriptors):
+        held = os.fstat(descriptor)
+        _retention_directory_info(held, private=directory.private and
+                                  index == len(directory.descriptors) - 1)
+        if (held.st_dev, held.st_ino) != directory.identities[index]:
+            _retention_error("DIAGNOSTIC_DESTINATION_REPLACED")
+        if index:
+            visible = os.stat(parts[index - 1], dir_fd=directory.descriptors[index - 1],
+                              follow_symlinks=False)
+            if (not stat.S_ISDIR(visible.st_mode)
+                    or (visible.st_dev, visible.st_ino) != directory.identities[index]):
+                _retention_error("DIAGNOSTIC_DESTINATION_REPLACED")
+
+
+def _open_private_retention_directory(destination, *, private=True):
+    """Hold the no-follow ancestor chain as well as the validated leaf."""
+    path = _retention_absolute_path(destination)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptors = []
+    try:
+        descriptors.append(os.open(os.sep, flags))
+        _retention_directory_info(os.fstat(descriptors[-1]))
+        for component in path.parts[1:]:
+            descriptors.append(os.open(component, flags, dir_fd=descriptors[-1]))
+            _retention_directory_info(os.fstat(descriptors[-1]))
+        directory = _RetentionDirectory(descriptors, path, private=private)
+        _check_retention_directory(directory)
+        return directory
+    except _DiagnosticRetentionError:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        raise
+    except OSError as error:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        if error.errno in (errno.ENOTDIR, errno.ELOOP):
+            _retention_error("DIAGNOSTIC_DESTINATION_UNSAFE")
+        _retention_error("DIAGNOSTIC_DESTINATION_INVALID")
+    except (TypeError, ValueError):
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+        _retention_error("DIAGNOSTIC_DESTINATION_INVALID")
+
+
+def _retention_destination():
+    configured = os.environ.get("FREEAGENT_CONTROLLER_PROGRESS_DIR")
+    if configured is not None:
+        return _open_private_retention_directory(configured)
+    parent = _open_private_retention_directory(tempfile.gettempdir(), private=False)
+    created = False
+    try:
+        _check_retention_directory(parent)
+        name = "freeagent-disk-diagnostics-" + uuid.uuid4().hex
+        os.mkdir(name, mode=0o700, dir_fd=parent.descriptor)
+        created = True
+        child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                        dir_fd=parent.descriptor)
+        parent.descriptors.append(child)
+        parent.descriptor = child
+        parent.identities.append((os.fstat(child).st_dev, os.fstat(child).st_ino))
+        parent.path = parent.path / name
+        parent.private = parent.created = True
+        _check_retention_directory(parent)
+        return parent
+    except (OSError, ValueError, TypeError):
+        parent.close()
+        # Never remove a fallback directory by a re-resolved pathname. Even an
+        # empty, newly created directory remains explicitly scoped on failure.
+        artifact = {"partial_file": "NOT_CREATED",
+                    "fallback_directory": "RETAINED" if created else "NOT_CREATED"}
+        _retention_error("DIAGNOSTIC_DESTINATION_CREATE_FAILED", artifact)
+
+
+def _retention_object_identity(descriptor):
+    info = os.fstat(descriptor)
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
+        _retention_error("DIAGNOSTIC_RETENTION_OBJECT_UNSAFE")
+    return info.st_dev, info.st_ino
+
+
+def _remove_partial_retention(directory, name, identity, *, links=1):
+    try:
+        info = os.stat(name, dir_fd=directory.descriptor, follow_symlinks=False)
+        if (identity is None or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != links
+                or (info.st_dev, info.st_ino) != identity):
+            return "RETAINED"
+        os.unlink(name, dir_fd=directory.descriptor)
+        return "REMOVED"
+    except FileNotFoundError:
+        return "ABSENT"
+    except OSError:
+        return "RETAINED"
+
+
+def _failure_artifact(directory, name, identity):
+    partial = _remove_partial_retention(directory, name, identity)
+    return {"partial_file": partial,
+            "fallback_directory": "RETAINED" if directory.created else "NOT_CREATED"}
+
+
+def _retention_payload_bytes(payload):
+    raw = (json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
+    if len(raw) > RETENTION_BYTES:
+        _retention_error("DIAGNOSTIC_RETENTION_BOUNDS")
+    return raw
+
+
+def _write_retention_payload(raw, invocation_id, directory):
+    final_name = RETENTION_FILE_PREFIX + invocation_id + ".json"
+    partial_name = final_name + ".partial"
+    descriptor = None
+    identity = None
+    created = False
+    try:
+        _check_retention_directory(directory)
+        descriptor = os.open(partial_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                             os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
+                             dir_fd=directory.descriptor)
+        created = True
+        identity = _retention_object_identity(descriptor)
+        offset = 0
+        while offset < len(raw):
+            count = os.write(descriptor, raw[offset:])
+            if count <= 0:
+                raise OSError("DIAGNOSTIC_RETENTION_WRITE_FAILED")
+            offset += count
+    except FileExistsError:
+        _retention_error("DIAGNOSTIC_DESTINATION_EXISTS")
+    except _DiagnosticRetentionError as error:
+        artifact = (_failure_artifact(directory, partial_name, identity)
+                    if created else {"partial_file": "NOT_CREATED",
+                                     "fallback_directory": "RETAINED" if directory.created
+                                     else "NOT_CREATED"})
+        _retention_error(error.code, artifact)
+    except (OSError, TypeError, ValueError):
+        artifact = (_failure_artifact(directory, partial_name, identity)
+                    if created else {"partial_file": "NOT_CREATED",
+                                     "fallback_directory": "RETAINED" if directory.created
+                                     else "NOT_CREATED"})
+        _retention_error("DIAGNOSTIC_RETENTION_WRITE_FAILED", artifact)
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                if identity is not None:
+                    artifact = _failure_artifact(directory, partial_name, identity)
+                    _retention_error("DIAGNOSTIC_RETENTION_CLOSE_FAILED", artifact)
+    try:
+        _check_retention_directory(directory)
+        info = os.stat(partial_name, dir_fd=directory.descriptor, follow_symlinks=False)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                or (info.st_dev, info.st_ino) != identity or info.st_size != len(raw)):
+            _retention_error("DIAGNOSTIC_RETENTION_OBJECT_REPLACED")
+        os.link(partial_name, final_name, src_dir_fd=directory.descriptor,
+                dst_dir_fd=directory.descriptor, follow_symlinks=False)
+    except FileExistsError:
+        artifact = _failure_artifact(directory, partial_name, identity)
+        _retention_error("DIAGNOSTIC_DESTINATION_EXISTS", artifact)
+    except _DiagnosticRetentionError as error:
+        artifact = _failure_artifact(directory, partial_name, identity)
+        _retention_error(error.code, artifact)
+    except (OSError, TypeError, ValueError):
+        artifact = _failure_artifact(directory, partial_name, identity)
+        _retention_error("DIAGNOSTIC_RETENTION_PUBLISH_FAILED", artifact)
+    temporary_alias = _remove_partial_retention(directory, partial_name, identity, links=2)
+    return {"status": "RETAINED", "path": str(directory.path / final_name),
+            "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
+            "invocation_id": invocation_id, "temporary_alias": temporary_alias}
+
+
+def _retention_invocation_id(value=None):
+    value = uuid.uuid4().hex if value is None else value
+    if type(value) is not str or not re.fullmatch(r"[0-9a-f]{32}", value):
+        _retention_error("DIAGNOSTIC_INVOCATION_INVALID")
+    return value
+
+
+def _retain_disk_diagnostics(result, runner_sha256, timeout, destination=None, invocation_id=None):
+    """Exclusively retain a bounded projection before the fixture sees result.
+
+    The input is existing controller evidence. Only fixed fields are copied;
+    child progress remains explicitly CHILD_REPORTED and never becomes authority.
+    """
+    if type(result) is not dict or type(result.get("evidence")) is not dict:
+        _retention_error("DIAGNOSTIC_RESULT_INVALID")
+    if type(runner_sha256) is not str or not re.fullmatch(r"[0-9a-f]{64}", runner_sha256):
+        _retention_error("DIAGNOSTIC_INVOCATION_INVALID")
+    if type(timeout) is not int or not 0 <= timeout <= RESOURCE_POLICY["wall_timeout_seconds"]:
+        _retention_error("DIAGNOSTIC_INVOCATION_INVALID")
+    invocation_id = _retention_invocation_id(invocation_id)
+    exit_code = result.get("exit_code")
+    if type(exit_code) is not int or not 0 <= exit_code <= 255:
+        _retention_error("DIAGNOSTIC_RESULT_INVALID")
+    if result.get("result") not in ("PASS", "FAIL", "RESOURCE_LIMIT", "TIMEOUT"):
+        _retention_error("DIAGNOSTIC_RESULT_INVALID")
+    if type(result.get("isolated")) is not bool:
+        _retention_error("DIAGNOSTIC_RESULT_INVALID")
+    diagnostic = _retention_diagnostic(result["evidence"].get("disk_diagnostics"))
+    payload = {
+        "schema_version": 1,
+        "invocation": {"id": invocation_id, "pid": os.getpid(),
+                        "runner_sha256": runner_sha256, "timeout_seconds": timeout},
+        "authority": {"controller_observations": "CONTROLLER_OBSERVED",
+                       "child_progress": "CHILD_REPORTED", "qualification": "NONE"},
+        "outcome": {"exit_code": exit_code, "result": result["result"],
+                    "isolated": result["isolated"]},
+        "diagnostic": diagnostic,
+    }
+    raw = _retention_payload_bytes(payload)
+    directory = (_open_private_retention_directory(destination)
+                 if destination is not None else _retention_destination())
+    try:
+        report = _write_retention_payload(raw, invocation_id, directory)
+    finally:
+        directory.close()
+    records = diagnostic["progress"].get("records", [])
+    report.update(records=len(records), authority="CONTROLLER_OBSERVED/CHILD_REPORTED")
+    return report
+
+
+def _retain_post_evidence_guard(metadata, runner_sha256, timeout, destination=None):
+    if type(metadata) is not dict:
+        _retention_error("DIAGNOSTIC_GUARD_METADATA_INVALID")
+    if type(runner_sha256) is not str or not re.fullmatch(r"[0-9a-f]{64}", runner_sha256):
+        _retention_error("DIAGNOSTIC_INVOCATION_INVALID")
+    if type(timeout) is not int or not 0 <= timeout <= RESOURCE_POLICY["wall_timeout_seconds"]:
+        _retention_error("DIAGNOSTIC_INVOCATION_INVALID")
+    invocation_id = _retention_invocation_id()
+    payload = {
+        "schema_version": 1,
+        "kind": "POST_EVIDENCE_RESULT_GUARD",
+        "invocation": {"id": invocation_id, "pid": os.getpid(),
+                        "runner_sha256": runner_sha256, "timeout_seconds": timeout},
+        "authority": "NONE",
+        "guard": {
+            "child_returncode": metadata.get("child_returncode"),
+            "child_pid": metadata.get("child_pid"),
+            "marker_present": metadata.get("marker_present"),
+            "marker_count": metadata.get("marker_count"),
+            "capture_total_bytes": metadata.get("capture_total_bytes"),
+            "capture_retained_bytes": metadata.get("capture_retained_bytes"),
+            "capture_sha256": metadata.get("capture_sha256"),
+            "output_truncated": metadata.get("output_truncated"),
+            "branch": metadata.get("branch"),
+            "source_sha256": metadata.get("source_sha256", "UNAVAILABLE"),
+        },
+    }
+    raw = _retention_payload_bytes(payload)
+    directory = (_open_private_retention_directory(destination)
+                 if destination is not None else _retention_destination())
+    try:
+        return _write_retention_payload(raw, invocation_id, directory)
+    finally:
+        directory.close()
+
+
+def _post_evidence_guard(process, capture, output, runner_sha256, timeout,
+                         disk_diagnostics):
+    markers = [line for line in output.splitlines() if line.startswith("RESULT=")]
+    invalid_return = process.returncode not in (0, 1, 3, 124)
+    missing_marker = not markers
+    branch = ("RETURN_CODE_INVALID_AND_RESULT_MARKER_ABSENT" if invalid_return and missing_marker
+              else "RETURN_CODE_INVALID" if invalid_return else "RESULT_MARKER_ABSENT")
+    rendered = capture.render()
+    try:
+        source_sha256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    except OSError:
+        source_sha256 = "UNAVAILABLE"
+    metadata = {
+        "child_returncode": process.returncode if type(process.returncode) is int else None,
+        "child_pid": process.pid if type(process.pid) is int else None,
+        "marker_present": bool(markers), "marker_count": len(markers),
+        "capture_total_bytes": min(capture.total_bytes, 2 ** 63 - 1),
+        "capture_retained_bytes": len(rendered),
+        "capture_sha256": hashlib.sha256(rendered).hexdigest(),
+        "output_truncated": bool(capture.truncated or "OUTPUT_TRUNCATED=true" in output),
+        "branch": branch, "source_sha256": source_sha256,
+    }
+    if disk_diagnostics is True:
+        try:
+            _retain_post_evidence_guard(metadata, runner_sha256, timeout)
+        except Exception:
+            pass
+    raise RuntimeError("ISOLATED_SANDBOX_SETUP_FAILED")
+
+
+def _retention_failure(error):
+    if isinstance(error, _DiagnosticRetentionError):
+        result = {"status": "ERROR", "code": error.code}
+        if error.artifact is not None:
+            result["artifact"] = error.artifact
+        return result
+    return {"status": "ERROR", "code": "DIAGNOSTIC_RETENTION_FAILED"}
 
 
 def _cpu_delta(before, after):
@@ -574,7 +1128,14 @@ def run_isolated(workspace, run_dir, runner_sha256, timeout=150, *, disk_diagnos
     control = Path(run_dir) / "controller"
     test_area = Path(tempfile.mkdtemp(prefix="test-copy-", dir=control))
     try:
-        return _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area, disk_diagnostics)
+        result = _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area, disk_diagnostics)
+        if disk_diagnostics is True:
+            try:
+                retained = _retain_disk_diagnostics(result, runner_sha256, timeout)
+            except Exception as error:
+                retained = _retention_failure(error)
+            result["evidence"]["disk_diagnostics_retention"] = retained
+        return result
     finally:
         if test_area.exists() and shutil.rmtree.avoids_symlink_attacks:
             # The sandbox runs as nobody and may leave directories owned by
@@ -667,6 +1228,8 @@ def _run_isolated_in_area(workspace, run_dir, runner_sha256, timeout, test_area,
     output = "\n".join(line for line in output.splitlines() if not line.startswith(EVIDENCE_PREFIX))
     markers = [line for line in output.splitlines() if line.startswith("RESULT=")]
     if process.returncode not in (0, 1, 3, 124) or not markers:
+        if disk_diagnostics is True:
+            _post_evidence_guard(process, capture, output, runner_sha256, timeout, True)
         raise RuntimeError("ISOLATED_SANDBOX_SETUP_FAILED")
     return {"exit_code": process.returncode, "output": output,
             "result": markers[-1].partition("=")[2] if markers else "MISSING_RESULT",

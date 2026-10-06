@@ -15,6 +15,52 @@ import model_qualification as qualification
 import test_contract as contract
 
 
+def parser_test_environment(headers, session_id, token):
+    """Hermetic parser-only fixture; ambient Node/loader settings are not input."""
+    return {'PATH': '/usr/bin:/bin', 'ANTHROPIC_CUSTOM_HEADERS': headers,
+            'TEST_SESSION': session_id, 'TEST_TOKEN': token}
+
+
+def parser_check_script(parser):
+    return ('function I0(){return false}function wbn(){return null}function t(){}' + parser +
+            ';let h=$at();if(h["X-FreeAgentOS-Attribution-Session"]!==process.env.TEST_SESSION)process.exit(2);'
+            'if(h["X-FreeAgentOS-Attribution-Token"]!==process.env.TEST_TOKEN)process.exit(3);')
+
+
+def retain_parser_observation(checked, script):
+    """Opt-in private test diagnostics; never retain environment values."""
+    import hashlib
+    import os
+    import stat
+    destination = os.environ.get('FREEAGENT_ATTRIBUTION_TEST_DIAGNOSTICS_DIR')
+    if destination is None:
+        return
+    directory = Path(destination)
+    info = directory.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700 or directory != directory.resolve(strict=True)):
+        raise ValueError('PRIVATE_PARSER_DIAGNOSTICS_REQUIRED')
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        metadata = {'argv': ['/usr/bin/node', '-e', '<script-sha256>'],
+                    'script_sha256': hashlib.sha256(script.encode()).hexdigest(),
+                    'returncode': checked.returncode, 'streams': {}}
+        for name in ('stdout', 'stderr'):
+            raw = getattr(checked, name)
+            metadata['streams'][name] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                                         'retained_bytes': min(len(raw), 8192), 'truncated': len(raw) > 8192}
+            output = os.open('parser-' + name + '.bin', os.O_WRONLY | os.O_CREAT |
+                             os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=fd)
+            with os.fdopen(output, 'wb') as stream:
+                stream.write(raw[:8192])
+        output = os.open('parser-metadata.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=fd)
+        with os.fdopen(output, 'w') as stream:
+            json.dump(metadata, stream, sort_keys=True)
+    finally:
+        os.close(fd)
+
+
 class I(unittest.TestCase):
     def test(self):
         # Grouped to preserve the existing trusted runner's bounded verbose output.
@@ -166,9 +212,10 @@ class I(unittest.TestCase):
         self.assertIn(b'ne=$at(),ge=',binary);self.assertIn(b'defaultHeaders:ge',binary)
         wrapper=Path('/usr/local/bin/claude-free').read_text()
         self.assertIn('exec claude "$@"',wrapper);self.assertNotIn('unset ANTHROPIC_CUSTOM_HEADERS',wrapper)
-        script='function I0(){return false}function wbn(){return null}function t(){}'+parser+';let h=$at();if(h["X-FreeAgentOS-Attribution-Session"]!==process.env.TEST_SESSION)process.exit(2);if(h["X-FreeAgentOS-Attribution-Token"]!==process.env.TEST_TOKEN)process.exit(3);'
-        parser_env={**os.environ,'ANTHROPIC_CUSTOM_HEADERS':attribution.transport_environment(transport)['ANTHROPIC_CUSTOM_HEADERS'],'TEST_SESSION':sid,'TEST_TOKEN':'c'*64}
-        checked=subprocess.run(['/usr/bin/node','-e',script],env=parser_env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,timeout=5)
+        script=parser_check_script(parser)
+        parser_env=parser_test_environment(attribution.transport_environment(transport)['ANTHROPIC_CUSTOM_HEADERS'],sid,'c'*64)
+        checked=subprocess.run(['/usr/bin/node','-e',script],env=parser_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
+        retain_parser_observation(checked, script)
         self.assertEqual(checked.returncode,0);self.assertEqual(checked.stdout,b'')
 
 
@@ -282,3 +329,39 @@ class I(unittest.TestCase):
         self.assertEqual(projected['attribution_diagnostics']['request_count'],'UNAVAILABLE')
         self.assertEqual(projected['attribution_diagnostics']['projection_reason'],'UNAVAILABLE')
         self.assertEqual(attribution.safe_attribution_diagnostics(None),attribution.diagnostic_defaults())
+
+
+class ParserRuntimeTests(unittest.TestCase):
+    def parser(self):
+        binary = Path('/root/.local/share/claude/versions/2.1.284').read_bytes()
+        start = binary.index(b'function $at(){')
+        return binary[start:binary.index(b'var YLe=', start)].decode()
+
+    def execute(self, headers):
+        import subprocess
+        return subprocess.run(['/usr/bin/node', '-e', parser_check_script(self.parser())],
+                              env=parser_test_environment(headers, 'a' * 32, 'c' * 64),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+
+    def test_ambient_runtime_options_cannot_change_parser_fixture(self):
+        import os
+        with patch.dict(os.environ, {'NODE_OPTIONS': '--invalid-fixture-node-option',
+                                     'NODE_PATH': '/untrusted/fixture', 'LD_PRELOAD': '/untrusted/fixture',
+                                     'TEST_SESSION': 'ambient', 'TEST_TOKEN': 'ambient'}):
+            env = parser_test_environment('fixed headers', 'a' * 32, 'c' * 64)
+            self.assertEqual(set(env), {'PATH', 'ANTHROPIC_CUSTOM_HEADERS', 'TEST_SESSION', 'TEST_TOKEN'})
+            checked = self.execute('X-FreeAgentOS-Attribution-Session: ' + 'a' * 32 +
+                                   '\nX-FreeAgentOS-Attribution-Token: ' + 'c' * 64)
+        self.assertEqual(checked.returncode, 0)
+        self.assertEqual((checked.stdout, checked.stderr), (b'', b''))
+
+    def test_missing_and_mismatched_attribution_headers_still_reject(self):
+        for headers, expected in (
+                ('', 2), ('X-FreeAgentOS-Attribution-Session: wrong', 2),
+                ('X-FreeAgentOS-Attribution-Session: ' + 'a' * 32, 3),
+                ('X-FreeAgentOS-Attribution-Session: ' + 'a' * 32 +
+                 '\nX-FreeAgentOS-Attribution-Token: wrong', 3)):
+            with self.subTest(expected=expected):
+                checked = self.execute(headers)
+                self.assertEqual(checked.returncode, expected)
+                self.assertEqual(checked.stdout, b'')

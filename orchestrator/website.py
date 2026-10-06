@@ -447,18 +447,22 @@ class SyntheticProposalAdapter:
     """Two finite, externally bound byte responses; no callbacks or live transport."""
     code: bytes
     revision: bytes
+    _adapter_id = "SYNTHETIC_PROPOSAL_V1"
 
     def __post_init__(self):
         for response in (self.code, self.revision):
             if type(response) is not bytes or not 0 < len(response) <= MAX_RESPONSE_BYTES:
                 raise WebsiteError("PROPOSAL_RESPONSE_BOUNDS")
 
+    def _response(self, phase):
+        return self.code if phase == "code" else self.revision
+
     def apply(self, session, phase):
         try:
             if session._proposal_phase != phase:
                 raise WebsiteError("PROPOSAL_PHASE_INVALID")
             request, base = proposal_request(session, phase)
-            response = self.code if phase == "code" else self.revision
+            response = self._response(phase)
             actions, files = validate_proposal(response, session, phase, base)
         except Exception:
             session._proposal_phase = "blocked"
@@ -478,10 +482,29 @@ class SyntheticProposalAdapter:
             raise ProposalError("APPLICATION", session) from None
         session._proposal_phase = "revision" if phase == "code" else "complete"
         return {"phase": phase, "recorded": False, "synthetic": True,
-                "adapter_id": "SYNTHETIC_PROPOSAL_V1", "model_calls": "NONE",
+                "adapter_id": self._adapter_id, "model_calls": "NONE",
                 "context_sha256": digest(request), "base_snapshot": base.sha256,
                 "response_sha256": _sha(response), "snapshot_sha256": observed.sha256,
                 "tool_calls": broker.calls, "live_qualified": False}
+
+
+@dataclass(frozen=True)
+class SyntheticModelResponseAdapter(SyntheticProposalAdapter):
+    """Two finite synthetic transport envelopes; extraction grants no authority.
+
+    Extraction runs inside the existing whole-proposal validation/failure fence,
+    before any broker exists. Direct-proposal callers retain their original path.
+    No provider, callback, launcher or admission producer is involved.
+    """
+    _adapter_id = "SYNTHETIC_MODEL_RESPONSE_V1"
+
+    def _response(self, phase):
+        from model_response import extract_model_response
+        return extract_model_response(super()._response(phase))
+
+    def apply(self, session, phase):
+        evidence = super().apply(session, phase)
+        return {**evidence, "transport_sha256": _sha(super()._response(phase))}
 
 
 def launch_live(kind, *args, **kwargs):
@@ -505,12 +528,12 @@ class WorkflowState(TypedDict, total=False):
 
 
 def workflow_graph(adapter, graph_type, start, end):
-    if type(adapter) not in (RecordedAdapter, SyntheticProposalAdapter):
+    if type(adapter) not in (RecordedAdapter, SyntheticProposalAdapter, SyntheticModelResponseAdapter):
         raise WebsiteError("RECORDED_ADAPTER_REQUIRED")
     builder = graph_type(WorkflowState)
     def scaffold(state):
         session = state["session"]
-        expected = "synthetic" if type(adapter) is SyntheticProposalAdapter else "recorded"
+        expected = "recorded" if type(adapter) is RecordedAdapter else "synthetic"
         if session.preparation != expected:
             raise WebsiteError("PREPARATION_KIND_MISMATCH")
         session.scaffold()

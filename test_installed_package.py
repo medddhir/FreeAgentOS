@@ -45,7 +45,8 @@ class InstalledPackageTests(unittest.TestCase):
         sources = subprocess.check_output(['git', 'ls-files', '-z',
                                           'pyproject.toml', 'orchestrator', 'data', 'bin'],
                                          cwd=ROOT).decode().split('\0')
-        cls.sources = [p for p in sources if p]
+        # This pending production module must be exercised before staging too.
+        cls.sources = sorted({p for p in sources if p} | {'orchestrator/model_response.py'})
         if len(cls.sources) > 256:
             raise AssertionError('BUILD_SOURCE_BOUND')
         epoch = subprocess.check_output(['git', 'show', '-s', '--format=%ct', 'HEAD'],
@@ -124,11 +125,14 @@ class InstalledPackageTests(unittest.TestCase):
 from orchestrator import entrypoint
 sys.path.insert(0, str(__import__('pathlib').Path(entrypoint.__file__).parent))
 import website
+import model_response
+assert website.SyntheticModelResponseAdapter(
+    b'{"structured_output":{"fixture":"finite"}}', b'{}')._response('code') == b'{"fixture":"finite"}'
 from roles.read_policy import content_allowed
 assert content_allowed(b'Hello locally')
 assert website.guidance()
 from roles import coding_units, tester, repair_context
-print(json.dumps([m.__file__ for m in (entrypoint, website, coding_units, tester, repair_context)]))
+print(json.dumps([m.__file__ for m in (entrypoint, website, model_response, coding_units, tester, repair_context)]))
 '''
         result = run([str(self.venv / 'bin/python3'), '-c', code], self.private, self.env)
         self.assertEqual(result.returncode, 0, result.stdout.decode())

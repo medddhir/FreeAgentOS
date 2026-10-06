@@ -16,10 +16,6 @@ SCRIPT = Path(__file__).resolve()
 CONTROLLER_ROOT = SCRIPT.parents[1]
 CONTROLLER_VENV = CONTROLLER_ROOT / ".venv-orchestrator"
 CONTROLLER_PYTHON = CONTROLLER_VENV / "bin" / "python3"
-# The complete controller self-suite measures about 320s; allow bounded headroom.
-# Target repositories keep the original runner lease and the independent
-# 130-second namespace sandbox ceiling.
-TIMEOUT = 420 if ROOT.resolve() == Path(__file__).resolve().parents[1] else 180
 MAX_CAPTURE = 64 * 1024
 
 
@@ -27,6 +23,13 @@ def controller_entrypoint():
     """Match the installed script layout, not markers in the target project."""
     return (SCRIPT == CONTROLLER_ROOT / "bin" / "freeagent-test" and
             (CONTROLLER_ROOT / "orchestrator" / "cli.py").is_file())
+
+
+# Explicit controller verification contract: the growing self-suite has exceeded
+# 420s. Only the existing controller entrypoint in its own root receives 600s.
+# Copied targets and controller entrypoints used from target directories keep
+# 180s; worker/sandbox leases and capture/failure semantics are unchanged.
+TIMEOUT = 600 if controller_entrypoint() and ROOT.resolve() == CONTROLLER_ROOT else 180
 
 
 def bootstrap_controller_runtime():
@@ -53,29 +56,61 @@ def bootstrap_controller_runtime():
 
 
 def run(cmd, name):
+    timing = None
+    if controller_entrypoint() and ROOT.resolve() == CONTROLLER_ROOT:
+        directory = os.environ.get('FREEAGENT_CONTROLLER_PROGRESS_DIR')
+        if directory:
+            try:
+                import runpy
+                module = runpy.run_path(str(CONTROLLER_ROOT / 'devtools/controller_progress/progress.py'))
+                timing = module['RunnerTiming'](Path(directory))
+            except Exception:
+                pass
+    def observe(event, value=None):
+        try:
+            if timing is not None:timing.record(event, value)
+        except Exception:
+            pass
+    exit_observed = False
+    def poll():
+        nonlocal exit_observed
+        value = process.poll()
+        if value is not None and not exit_observed:
+            exit_observed = True
+            observe('CHILD_EXIT_OBSERVED', value)
+        return value
     print(f"=== FREEAGENT TEST: {name} ===")
     print("COMMAND=" + " ".join(cmd))
 
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
 
-    process = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        process = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT, start_new_session=True)
+    except BaseException:
+        try:
+            if timing is not None:timing.close()
+        except Exception:
+            pass
+        raise
     os.set_blocking(process.stdout.fileno(), False)
     tail = bytearray()
     total = 0
     deadline = time.monotonic() + TIMEOUT
+    observe('DEADLINE_CREATED', deadline)
     timeout_triggered = False
     with selectors.DefaultSelector() as selector:
         selector.register(process.stdout, selectors.EVENT_READ)
         eof = False
         while True:
             remaining = deadline - time.monotonic()
-            if remaining <= 0 and process.poll() is None:
+            if remaining <= 0 and poll() is None:
+                observe('TIMEOUT_DECISION')
                 timeout_triggered = True
                 break
             if eof:
-                if process.poll() is not None:
+                if poll() is not None:
                     break
                 time.sleep(min(0.1, max(remaining, 0)))
                 continue
@@ -88,14 +123,16 @@ def run(cmd, name):
                 if not chunk:
                     selector.unregister(process.stdout)
                     eof = True
+                    observe('STDOUT_EOF')
                     continue
                 total += len(chunk)
                 tail.extend(chunk)
                 if len(tail) > MAX_CAPTURE:
                     del tail[:-MAX_CAPTURE]
-            elif process.poll() is not None:
+            elif poll() is not None:
                 break
-    if timeout_triggered or process.poll() is None:
+    if timeout_triggered or poll() is None:
+        observe('SIGTERM_ATTEMPT')
         try:
             os.killpg(process.pid, signal.SIGTERM)
         except ProcessLookupError:
@@ -103,10 +140,14 @@ def run(cmd, name):
         try:
             process.wait(timeout=1)
         except subprocess.TimeoutExpired:
+            observe('SIGKILL_ATTEMPT')
             os.killpg(process.pid, signal.SIGKILL)
             process.wait(timeout=2)
     else:
         process.wait(timeout=2)
+    observe('WAIT_COMPLETE', process.returncode)
+    if not exit_observed:
+        observe('CHILD_EXIT_OBSERVED', process.returncode)
     process.stdout.close()
     output = tail.decode(errors="replace")
     if total > MAX_CAPTURE:
@@ -123,6 +164,11 @@ def run(cmd, name):
         print("RESULT=FAIL")
         code = process.returncode or 1
     print(f"EXIT_CODE={code}")
+    observe('RUNNER_CLASSIFIED', code)
+    try:
+        if timing is not None:timing.close()
+    except Exception:
+        pass
     return code
 
 

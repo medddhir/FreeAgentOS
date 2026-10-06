@@ -233,7 +233,7 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
                 self.assertEqual(self.detect(), (["npm", "test", "--", "--runInBand"], "npm-test"))
 
     def test_budget(self):
-        self.assertEqual(self.globals["TIMEOUT"], 420)
+        self.assertEqual(self.globals["TIMEOUT"], 600)
         self.assertEqual(self.globals["MAX_CAPTURE"], 64 * 1024)
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(Path, "cwd", return_value=Path(directory)):
@@ -261,6 +261,7 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
 
         cases = [("print('SUITE_COMPLETE')", 5, 0, "PASS"),
                  ("raise SystemExit(7)", 5, 7, "FAIL"),
+                 ("print('x' * 65537)", 5, 1, "FAIL"),
                  ("import time; time.sleep(10)", 0.02, 124, "TIMEOUT")]
         for code, budget, expected_exit, expected_result in cases:
             with self.subTest(result=expected_result), \
@@ -275,7 +276,108 @@ class FreeagentTestRuntimeTests(unittest.TestCase):
                 self.assertLess(text.index("SUITE_COMPLETE"), text.index("RESULT=PASS"))
             else:
                 self.assertNotIn("RESULT=PASS", text)
+            if '65537' in code:
+                self.assertIn("OUTPUT_TRUNCATED=true", text)
+
+    def test_budget_selection_uses_controller_context_not_project_configuration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            (target / 'orchestrator').mkdir()
+            (target / 'orchestrator' / 'cli.py').write_text('# misleading marker\n')
+            (target / 'bin').mkdir()
+            (target / 'bin' / 'freeagent-test').write_text('# misleading marker\n')
+            (target / 'pytest.ini').write_text('[pytest]\n')
+            (target / 'pyproject.toml').write_text('controller_timeout = 600\n')
+            control = target / 'protected'
+            control.mkdir()
+            copied = control / 'freeagent-test'
+            shutil.copyfile(RUNNER, copied)
+            with patch.dict(os.environ, {'FREEAGENT_TEST_TIMEOUT': '600',
+                                         'FREEAGENT_CONTROLLER_TIMEOUT': '600'}), \
+                    patch.object(sys, 'argv', [str(copied), '--timeout', '600']), \
+                    patch.object(Path, 'cwd', return_value=target):
+                # A real controller entrypoint used from a target keeps 180s.
+                self.assertEqual(runpy.run_path(str(RUNNER))['TIMEOUT'], 180)
+                # This copied runner's parent-derived root equals cwd, but its
+                # protected location is not the trusted bin/ entrypoint layout.
+                self.assertEqual(runpy.run_path(str(copied))['TIMEOUT'], 180)
+            with patch.object(Path, 'cwd', return_value=control):
+                self.assertEqual(runpy.run_path(str(copied))['TIMEOUT'], 180)
+        with patch.object(Path, 'cwd', return_value=ROOT):
+            self.assertEqual(runpy.run_path(str(RUNNER))['TIMEOUT'], 600)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+class ControllerShutdownTimingTests(unittest.TestCase):
+    def execute(self, source, limit=2, broken=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); root.chmod(0o700)
+            runner = runpy.run_path(str(RUNNER))
+            function = runner['run']; values = function.__globals__
+            output = io.StringIO()
+            with patch.dict(values, {'TIMEOUT': limit}), \
+                    patch.dict(os.environ, {'FREEAGENT_CONTROLLER_PROGRESS_DIR': str(root)}), \
+                    contextlib.redirect_stdout(output):
+                if broken:
+                    class Broken:
+                        def __init__(self, directory): pass
+                        def record(self, *args): raise OSError('not published')
+                        def close(self): raise OSError('not published')
+                    with patch.object(runpy, 'run_path', return_value={'RunnerTiming': Broken}):
+                        code = function([sys.executable, '-c', source], 'synthetic')
+                else:
+                    code = function([sys.executable, '-c', source], 'synthetic')
+            import json
+            path = root / 'runner-timing.jsonl'
+            rows = [json.loads(x) for x in path.read_text().splitlines()] if path.exists() else []
+            self.assertLessEqual(len(rows), 32)
+            if path.exists():
+                self.assertLessEqual(path.stat().st_size, 32768)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            return code, output.getvalue(), rows
+
+    def test_normal_exit_and_eof_before_exit(self):
+        code, output, rows = self.execute('import os,time; os.close(1); os.close(2); time.sleep(.05)')
+        self.assertEqual(code, 0); self.assertIn('RESULT=PASS', output)
+        events = [x['event'] for x in rows]
+        self.assertLess(events.index('STDOUT_EOF'), events.index('CHILD_EXIT_OBSERVED'))
+        self.assertLess(events.index('WAIT_COMPLETE'), events.index('RUNNER_CLASSIFIED'))
+        self.assertEqual(events.count('CHILD_EXIT_OBSERVED'), 1)
+        self.assertIsInstance(rows[0]['identity'], float)
+        self.assertTrue(all(a['monotonic_ns'] <= b['monotonic_ns'] for a,b in zip(rows, rows[1:])))
+
+    def test_exit_after_deadline_still_times_out_and_reaps(self):
+        code, output, rows = self.execute('import time; time.sleep(2)', limit=.05)
+        self.assertEqual(code, 124); self.assertIn('RESULT=TIMEOUT', output)
+        events = [x['event'] for x in rows]
+        self.assertLess(events.index('TIMEOUT_DECISION'), events.index('SIGTERM_ATTEMPT'))
+        self.assertLess(events.index('SIGTERM_ATTEMPT'), events.index('WAIT_COMPLETE'))
+        self.assertEqual(rows[-1]['identity'], 124)
+
+    def test_diagnostic_failure_preserves_failure_classification(self):
+        code, output, rows = self.execute('raise SystemExit(7)', broken=True)
+        self.assertEqual(code, 7); self.assertIn('RESULT=FAIL', output)
+        self.assertNotIn('not published', output)
+        self.assertEqual(rows, [])
+
+    def test_termination_escalation_is_observed_without_changing_timeout(self):
+        code, output, rows = self.execute(
+            'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(3)',
+            limit=.2)
+        self.assertEqual(code, 124)
+        self.assertIn('RESULT=TIMEOUT', output)
+        events = [x['event'] for x in rows]
+        self.assertLess(events.index('SIGTERM_ATTEMPT'), events.index('SIGKILL_ATTEMPT'))
+        self.assertLess(events.index('SIGKILL_ATTEMPT'), events.index('WAIT_COMPLETE'))
+
+    def test_foreign_context_cannot_activate_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); root.chmod(0o700)
+            runner = runpy.run_path(str(RUNNER)); function = runner['run']
+            with patch.dict(function.__globals__, {'ROOT': root}), \
+                    patch.dict(os.environ, {'FREEAGENT_CONTROLLER_PROGRESS_DIR': str(root)}), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(function([sys.executable, '-c', 'pass'], 'synthetic'), 0)
+            self.assertFalse((root / 'runner-timing.jsonl').exists())

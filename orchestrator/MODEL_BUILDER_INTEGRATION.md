@@ -1428,3 +1428,199 @@ Production text admission remains closed. Historical timeout causation and
 broader cleanup remain unproven.
 
 B10: PARTIAL. STAGE31D_AUTHORIZED: NO.
+
+
+### Bounded model-response extraction — preparation verification BLOCKED
+
+Added only `orchestrator/model_response.py` and `test_model_response.py` from
+candidate patch SHA-256
+`8ac0e2dee599e69f941491f94563e0a1268cd5243d910b655caa230348ec0bcb`.
+The candidate's existing fixture imports/signatures match repository APIs.
+Test corrections add real pre-parser ordering assertions, outer/result-string
+structural-bound checks, numeric token boundaries, independent canonical-output
+overflow and exact four-file validator preservation; the test module description
+now accurately acknowledges existing broker-boundary fixtures. Extraction imports
+only json/math, with no launcher, provider, broker or protected dependency.
+
+Raw bytes and canonical UTF-8 output each have a 65,536-byte bound. Strict UTF-8,
+one complete JSON value, recursive duplicate rejection, bounded numeric tokens
+(20 integer / 32 float characters) and finite floats are required. Escape-aware
+matching bracket stacks run before each json.loads: outer depth/container bounds
+4/7 and result-string bounds 3/6. Supported forms are structured_output object,
+result JSON-object string, or direct object without transport-envelope keys.
+Null candidates are absent; multiple non-null candidates reject even if one is
+malformed. Status/error field types and exact transport type="result" are checked;
+"error" rejects. Errors use fixed codes and suppressed displayed chains, not a
+memory-erasure guarantee. Unicode/source text and binding/files data are preserved
+without repair. This validates transport shape only; website.validate_proposal
+is unchanged and remains responsible for schema/binding/paths/content/bounds.
+Additional structured transport metadata may exceed structural limits; exact
+Claude/client compatibility and live integration remain UNPROVEN.
+
+Focused command: `.venv-orchestrator/bin/python3 -m unittest test_model_response
+ test_website test_website_proposals test_website_cli`: 49 tests, 27.711 seconds,
+OK, exit 0 (wrapper 29.790690867 seconds). The single authorized required command
+was `/root/agent-stack/bin/freeagent-test`, using the established controller
+runtime, documented existing pytest/package fixtures and controller progress
+observer. It returned RESULT=TIMEOUT / EXIT_CODE=124 under the unchanged
+420-second runner deadline; wrapper elapsed 421.132223895 seconds. Captured log
+was 712 bytes with no truncation marker. No authoritative final unittest count
+or duration was emitted; observer recorded 567 TEST_END events including nested
+synthetic runs, which are not a suite count. All 26 extraction tests completed.
+Last completed test was WebsiteCLITests.test_partial_constructor_or_uncertain_identity_remains_unproven.
+Unmatched test interval was WebsiteCLITests.test_path_rejections, with a nested
+"path" subcase. This identifies interrupted work, not a hang or demonstrated
+test defect. Normal observer terminal reporting is absent after termination.
+No retry, source correction, limit change or assertion weakening followed.
+
+Private evidence: `/tmp/freeagent-model-response-required-n2xnniu9`.
+SHA-256 identities:
+- focused.log: `27312f2f26ddce360b7e8ec45d32ffdef4872a96e7f9bedb14b41ab2546971d0`
+- required.log: `75cd25c311a50c4d10074e3ab3852485923cd0736f79cdacc65cbd82dc2f01b0`
+- source-before.json / source-after.json: `41ff43426c9854bb511d993a0efcf0b38e7fceab65f5cfd212cd4ccbaa29f0fc`
+- progress.jsonl: `01d14aa8ab1664ddb7fda5d470d632506d089430700458166ddba39c4f23703d`
+- invocation.json: `713199f441b103da48ca7edf721a79b45300574858e8620f8b8f50f02c69a99f`
+- coverage.json: `033aa6fe8a6ca9052acd6db09eac5197c5b8e44fa6683cd78086759549fb8abe`
+
+Invocation selected `FREEAGENT_PYTEST_FIXTURE_PYTHON` at the existing
+`/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3` and
+`FREEAGENT_PACKAGE_FIXTURE_PYTHON` at
+`/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`.
+Observer activation: `PYTHONPATH=/root/agent-stack/devtools/controller_progress`,
+`FREEAGENT_CONTROLLER_PROGRESS_DIR` set to the private evidence directory,
+`PYTHONDONTWRITEBYTECODE=1`; normal umask unchanged. No runtime was installed.
+
+All 188 selected files matched before/after, including both additions. Coverage
+includes tracked Python/TOML/lock/C, bin scripts, guidance and explicit integration
+documents/new source/tests; exact membership and tracked omissions are in
+coverage.json. Installed dependencies/interpreters, credentials/runtime state,
+other ignored/untracked paths and actual runtime read-set are not attested.
+This is selected-source byte binding, not independent dependency/execution
+attestation. This result-only documentation append follows the tested capture.
+Wrapper direct child was reaped; recorded runner/unittest PIDs and their groups
+were absent on bounded current inspection. This does not establish descendant
+absence or global/historical cleanup. Implementation is BLOCKED on required
+verification. No live integration or FD/admission change; B10 PARTIAL;
+STAGE31D_AUTHORIZED: NO. Work remains unstaged/uncommitted.
+
+
+### Separately authorized unchanged required attempt — BLOCKED
+
+After the separately authorized isolated WebsiteCLITests.test_path_rejections
+PASS (1 test, 7.141s; wrapper 7.342128117s), one unchanged required invocation
+`/root/agent-stack/bin/freeagent-test` was authorized and performed. HEAD remained
+4b95d1ca8001d22f7cd5ccd6a2bcbe84d75680eb, main, empty index; the same three pending
+paths retained their recorded bytes before launch. Bounded preflight found no
+conflicting verification command or member of the prior recorded groups; no
+resource mutation was performed. This did not establish global/historical cleanup.
+
+Required result: RESULT=TIMEOUT, EXIT_CODE=124 under the unchanged 420-second
+runner deadline. Wrapper elapsed 421.413125162 seconds; captured log 672 bytes,
+no overflow/truncation marker. There is no authoritative final unittest count,
+duration or failure traceback. All 26 extraction intervals completed PASS.
+Observer recorded 528 TEST_END events including intentional nested synthetic
+outcomes; this is not an authoritative suite count. A separate top-level FAIL
+was recorded for test_trusted_entrypoint.TrustedEntrypointTests.test_fake_api_parameter_blocks
+(0.625508976s observed interval). Which assertion failed and why remain unknown
+because the suite was interrupted before its final traceback summary. Last
+observed TEST_START was test_fixer_remains_bounded_to_two_attempts in the same
+class; it and PROCESS_START remain unmatched. An unfinished interval does not
+prove a hang. progress-result.json is absent after termination; diagnostic
+completion must not be claimed. No retry or implementation/assertion/limit
+change followed this attempt. Prior failed evidence remains intact.
+
+Private evidence directory: `/tmp/freeagent-model-response-reverify-lxsniz_t`.
+SHA-256 identities:
+- required.log: `cc396f4d7ab66a10136d33d44e70fce8435b64cae6ff82092f8a1e89a849d6ec`
+- source-before.json / source-after.json: `3943bf355798ae10287be0b2089b519cf0e2a9aaa797988a480442e1bd81f990`
+- progress.jsonl: `4e82f827e702c0894c4bcb275b0c2a2ff655be1177f33603523b7461905c810a`
+- pending-before.json / pending-after.json: `6997bd2067cf6908b209f6401d10d1746a4815ed03174ffbb2aee52dc834a8e0`
+- invocation.json: `9ed39973e314367f9b46d79a314d96bdda2554841a9b21897deeea5b70609f4a`
+- coverage.json: `033aa6fe8a6ca9052acd6db09eac5197c5b8e44fa6683cd78086759549fb8abe`
+- termination-summary.json: `2babd48483135cc2e0ff0082dfe788725bfd0461dc01338ba302a5f7dd8e6443`
+
+Established controller runtime and discovery remained unchanged. Explicit
+fixture settings were FREEAGENT_PYTEST_FIXTURE_PYTHON at
+`/tmp/freeagent-rpt1-pytest-u56y3cq4/venv/bin/python3` and
+FREEAGENT_PACKAGE_FIXTURE_PYTHON at
+`/tmp/freeagent-package-runtime-s05jvirn/venv/bin/python3`.
+Observer used PYTHONPATH=`/root/agent-stack/devtools/controller_progress`,
+FREEAGENT_CONTROLLER_PROGRESS_DIR set to this fresh private directory and
+PYTHONDONTWRITEBYTECODE=1; normal umask unchanged. No runtime replacement or
+installation. Existing fixtures, quotas, disk diagnostics, reporting, 420s
+runner deadline and 64 KiB capture rejection were preserved.
+
+All 188 selected source files matched before/after and current bytes before
+this result-only append. Explicit coverage includes tracked Python/TOML/lock/C,
+bin/guidance and selected documents/new files; coverage.json lists exact inclusion
+and excluded tracked paths. Installed dependencies/interpreters, credentials,
+runtime state, unselected ignored/untracked files and actual runtime read-set
+are not attested. This is selected-byte binding, not independent execution or
+dependency/read-set attestation. This append is subsequent result documentation.
+
+Runner PID 2317698 (start ticks 25035511, group/session 2317698) and observed
+unittest PID 2317699 (start ticks 25035526, group/session 2317699) were absent on
+post-run inspection; no current members of those recorded groups were found.
+Wrapper reaped its direct child. Descendant absence, cgroup/filesystem cleanup
+and historical timeout causation remain unproven; no unowned resource was
+inspected/mutated. Required verification remains BLOCKED. Live integration and
+Claude compatibility UNPROVEN. B10 PARTIAL; STAGE31D_AUTHORIZED: NO. Work remains
+unstaged/uncommitted, with no further run authorized by this attempt.
+
+
+### 2026-10-05 — extractor/observer single required attempt and review preparation
+
+The single authorized unchanged `bin/freeagent-test` attempt recorded RESULT=TIMEOUT, EXIT_CODE=124; wrapper wall 420.520149s. The runner retained its 420-second deadline and 64 KiB capture rejection. Log length 693 bytes; no output truncation. No final unittest count/duration or OK summary was available. No retry or implementation repair was performed.
+
+The final unmatched observed interval was `test_trusted_entrypoint.TrustedEntrypointTests.test_unauthorized_new_file_cannot_verify`. Its start identifies an unfinished interval, not a hang or demonstrated correctness defect. The private observer recorded 564 starts, 563 ends, 1,125 matched subcase contexts and 14 immediate FAILURE_DETAIL records. All details were inspected: each belongs to an intentional nested observer fixture, not an independent top-level suite failure. Those inclusive/nested counts are not authoritative suite counts. PROCESS_END and progress-result.json were absent after runner termination; normal diagnostic shutdown and complete terminal evidence are unproven. No capacity overflow was observed in available records; absence of shutdown cannot establish diagnostic completion.
+
+Evidence directory: `/tmp/freeagent-extractor-observer-required-arsc6smt`. Configuration reused the established `.venv-orchestrator` runtime and documented existing pytest/package fixture interpreters. Activation used the existing fixed controller-progress PYTHONPATH directory and a fresh private progress directory; PYTHONDONTWRITEBYTECODE=1. No runtime installation/replacement, discovery/order/assertion/limit change or provider call occurred.
+
+- required.log: `ee61585e55b75726bf45ef67853ae988c7d9d3610338d95ec2a3bebb7977d7bf`
+- source-before.json: `a0c1730d82291318da23c66b04c2338cf7e6b3e352140067c1e1cc81a2467c7a`
+- source-after.json: `a0c1730d82291318da23c66b04c2338cf7e6b3e352140067c1e1cc81a2467c7a`
+- progress.jsonl: `d4798012b583363775c17ec3421e28ab83a30fb56b6db1dd5386abd9c595dda3`
+- coverage.json: `716d86c80a4ce791997f7fc026988cc980f824a2fffe8d550a43b3e0df838364`
+- invocation.json: `c35830730ebba094b57e715b92a13e7be3bab13a16f5d1f1a8ed50facb987962`
+- cleanup.json: `035535f8fa91014d30a8fbbf722fcd3339405d5d38847d9df5ee539161343e8e`
+
+All 189 selected files and all six pending paths matched before/after collection, before this result-only append. Coverage includes tracked Python/TOML/lock/C, bin/guidance, explicit integration/website documents, observer README and new extractor/test; coverage.json enumerates exact inclusion/exclusion. Installed dependencies/interpreters, credentials, runtime state, remaining untracked/ignored files and actual runtime read-set are omitted. This is selected-byte binding, not independent dependency/read-set attestation. This append is subsequent result documentation.
+
+Wrapper reaped its direct child; both recorded runner/unittest PIDs were currently absent and no members of those recorded process groups were observed. This does not establish global descendant absence, filesystem/cgroup cleanup or historical cleanup. No resource was removed or unowned cgroup inspected. Required verification remains BLOCKED. Historical timeout causation remains unresolved. Smallest proposed next action: source-trace the interrupted trusted-entrypoint fixture and compare existing timing evidence before separately authorizing any further execution; focused source review may proceed without qualifying execution. Live integration/Claude compatibility UNPROVEN; B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
+
+
+### 2026-10-05 — scoped review disposition and existing timing reconciliation
+
+The coordinator identified partial-write classification and observation containment as DeepSeek robustness items. Source reconciliation supports deferral: Progress.event advances counters only after a complete bounded write, and OSError becomes PROGRESS_WRITE_FAILED even if a prefix was written. A retained partial JSONL suffix is not a complete event; subsequent terminal writes cannot be presumed to repair framing. instrument catches event/detail callback exceptions while setup, subcase sequence bookkeeping and finish remain outside a uniform observation catch boundary. These are robustness/interpretation concerns; no corresponding corruption of authoritative unittest outcomes was demonstrated by the recorded evidence. No speculative observer implementation change is made. The complete DeepSeek report/overall verdict was not supplied with this milestone or found in the selected review snapshot; no overall PASS is inferred from the two named items.
+
+README now attributes 560 tests/388.010s/OK/RESULT=PASS/EXIT_CODE=0 and 564 observed intervals solely to the historical completed invocation /tmp/freeagent-required-progress-tn8gzr8a, whose inspected log hash matches 6f32220d199c48a988bd60dc9c14afef491a68075fca4d8897ead69f4c5eb9fc. The latest attempt remains TIMEOUT with no authoritative count/final duration or completed observer shutdown; historical facts are not replaced.
+
+Existing timing comparison uses stack-paired completed depth-one TEST_START/TEST_END intervals, excluding unmatched intervals and every nested test/subcase from additive totals. The baseline TI-JOB-2 limit-binding run reports 621 tests in 405.678s, OK/PASS; baseline log/progress hashes match the recorded 5c60e5270c0ecdeb243cb5a0365c98a5a82609d8d010d6e300dd116f6be90eb2 / 4ebeee55cbc9969ab2b53c10984cd318775cdfed2b7893dca62194cdfb386242. Each later comparison uses its own completed common ID set, not a censored whole-suite sum. Fixture IDs alone do not attest transitive runtime equality. The source manifests nevertheless show identical bytes for foundation/export, attribution, intermediate-repair and integrity-core tests and workspace/tester implementation across all four runs.
+
+| Attempt | Completed shared IDs | Baseline shared seconds | Attempt shared seconds | Net shared growth | Added completed seconds | Extractor-only seconds |
+|---|---:|---:|---:|---:|---:|---:|
+| extractor1 | 537 | 372.798 | 410.253 | +37.455 | 0.265 | 0.265 |
+| extractor2 | 498 | 303.403 | 411.166 | +107.763 | 0.141 | 0.141 |
+| observer | 512 | 328.386 | 413.347 | +84.961 | 0.362 | 0.339 |
+
+Attempt identities: extractor1=/tmp/freeagent-model-response-required-n2xnniu9; extractor2=/tmp/freeagent-model-response-reverify-lxsniz_t; observer=/tmp/freeagent-extractor-observer-required-arsc6smt. All 26 extractor cases completed in each attempt. Existing observer cases are shared-test growth; new observer cases contribute to added-test cost. For a single fixed set of 498 completed IDs common to all four runs, aggregate seconds are baseline 303.403, extractor1 322.745, extractor2 411.166, observer 382.691. No interrupted interval is assigned zero cost or labeled a defect.
+
+Latest ranked shared increases (each interval inclusive; depth-one intervals do not overlap):
+
+| Fixture | Baseline seconds | Latest seconds | Increase | Cumulative ranked increase |
+|---|---:|---:|---:|---:|
+| `test_foundation.FoundationTests.test` | 105.548 | 127.168 | +21.620 | +21.620 |
+| `test_intermediate_repair.IntermediateRepairTests.test_unauthorized_repair_paths_block` | 5.216 | 13.202 | +7.986 | +29.606 |
+| `test_integrity_core.IntegrityGraphTests.test_controller_integrity_and_test_config_tampering_is_selectively_rolled_back` | 3.905 | 10.589 | +6.684 | +36.291 |
+| `test_attribution.I.test` | 13.240 | 16.443 | +3.203 | +39.493 |
+| `test_integrity_core.IntegrityGraphTests.test_repeated_violation_stops_at_two_fixes` | 2.156 | 5.107 | +2.951 | +42.445 |
+
+Top-three/top-five increases sum to 36.291/42.445s for the latest run; positive shared increases total 96.144s, offset by 11.182s of decreases, leaving 84.961s net growth. Earlier extractor1 leaders: invalid_input_and_bypass_flags +8.909s, attribution +5.093s, interruption cleanup +4.223s (top three +18.224s). Extractor2 leaders: foundation +37.547s, attribution +25.071s, contract +5.886s (top three +68.504s). Thus the location of growth varies.
+
+Nested foundation context source_bound_exports is 54.415s baseline, 53.635s extractor1, 72.411s extractor2 and 67.040s latest. These are NOT added to FoundationTests.test. installed_identity_preparation is 5.091/4.167/9.333/4.546s; independent_closure is 5.414/5.345/6.391/8.425s, likewise inclusive and non-additive. Their producer is test_foundation.FoundationTests.test subTest contexts observed by instrument.subtest, not export_timing.py.
+
+Concrete repeated operations: ExportCases.check -> IndependentClosureCases.fixture -> InstalledIdentityCases.fixture -> InventoryCases.fixture reconstructs isolated source/resource trees, recomputes policy/source identities, writes and hashes fixture blobs, captures inventory/dependency snapshots, then analyzes and runs candidate_prerequisite with fresh analysis. IntermediateRepairTests.test_unauthorized_repair_paths_block repeats invoke for four unauthorized paths. IntegrityGraphTests.test_controller_integrity_and_test_config_tampering_is_selectively_rolled_back repeats three source commits/graph invocations. Graph setup reaches workspace.prepare_workspace_node (fresh file inventory/hashes, private Git init/config/add/commit, trusted controller hashes); tester runs protected copied-target tests via run_isolated. These source traces identify repeated work, not which operation caused measured growth. No analyzer/proof cache or mutable fixture sharing is proposed.
+
+Smallest evidence-supported next action is a separately authorized development-only phase profile of the existing four-subcase unauthorized_repair_paths_block fixture: separate workspace inventory/hash and Git init/config/add/commit from protected sandbox startup/test execution and rollback. This fixture is selected for its measured +7.986s growth and four repeated graph invocations, not because a test was interrupted. Reuse the existing bounded diagnostic approach without changing production code or running it in this milestone. Preserve all four subcases, assertions, independent workspaces and fresh observations. Acceptance: bounded per-operation counts, elapsed/CPU summaries and launch/wait intervals with overlap labeled, attributing the repeated cost before any proposed optimization. The earlier completed export profile already indicated setup dominance; it did not isolate a safe reducible operation or explain shared Git/sandbox fixture growth. Current progress lacks per-operation CPU/I/O/wait observations in those paths; host contention, runtime/IO latency and instrumentation effects remain unmeasured possibilities. No safe optimization is established; do not launch an isolated test merely because it was interrupted, change order, raise limits or replace fresh proofs with cached results.
+
+Read-only computation evidence: /tmp/freeagent-existing-timing-reconciliation-e0sq1_1d/timing-comparison.json, SHA-256 `fffec9a4d571779b4127c5c01354057dd6d6869031f3a510171736b317307812`. Existing evidence hashes were recomputed; no tests, imports of application code or verification jobs were executed. Only this document and observer README changed. Required verification BLOCKED; historical timeout causation unresolved; live integration/Claude compatibility UNPROVEN; B10 PARTIAL; STAGE31D_AUTHORIZED: NO.
